@@ -1,10 +1,5 @@
 package util
 
-type Message struct {
-	LocalAddr string
-	AddrSlice []string
-}
-
 func SliceDiff(s1, s2 []string) []string {
 	var retSlice []string
 	m := make(map[string]bool)

@@ -14,15 +14,24 @@ func main() {
 
 	hostName := strings.Split(host, ".")[0]
 
-	_ = client.StartClient("")
+	var clientList []*client.Client
+
+	c := client.StartClient("")
+
+	clientList = append(clientList, c)
 
 	entryPoint := fmt.Sprintf("%s:%d", hostName, 8345)
 
-	for i := 0; i < 3; i++ {
-		_ = client.StartClient(entryPoint)
+	for i := 0; i < 5; i++ {
+		c = client.StartClient(entryPoint)
+		clientList = append(clientList, c)
 	}
 
-	c := make(chan os.Signal, 2)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	<-c
+	channel := make(chan os.Signal, 2)
+	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
+	<-channel
+
+	for _, c := range clientList {
+		c.ShutDownClient()
+	}
 }

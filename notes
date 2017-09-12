@@ -1,0 +1,41 @@
+Bitcoin transaction:
+    Input, output account(s)
+    account: public/private keypair
+    sending account signs tx with private key
+    tx id: hash of serialized representation
+    rules: 1) output can only be claimed once
+           2) New outputs only created from transactions
+           3) The sum of the values of the claimed outputs has to
+           be greater or equal than the syum of the values of the newly allocated outputs
+
+Bitcoin protocol:
+    Tx and blocks:
+        At given intervals the block creater broadcasts block b containing
+        tx from his view. All nodes rollback other received tx and copy his view. Tx which
+        are invalid according to the new view are discarded.
+
+    Network:
+        Joining:
+            To join the network a node queries a set of DNS servers run by volunteers
+            and receiving a set of nodes already in the network. From them new nodes are discovered
+            and so on.
+        Connections:
+            Will try to have p open conncetions, if below, select random from addr list
+            and try to open conncetion. Will accpet incoming connections even if above p.
+        Propagation:
+            Once a node verifies a block or tx it issues a "inv" message to its neighbours
+            containing blocks and tx which are available to be requested. The neighbours
+            issues a getdata message to the sender containing the hashes of the blocks/tx it needs.
+
+            If a node receives a block or tx  it deems invalid possibly due to earlier information, 
+            it will not forward it. As a result malicious nodes cannot flood the network with
+            invalid tx and blocks, but can also lead to double spending attack invisible to the
+            merchant?
+
+            Invisible forks are created when blocks are invalidated and not spread further into
+            the network. Invisible since only a few set or a single node may know of it.
+
+        Timestamps:
+            Sample timestamps from neighbours, average?
+
+

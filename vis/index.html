@@ -1,0 +1,119 @@
+<html>
+    <head>
+        <title> Chord visualization </title>
+        <style>
+        body {
+            color: #d3d3d3;
+            font: 12pt arial;
+            background-color: #222222;
+        }
+
+        #mynetwork {
+            width: 800px;
+            height: 800px;i
+            position: relative;
+            margin-left: auto;
+            margin-right: auto;
+            margin-top: 100px;
+            border: 1px solid #444444;
+            background-color: #222222;
+        }
+        </style>
+        <link src="www.visjs.org/dist/vis.css" rel="stylesheet" type="text/css"/>
+        <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+        <script type="text/javascript"  src="http://visjs.org/dist/vis.js"> </script>
+    </head>
+    </body>
+    <div id="mynetwork">
+        <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
+    </div>
+    <script type="text/javascript">
+var dataset = new vis.DataSet([])
+var singleEdges = new vis.DataSet([])
+var edges = new vis.DataSet([])
+    var socket = io();
+    var nodata = true
+    socket.on('add', function(message) {
+        var id = message.data.ID
+        dataset.add([{id: id, label: id}]);
+        //message.data.Neighbours.forEach(function(value){
+        //    addEdge(id, value)
+        //});
+        //nextid = message.data.ID + "next"
+        //previd = message.data.ID + "prev"
+        //edges.add([
+        //         {id: nextid, from: message.data.ID, to: message.data.Next},
+                //{id: previd, from: message.data.ID, to: message.data.Prev},
+        //    ]);
+        console.log(edges)
+            if (nodata) {
+                init()
+            }
+    });
+socket.on('remove', function(message) {
+    dataset.remove({id: message.data.ID});
+});
+socket.on('update', function(message) {
+
+    /*
+    var id = message.data.ID
+    message.data.Neighbours.forEach(function(value){
+        addEdge(id, value)
+    });
+    */
+    //message.data.Neighbours.forEach(function(value){
+    //    id = message.data.ID + value
+    //    edges.update({id: id, from: message.data.ID, to: value})
+    //});
+    nextid = message.data.ID + "next"
+    previd = message.data.ID + "prev"
+    edges.update({id: nextid, from: message.data.ID, to: message.data.Next})
+    edges.update({id: previd, from: message.data.ID, to: message.data.Prev})
+});
+
+function init() {
+
+
+    var container = document.getElementById('mynetwork')
+        var data = {
+            nodes: dataset,
+            edges: edges
+        };
+    var options = {
+        nodes: {
+            shape: 'dot',
+            size: 15,
+            font: {
+                size: 12,
+                color: '#ffffff'
+            },
+            borderWidth: 2
+        },
+        edges: {
+            width: 2
+        }
+    };
+    var network = new vis.Network(container, data, options)
+
+}
+
+function addEdge(id, destination) {
+    var newEdge = id.concat(destination)
+    var revEdge = destination.concat(id)
+    try {
+        singleEdges.add([{id: newEdge, from: id, to: destination}])
+    }
+    catch(err) {
+        return
+    }
+    var edge = singleEdges.get(revEdge)
+    if (edge != null) {
+        edges.add([{id: newEdge, from: id, to: destination}])
+    }
+}
+
+
+
+    </script>
+    </body>
+</html>
