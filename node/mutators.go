@@ -6,6 +6,7 @@ import (
 
 var (
 	errNotFound = errors.New("No node info found")
+	errPeerNotFound = errors.New("No peer info found")
 )
 
 func (r *ring) getRingList () []*ringId {
@@ -63,12 +64,27 @@ func (n *Node) getViewAddrs() []string {
 
 	ret := make([]string, len(n.viewMap))
 	
-	for k, v := range n.viewMap {
+	for _, v := range n.viewMap {
 		ret = append(ret, v.addr)
 	}
 
 	return ret
 }
+
+func (n *Node) getView() []peer {
+	n.viewMutex.RLock()
+	defer n.viewMutex.RUnlock()
+
+	ret := make([]peer, len(n.viewMap))
+	
+	for _, v := range n.viewMap {
+		ret = append(ret, *v)
+	}
+
+	return ret
+}
+
+
 
 func (n *Node) getRandomViewPeer() peer {
 	n.viewMutex.RLock()
@@ -76,7 +92,7 @@ func (n *Node) getRandomViewPeer() peer {
 	
 	var ret peer
 
-	for k, v := range n.viewMap {
+	for _, v := range n.viewMap {
 		ret = *v
 		break
 	}
@@ -89,16 +105,17 @@ func (n *Node) addViewPeer(addr string) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
 
-	n.viewMap[addr] = newPeer(addr)
-}
-/*
-func (n *Node) removeViewPeer(addr string) {
-	n.viewMutex.Lock()
-	defer n.viewMutex.Unlock()
+	peer := newPeer(addr)
 
-	delete(n.viewMap, addr)
+	n.viewMap[addr] = peer
+
+	for k, ring := range n.ringMap {
+		ring.add(peer.addr)
+		n.updateState(k)
+	}
+
 }
-*/
+
 func (n *Node) removePeer (key string) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
@@ -113,84 +130,27 @@ func (n *Node) removePeer (key string) {
 	delete(n.viewMap, key)
 }
 
+func (n *Node) viewPeerExist (key string) bool{
+	n.viewMutex.Lock()
+	defer n.viewMutex.Unlock()
 
+	_, ok := n.viewMap[key]
 
+	return ok
+}
 
-/*
+func (n *Node) getViewPeer (key string) (peer, error) {
+	n.viewMutex.Lock()
+	defer n.viewMutex.Unlock()
+	
+	var p *peer
+	var ok bool
 
-func (n *Node) getLiveNodeAddrs() []string {
-	n.liveMutex.RLock()
-
-	var ret []string
-
-	for _, id := range n.live {
-		ret = append(ret, id)
+	if p, ok = n.viewMap[key]; !ok {
+		return peer{}, errPeerNotFound
 	}
 
-	n.liveMutex.RUnlock()
-	return ret
-}
-
-func (n *Node) getLiveNodes() []string {
-	n.liveMutex.RLock()
-
-	ret := make([]string, len(n.live))
-	copy(ret, n.live)
-
-	n.liveMutex.RUnlock()
-	return ret
-}
-
-func (n *Node) getRandomLiveNode() string {
-	n.liveMutex.RLock()
-
-	nodeIdx := rand.Int() % len(n.live)
-	ret := n.live[nodeIdx]
-
-	n.liveMutex.RUnlock()
-	return ret
+	return *p, nil
 }
 
 
-func (n *Node) addLiveNode(addr string) {
-	n.liveMutex.Lock()
-
-	n.live = append(n.live, addr)
-
-	n.liveMutex.Unlock()
-}
-
-func (n *Node) removeLiveNode(addr string) {
-	n.liveMutex.Lock()
-
-	for i, id := range n.live {
-		if id == addr {
-			n.live = append(n.live[:i], n.live[i+1:]...)
-			break
-		}
-	}
-
-	n.liveMutex.Unlock()
-}
-*/
-/*
-func (r *ring) addToSuccList(id *ringId) {
-	newSucc := id
-	r.checkHighestLowest(newSucc)
-	r.succList = append(r.succList, newSucc)
-}
-*/
-
-/*
-func (r *ring) setRingSucc(id *ringId) {
-	r.succ = id
-	r.checkHighestLowest(id)
-	r.addToSuccList(id)
-}
-
-func (r *ring) setRingPrev(id *ringId) {
-	r.prev = id
-	r.checkHighestLowest(id)
-	r.addToSuccList(id)
-}
-*/

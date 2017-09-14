@@ -28,6 +28,7 @@
         <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
     </div>
     <script type="text/javascript">
+var request = require('request');
 var dataset = new vis.DataSet([])
 var singleEdges = new vis.DataSet([])
 var edges = new vis.DataSet([])
@@ -94,6 +95,16 @@ function init() {
         }
     };
     var network = new vis.Network(container, data, options)
+        network.on( 'click', function(properties) {
+            var ids = properties.nodes;
+            var clickedNodes = nodes.get(ids);
+            clickedNodes.ForEach(function(val) {
+                var addr = val.id.split("|")[0];
+                var fullAddr = "http//" + addr + "/shutdownNode
+                request.post(fullAddr);
+            });
+            console.log('clicked nodes:', clickedNodes);
+        });
 
 }
 

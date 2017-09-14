@@ -25,7 +25,7 @@ type note struct {
 }
 
 type accusation struct {
-	recentNote *note
+	//recentNote *note
 	accuser string //TODO certificates...
 }
 
@@ -36,12 +36,12 @@ func newPeer (addr string) *peer {
 	}
 }
 
-func (p *Peer) addAccusation (lastNote *note, accuser string) {
+func (p *peer) addAccusation (accuser string) {
 	p.accuseLock.Lock()	
 	defer p.accuseLock.Unlock()	
 
 	a := &accusation {
-		recentNote: lastNote,
+		//recentNote: lastNote,
 		accuser: accuser,
 	}
 
@@ -49,22 +49,22 @@ func (p *Peer) addAccusation (lastNote *note, accuser string) {
 }
 
 
-func (p *Peer) getAccusation () *accusation {
+func (p *peer) getAccusation () *accusation {
 	p.accuseLock.RLock()	
 	defer p.accuseLock.RUnlock()	
 
-	return r.accusation
+	return p.accusation
 }
 
 
-func (p *Peer) addNote (newNote *note) {
+func (p *peer) addNote (newNote *note) {
 	p.noteLock.Lock()	
 	defer p.noteLock.Unlock()	
 
-	p.notes[n.epoch] = note
+	p.notes[newNote.epoch] = newNote
 
-	if n.epoch > n.lastNote {
-		n.lastNote = n.epoch
+	if newNote.epoch > p.lastNote {
+		p.lastNote = newNote.epoch
 	}
 }
 

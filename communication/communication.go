@@ -7,10 +7,11 @@ import (
 	"strings"
 	"net"
 	"errors"
+	"golang.org/x/net/context"
 	"sync"
 	"github.com/joonnna/capstone/logger"
-	"io"
-	"bytes"
+	"github.com/joonnna/capstone/protobuf"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -22,8 +23,10 @@ var (
 )
 
 type Comm struct {
-	allConnections map[string]net.Conn
+	allConnections map[string]gossip.GossipClient
 	connectionMutex sync.RWMutex
+
+	rpcServer *grpc.Server
 
 	localAddr string
 	listener net.Listener
@@ -50,95 +53,111 @@ func NewComm (log *logger.Log) *Comm {
 		port += 1
 	}
 
-	comm := &Comm{
-		allConnections: make(map[string]net.Conn),
+	comm := &Comm {
+		allConnections: make(map[string]gossip.GossipClient),
 		localAddr: fmt.Sprintf("%s:%d", hostName, port),
 		listener: l,
 		log: log,
+		rpcServer: grpc.NewServer(),
 	}
 
 	return comm
 }
 
-func (c *Comm) SendMsg (addr string, data []byte) error {
-	return c.sendMsg(addr, data)
+func (c *Comm) Register(g gossip.GossipServer) {
+	gossip.RegisterGossipServer(c.rpcServer, g)
 }
 
-func (c *Comm) ReceiveMsg (cb func(reader io.Reader)) {
-	for {
-		conn, err := c.listener.Accept()
-		if err != nil {
-			c.log.Err.Println(err)
-			return
-		}
 
-		go c.handleConn(conn, cb)
-	}
+func (c *Comm) Start() error {
+	return c.rpcServer.Serve(c.listener)
 }
-
-func (c *Comm) BroadcastMsg (addrSlice []string, data []byte) {
-	for _, addr := range addrSlice {
-		_ = c.sendMsg(addr, data)
-	}
-
-}
-
 
 func (c Comm) HostInfo () string {
 	return c.localAddr
 }
 
-
 func (c *Comm) ShutDown () {
-	c.listener.Close()
+	c.rpcServer.GracefulStop()
 }
 
 
-func (c *Comm) sendMsg(addr string, data []byte) error {
-	var conn net.Conn
-	var err error
+func (c *Comm) dial (addr string) (gossip.GossipClient, error) {
+	var client gossip.GossipClient
 
-	if !c.existConnection(addr) {
-		conn, err = c.dial(addr)
-		if err != nil {
-			return errReachable
-		}
-	} else {
-		conn = c.getConnection(addr)
-	}
+	opts := grpc.WithInsecure()
 
-	_, err = conn.Write(data)
-	if err != nil {
-		c.log.Err.Println(err)
-		conn, err = c.dial(addr)
-		if err != nil {
-			return errReachable
-		}
-	}
-	return nil
-}
-
-
-func (c *Comm) dial (addr string) (net.Conn, error) {
-	conn, err := net.Dial("tcp", addr)
+	conn, err := grpc.Dial(addr, opts)
 	if err != nil {
 		c.log.Err.Println(err)
 		return nil, errReachable
 	} else {
-		c.addConnection(addr, conn)
+		client = gossip.NewGossipClient(conn)
+		c.addConnection(addr, client)
 	}
 
-	return conn, nil
+	return client, nil
 }
 
-func (c Comm) handleConn (conn net.Conn, cb func(reader io.Reader)) {
-	data := make([]byte, 2048)
-
-	_, err := conn.Read(data)
+func (c *Comm) Gossip (addr string, args *gossip.NodeInfo) (*gossip.Nodes, error) {
+	client, err := c.getClient(addr)
 	if err != nil {
-		c.log.Err.Println(err)
-		return
-	} else {
-		cb(bytes.NewReader(data))
+		return nil, err
 	}
+
+	r, err := client.Spread(context.Background(), args)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+func (c *Comm) Monitor (addr string, args *gossip.Ping) (*gossip.Pong, error) {
+	client, err := c.getClient(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := client.Monitor(context.Background(), args)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+
+func (c *Comm) Accuse (addrList []string, args *gossip.Accusation) (*gossip.Empty, error) {
+	var r *gossip.Empty
+
+	for _, addr := range addrList {
+		client, err := c.getClient(addr)
+		if err != nil {
+			continue
+		}
+
+		r, err = client.Accuse(context.Background(), args)
+		if err != nil {
+			continue
+		}
+	}
+	return r, nil
+}
+
+
+func (c *Comm) getClient (addr string) (gossip.GossipClient, error) {
+	var client gossip.GossipClient
+	var err error
+
+	if !c.existConnection(addr) {
+		client, err = c.dial(addr)
+		if err != nil {
+			return client, err
+		}
+	} else {
+		client = c.getConnection(addr)
+	}
+
+	return client, nil
 }

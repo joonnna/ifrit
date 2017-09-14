@@ -4,10 +4,8 @@ import (
 	"sync"
 	"time"
 	"github.com/joonnna/capstone/logger"
-	_"math/big"
-	"bytes"
-	"encoding/json"
-	"io"
+	"github.com/joonnna/capstone/util"
+	"github.com/joonnna/capstone/protobuf"
 )
 
 type Node struct {
@@ -30,48 +28,24 @@ type Node struct {
 	gossipTimeout time.Duration
 	monitorTimeout time.Duration
 	viewUpdateTimeout time.Duration
+
 	/*
 	notes []Notes
 	accusations
 	timeouts
 	*/
 }
-/*
-type nodeId struct {
-	//Hash []byte
-	Hash big.Int
-	Addr string
-}
-*/
-
-const (
-	pingCode uint8 = 1
-	gossipCode uint8 = 2
-	accusationCode uint8 = 3
-	rebuttalCode uint8 = 4
-)
-
-type message struct {
-	Code uint8
-	Payload []byte
-	/*
-	Operation uint8
-	LocalAddr string
-	AddrSlice []string
-	*/
-}
-
-
-
 
 type Communication interface {
-	SendMsg(addr string, data []byte) error
-	ReceiveMsg(cb func(reader io.Reader))
-	BroadcastMsg(data []byte)
 	ShutDown()
+	Register(g gossip.GossipServer)
+	Start() error
+	Gossip(addr string, args *gossip.NodeInfo) (*gossip.Nodes, error)
+	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
+	Accuse(addrList []string, args *gossip.Accusation) (*gossip.Empty, error)
 }
 
-func (n *Node) gossip () {
+func (n *Node) gossipLoop () {
 	for {
 		select {
 		case <-n.exitChan:
@@ -79,24 +53,21 @@ func (n *Node) gossip () {
 			n.wg.Done()
 			return
 		case <-time.After(n.gossipTimeout):
-			view := n.getViewAddrs()
-			if len(view) == 0 {
-				continue
-			}
-			fullView := append(view, n.localAddr)
-
-			payload := []byte(&gossip{AddrSlice: view, LocalAddr: n.localAddr})
-
-			msg, err := newMsg(pingCode, payload)
-			if err != nil {
-				n.log.Err.Println(err)
-				continue
-			}
-
 			peer := n.getRandomViewPeer()
-			err = n.Communication.SendMsg(peer.addr, msg)
+			args := &gossip.NodeInfo{LocalAddr: n.localAddr}
+
+			r, err := n.Communication.Gossip(peer.addr, args)
 			if err != nil {
 				n.log.Err.Println(err)
+				continue
+			}
+
+			diff := util.SliceDiff(n.getViewAddrs(), r.GetAddrList())
+			for _, addr := range diff {
+				if addr == n.localAddr {
+					continue
+				}
+				n.addViewPeer(addr)
 			}
 		}
 	}
@@ -110,20 +81,37 @@ func (n *Node) monitor () {
 			n.wg.Done()
 			return
 		case <-time.After(n.monitorTimeout):
-		/*
-			msg, err := newMsg(n.localAddr, allLive, ping)
-			if err != nil {
-				n.log.Err.Println(err)
-				continue
-			}
-		*/
+			msg := &gossip.Ping{}
+			
 			for _, ring := range n.ringMap {
-				err = n.Communication.SendMsg(ring.getRingSuccAddr(), []byte("YOU DEAD BRO?"))
+				succ, err :=  ring.getRingSucc()
 				if err != nil {
 					n.log.Err.Println(err)
-					//n.Communcation.BroadcastMsg(msg)
+					continue
 				}
-			}
+
+				//TODO validate reply
+				_, err = n.Communication.Monitor(succ.nodeId, msg)
+				if err != nil {
+					n.log.Info.Println("%s is dead, accusing", succ.nodeId)
+					accuseMsg := &gossip.Accusation {
+						Accuser: n.localAddr,
+						Accused: succ.nodeId,
+					}
+
+					p, err := n.getViewPeer(succ.nodeId)
+					if err == nil {
+						p.addAccusation(n.localAddr)
+					}
+					
+					//TODO validate reply
+					_, err = n.Communication.Accuse(n.getViewAddrs(), accuseMsg)
+					if err != nil {
+						n.log.Err.Println(err)
+						continue
+					}
+				}
+			}	
 		}
 	}
 }
@@ -135,8 +123,9 @@ func (n *Node) updateView () {
 			n.log.Info.Println("Stopping view update")
 			n.wg.Done()
 			return
-		case <-time.After(n.updateViewTimeout):
-			for _, p := range r.viewMap {
+		case <-time.After(n.viewUpdateTimeout):
+			view := n.getView()
+			for _, p := range view {
 				if p.getAccusation() != nil {
 					n.removePeer(p.addr)
 				}
@@ -145,30 +134,6 @@ func (n *Node) updateView () {
 	}
 }
 
-func (n *Node) receiveTraffic (reader io.Reader) {
-	msg := &message{}
-
-	err := json.NewDecoder(reader).Decode(msg)
-	if err != nil {
-		n.log.Err.Println(err)
-		return
-	}
-	
-	payloadReader := bytes.NewReader(msg.Payload)
-
-	switch msg.Code {
-	case ping:
-		break
-	case gossip:
-		n.handleGossip(payloadReader)
-	case accusation:
-		break
-	case rebuttal:
-		break
-	default:
-		n.log.Err.Println("Unknown message received")
-	}
-}
 
 func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string, numRings uint8) *Node {
 	var i uint8
@@ -181,18 +146,20 @@ func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string
 		localAddr: addr,
 		ringMap: make(map[uint8]*ring),
 		numRings: numRings,
-		updateTimeout: time.Second * 2,
+		viewMap: make(map[string]*peer),
+		viewUpdateTimeout: time.Second * 2,
 		gossipTimeout: time.Second * 3,
-		monitorTimeout: Time.Second * 3,
+		monitorTimeout: time.Second * 3,
 	}
+
+	n.Communication.Register(n)
 
 	for i = 0; i < numRings; i++ {
 		n.ringMap[i] = newRing(i, n.localAddr)
-		n.ringMap[i].add(entryAddr)
 	}
 
-	if entryAddr != ""{
-		n.addLiveNode(entryAddr)
+	if entryAddr != "" {
+		n.addViewPeer(entryAddr)
 	}
 
 	return n
@@ -212,17 +179,14 @@ func (n *Node) Start () {
 		n.add(i)
 	}
 
+	go n.Communication.Start()
 	n.wg.Add(3)
-	go n.gossip()
+	go n.gossipLoop()
 	go n.monitor()
 	go n.updateView()
+	go n.httpHandler()
 
-	go func() {
-		<-n.exitChan
-		n.Communication.ShutDown()
-		n.log.Info.Println("Exiting node")
-		n.wg.Done()
-	}()
-
-	n.Communication.ReceiveMsg(n.receiveTraffic)
+	<-n.exitChan
+	n.Communication.ShutDown()
+	n.log.Info.Println("Exiting node")
 }

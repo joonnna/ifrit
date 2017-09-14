@@ -9,6 +9,7 @@ It is generated from these files:
 
 It has these top-level messages:
 	Empty
+	NodeInfo
 	Accusation
 	Rebuttal
 	Ping
@@ -20,6 +21,11 @@ package gossip
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
 import math "math"
+
+import (
+	context "golang.org/x/net/context"
+	grpc "google.golang.org/grpc"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -40,13 +46,45 @@ func (m *Empty) String() string            { return proto.CompactTextString(m) }
 func (*Empty) ProtoMessage()               {}
 func (*Empty) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
+type NodeInfo struct {
+	LocalAddr string `protobuf:"bytes,1,opt,name=localAddr" json:"localAddr,omitempty"`
+}
+
+func (m *NodeInfo) Reset()                    { *m = NodeInfo{} }
+func (m *NodeInfo) String() string            { return proto.CompactTextString(m) }
+func (*NodeInfo) ProtoMessage()               {}
+func (*NodeInfo) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *NodeInfo) GetLocalAddr() string {
+	if m != nil {
+		return m.LocalAddr
+	}
+	return ""
+}
+
 type Accusation struct {
+	Accused string `protobuf:"bytes,1,opt,name=accused" json:"accused,omitempty"`
+	Accuser string `protobuf:"bytes,2,opt,name=accuser" json:"accuser,omitempty"`
 }
 
 func (m *Accusation) Reset()                    { *m = Accusation{} }
 func (m *Accusation) String() string            { return proto.CompactTextString(m) }
 func (*Accusation) ProtoMessage()               {}
-func (*Accusation) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+func (*Accusation) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+
+func (m *Accusation) GetAccused() string {
+	if m != nil {
+		return m.Accused
+	}
+	return ""
+}
+
+func (m *Accusation) GetAccuser() string {
+	if m != nil {
+		return m.Accuser
+	}
+	return ""
+}
 
 type Rebuttal struct {
 }
@@ -54,7 +92,7 @@ type Rebuttal struct {
 func (m *Rebuttal) Reset()                    { *m = Rebuttal{} }
 func (m *Rebuttal) String() string            { return proto.CompactTextString(m) }
 func (*Rebuttal) ProtoMessage()               {}
-func (*Rebuttal) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+func (*Rebuttal) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
 
 type Ping struct {
 	LocalAddr string `protobuf:"bytes,1,opt,name=localAddr" json:"localAddr,omitempty"`
@@ -63,7 +101,7 @@ type Ping struct {
 func (m *Ping) Reset()                    { *m = Ping{} }
 func (m *Ping) String() string            { return proto.CompactTextString(m) }
 func (*Ping) ProtoMessage()               {}
-func (*Ping) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+func (*Ping) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
 
 func (m *Ping) GetLocalAddr() string {
 	if m != nil {
@@ -79,7 +117,7 @@ type Pong struct {
 func (m *Pong) Reset()                    { *m = Pong{} }
 func (m *Pong) String() string            { return proto.CompactTextString(m) }
 func (*Pong) ProtoMessage()               {}
-func (*Pong) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+func (*Pong) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
 
 func (m *Pong) GetLocalAddr() string {
 	if m != nil {
@@ -96,7 +134,7 @@ type Nodes struct {
 func (m *Nodes) Reset()                    { *m = Nodes{} }
 func (m *Nodes) String() string            { return proto.CompactTextString(m) }
 func (*Nodes) ProtoMessage()               {}
-func (*Nodes) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{5} }
+func (*Nodes) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
 
 func (m *Nodes) GetLocalAddr() string {
 	if m != nil {
@@ -114,6 +152,7 @@ func (m *Nodes) GetAddrList() []string {
 
 func init() {
 	proto.RegisterType((*Empty)(nil), "Empty")
+	proto.RegisterType((*NodeInfo)(nil), "NodeInfo")
 	proto.RegisterType((*Accusation)(nil), "Accusation")
 	proto.RegisterType((*Rebuttal)(nil), "Rebuttal")
 	proto.RegisterType((*Ping)(nil), "Ping")
@@ -121,22 +160,161 @@ func init() {
 	proto.RegisterType((*Nodes)(nil), "Nodes")
 }
 
+// Reference imports to suppress errors if they are not otherwise used.
+var _ context.Context
+var _ grpc.ClientConn
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the grpc package it is being compiled against.
+const _ = grpc.SupportPackageIsVersion4
+
+// Client API for Gossip service
+
+type GossipClient interface {
+	Monitor(ctx context.Context, in *Ping, opts ...grpc.CallOption) (*Pong, error)
+	Accuse(ctx context.Context, in *Accusation, opts ...grpc.CallOption) (*Empty, error)
+	Spread(ctx context.Context, in *NodeInfo, opts ...grpc.CallOption) (*Nodes, error)
+}
+
+type gossipClient struct {
+	cc *grpc.ClientConn
+}
+
+func NewGossipClient(cc *grpc.ClientConn) GossipClient {
+	return &gossipClient{cc}
+}
+
+func (c *gossipClient) Monitor(ctx context.Context, in *Ping, opts ...grpc.CallOption) (*Pong, error) {
+	out := new(Pong)
+	err := grpc.Invoke(ctx, "/gossip/Monitor", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gossipClient) Accuse(ctx context.Context, in *Accusation, opts ...grpc.CallOption) (*Empty, error) {
+	out := new(Empty)
+	err := grpc.Invoke(ctx, "/gossip/Accuse", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gossipClient) Spread(ctx context.Context, in *NodeInfo, opts ...grpc.CallOption) (*Nodes, error) {
+	out := new(Nodes)
+	err := grpc.Invoke(ctx, "/gossip/Spread", in, out, c.cc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Server API for Gossip service
+
+type GossipServer interface {
+	Monitor(context.Context, *Ping) (*Pong, error)
+	Accuse(context.Context, *Accusation) (*Empty, error)
+	Spread(context.Context, *NodeInfo) (*Nodes, error)
+}
+
+func RegisterGossipServer(s *grpc.Server, srv GossipServer) {
+	s.RegisterService(&_Gossip_serviceDesc, srv)
+}
+
+func _Gossip_Monitor_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Ping)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GossipServer).Monitor(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gossip/Monitor",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GossipServer).Monitor(ctx, req.(*Ping))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gossip_Accuse_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Accusation)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GossipServer).Accuse(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gossip/Accuse",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GossipServer).Accuse(ctx, req.(*Accusation))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Gossip_Spread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeInfo)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GossipServer).Spread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/gossip/Spread",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GossipServer).Spread(ctx, req.(*NodeInfo))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+var _Gossip_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "gossip",
+	HandlerType: (*GossipServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Monitor",
+			Handler:    _Gossip_Monitor_Handler,
+		},
+		{
+			MethodName: "Accuse",
+			Handler:    _Gossip_Accuse_Handler,
+		},
+		{
+			MethodName: "Spread",
+			Handler:    _Gossip_Spread_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "gossip.proto",
+}
+
 func init() { proto.RegisterFile("gossip.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 221 bytes of a gzipped FileDescriptorProto
+	// 238 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x90, 0xb1, 0x4e, 0xc3, 0x30,
-	0x10, 0x86, 0x1b, 0x20, 0x4e, 0x7d, 0x74, 0xba, 0xa9, 0x58, 0x08, 0x2a, 0x8b, 0xa1, 0x93, 0x07,
-	0x78, 0x82, 0x48, 0xb0, 0x41, 0x85, 0xc2, 0x13, 0xb8, 0xb1, 0x55, 0x59, 0x0a, 0x39, 0xcb, 0xbe,
-	0x0e, 0x6c, 0x3c, 0x3a, 0x8a, 0x2b, 0x08, 0x13, 0x8c, 0x77, 0xff, 0x3f, 0x7c, 0xdf, 0x0f, 0xab,
-	0x03, 0xe5, 0x1c, 0xa2, 0x89, 0x89, 0x98, 0x74, 0x03, 0xf5, 0xd3, 0x7b, 0xe4, 0x0f, 0xbd, 0x02,
-	0x68, 0xfb, 0xfe, 0x98, 0x2d, 0x07, 0x1a, 0x35, 0xc0, 0xb2, 0xf3, 0xfb, 0x23, 0xb3, 0x1d, 0xf4,
-	0x1d, 0x5c, 0xbc, 0x86, 0xf1, 0x80, 0xd7, 0x20, 0x07, 0xea, 0xed, 0xd0, 0x3a, 0x97, 0xd6, 0xd5,
-	0xa6, 0xda, 0xca, 0x6e, 0x7e, 0x94, 0x16, 0xfd, 0xdb, 0x6a, 0xa1, 0xde, 0x91, 0xf3, 0xf9, 0xef,
-	0x1a, 0x2a, 0x58, 0x5a, 0xe7, 0xd2, 0x73, 0xc8, 0xbc, 0x3e, 0xdb, 0x9c, 0x6f, 0x65, 0xf7, 0x73,
-	0xdf, 0x7f, 0x56, 0x20, 0x4e, 0x0a, 0x78, 0x05, 0xcd, 0x0b, 0x8d, 0x81, 0x29, 0x61, 0x6d, 0x26,
-	0x46, 0x55, 0x9b, 0x09, 0x42, 0x2f, 0xf0, 0x16, 0x44, 0xd1, 0xf1, 0x78, 0x69, 0x66, 0x2f, 0x25,
-	0xcc, 0xc9, 0x76, 0x81, 0x0a, 0xc4, 0x5b, 0x4c, 0xde, 0x3a, 0x14, 0xa6, 0x20, 0xfd, 0xca, 0x6e,
-	0xa0, 0xd9, 0x11, 0x3f, 0x4e, 0xa1, 0x34, 0xdf, 0x3b, 0xcc, 0xf9, 0x5e, 0x94, 0xed, 0x1e, 0xbe,
-	0x02, 0x00, 0x00, 0xff, 0xff, 0x55, 0x3e, 0xcc, 0x85, 0x4b, 0x01, 0x00, 0x00,
+	0x14, 0x45, 0xd3, 0x42, 0x9c, 0xe4, 0xc1, 0xf4, 0xa6, 0x10, 0x81, 0xa8, 0x2c, 0x86, 0x4c, 0x1e,
+	0xe0, 0x07, 0xc8, 0xc0, 0x80, 0x04, 0x08, 0x85, 0x2f, 0x70, 0x63, 0x53, 0x59, 0x0a, 0x7e, 0x96,
+	0xed, 0x0e, 0xfc, 0x3d, 0x72, 0x4a, 0x09, 0x53, 0xb3, 0xf9, 0xfa, 0x1e, 0xc9, 0xd7, 0x07, 0x2e,
+	0x77, 0x14, 0x82, 0x71, 0xc2, 0x79, 0x8a, 0xc4, 0x0b, 0xc8, 0x9f, 0xbe, 0x5c, 0xfc, 0xe6, 0x2d,
+	0x94, 0x6f, 0xa4, 0xf4, 0xb3, 0xfd, 0x24, 0xbc, 0x86, 0x6a, 0xa4, 0x41, 0x8e, 0x9d, 0x52, 0xbe,
+	0x5e, 0x6d, 0x56, 0x6d, 0xd5, 0xcf, 0x17, 0xfc, 0x11, 0xa0, 0x1b, 0x86, 0x7d, 0x90, 0xd1, 0x90,
+	0xc5, 0x1a, 0x0a, 0x99, 0x92, 0x56, 0xbf, 0xe4, 0x31, 0xce, 0x8d, 0xaf, 0xd7, 0xff, 0x1b, 0xcf,
+	0x01, 0xca, 0x5e, 0x6f, 0xf7, 0x31, 0xca, 0x91, 0xdf, 0xc1, 0xf9, 0xbb, 0xb1, 0xbb, 0x85, 0x37,
+	0x13, 0x45, 0x8b, 0x54, 0x07, 0x79, 0xfa, 0x43, 0x38, 0x8d, 0x61, 0x03, 0xa5, 0x54, 0xca, 0xbf,
+	0x98, 0x10, 0xeb, 0xf5, 0xe6, 0xac, 0xad, 0xfa, 0xbf, 0x7c, 0x3f, 0x00, 0x3b, 0xf8, 0xc1, 0x2b,
+	0x28, 0x5e, 0xc9, 0x9a, 0x48, 0x1e, 0x73, 0x91, 0x26, 0x36, 0xb9, 0x48, 0x1b, 0x78, 0x86, 0xb7,
+	0xc0, 0x26, 0x03, 0x1a, 0x2f, 0xc4, 0xac, 0xa2, 0x61, 0xe2, 0xa0, 0x32, 0xc3, 0x1b, 0x60, 0x1f,
+	0xce, 0x6b, 0xa9, 0xb0, 0x12, 0x47, 0xab, 0x0d, 0x9b, 0x8e, 0x81, 0x67, 0x5b, 0x36, 0xb9, 0x7f,
+	0xf8, 0x09, 0x00, 0x00, 0xff, 0xff, 0xe9, 0x51, 0x87, 0xe2, 0x8b, 0x01, 0x00, 0x00,
 }

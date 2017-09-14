@@ -2,7 +2,7 @@ package communication
 
 
 import (
-	"net"
+	"github.com/joonnna/capstone/protobuf"
 )
 
 func (c *Comm) existConnection(addr string) bool {
@@ -15,7 +15,7 @@ func (c *Comm) existConnection(addr string) bool {
 	return ok
 }
 
-func (c *Comm) getConnection(addr string) net.Conn {
+func (c *Comm) getConnection(addr string) gossip.GossipClient {
 	c.connectionMutex.RLock()
 
 	ret := c.allConnections[addr]
@@ -26,7 +26,7 @@ func (c *Comm) getConnection(addr string) net.Conn {
 }
 
 
-func (c *Comm) addConnection(addr string, conn net.Conn) {
+func (c *Comm) addConnection(addr string, conn gossip.GossipClient) {
 	c.connectionMutex.Lock()
 
 	c.allConnections[addr] = conn

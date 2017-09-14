@@ -1,13 +1,14 @@
 package node
 
 import (
-	"bytes"
-	"encoding/json"
+	_"bytes"
+	_"encoding/json"
 	_"crypto/sha256"
 	_"math/big"
 )
 
 
+/*
 func newMsg(code uint8, payload []byte) ([]byte, error) {
 	msg := &message{
 		Code: code,
@@ -28,7 +29,6 @@ func newMsg(code uint8, payload []byte) ([]byte, error) {
 
 	return buf.Bytes(), nil
 }
-/*
 func idSliceDiff(s1, s2 []*id) []*id {
 	var retSlice []*id
 	m := make(map[string]bool)

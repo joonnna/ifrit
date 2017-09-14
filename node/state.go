@@ -6,7 +6,11 @@ import (
 	"bytes"
 	"net/http"
 	"io"
+	"io/ioutil"
 	"fmt"
+	"net"
+	"os"
+	"strings"
 )
 
 type state struct {
@@ -16,24 +20,51 @@ type state struct {
 	Prev string
 }
 
+func (n *Node) httpHandler() {
+	var l net.Listener
+	var err error
+
+	host, _ := os.Hostname()
+	hostName := strings.Split(host, ".")[0]
+
+	port := 2345
+
+	for {
+		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
+		if err != nil {
+			n.log.Err.Println(err)
+		} else {
+			break
+		}
+		port += 1
+	}
+
+	http.HandleFunc(fmt.Sprintf("%s:%d/shutdownNode", hostName, port), n.shutdownHandler)
+
+	go func() {
+		<-n.exitChan
+		l.Close()
+	}()
+
+	err = http.Serve(l, nil)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+}
+
+func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+	n.ShutDownNode()
+}
+
 
 /* Periodically sends the nodes current state to the state server*/
 func (n *Node) updateState(ringId uint8){
 	client := &http.Client{}
 	s := n.newState(ringId)
 	n.updateReq(s, client)
-
-	/*
-	for {
-		select {
-		case <-n.exitChan:
-			n.log.Info.Println("Exiting state")
-			n.wg.Done()
-			return
-		case <-time.After(time.Second * 5):
-		}
-	}
-	*/
 }
 
 /* Creates a new state */

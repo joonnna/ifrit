@@ -3,17 +3,21 @@ syntax = "proto3";
 service gossip {
     rpc Monitor (Ping) returns (Pong) {}
     rpc Accuse (Accusation) returns (Empty) {}
-    rpc Spread (Nodes) returns (Empty) {}
-    rpc NotDead (Rebuttal) returns (Empty) {}
+    rpc Spread (NodeInfo) returns (Nodes) {}
+    //rpc NotDead (Rebuttal) returns (Empty) {}
 }
 
 message Empty {
 
 }
 
+message NodeInfo {
+    string localAddr = 1;
+}
 
 message Accusation {
-
+    string accused = 1;
+    string accuser = 2;
 }
 
 message Rebuttal {
