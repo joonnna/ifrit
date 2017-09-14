@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+service gossip {
+    rpc Monitor (Ping) returns (Pong) {}
+    rpc Accuse (Accusation) returns (Empty) {}
+    rpc Spread (Nodes) returns (Empty) {}
+    rpc NotDead (Rebuttal) returns (Empty) {}
+}
+
+message Empty {
+
+}
+
+
+message Accusation {
+
+}
+
+message Rebuttal {
+
+}
+
+message Ping {
+    string localAddr = 1;
+}
+
+message Pong {
+    string localAddr = 1;
+}
+
+message Nodes {
+    string localAddr = 1;
+    repeated string addrList = 2;
+}

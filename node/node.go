@@ -7,7 +7,7 @@ import (
 	_"math/big"
 	"bytes"
 	"encoding/json"
-	"github.com/joonnna/capstone/util"
+	"io"
 )
 
 type Node struct {
@@ -15,8 +15,8 @@ type Node struct {
 
 	localAddr string
 
-	live []string
-	liveMutex sync.RWMutex
+	viewMap map[string]*peer
+	viewMutex sync.RWMutex
 
 	ringMap map[uint8]*ring
 
@@ -27,6 +27,9 @@ type Node struct {
 
 	numRings uint8
 
+	gossipTimeout time.Duration
+	monitorTimeout time.Duration
+	viewUpdateTimeout time.Duration
 	/*
 	notes []Notes
 	accusations
@@ -41,53 +44,108 @@ type nodeId struct {
 }
 */
 
+const (
+	pingCode uint8 = 1
+	gossipCode uint8 = 2
+	accusationCode uint8 = 3
+	rebuttalCode uint8 = 4
+)
+
 type message struct {
+	Code uint8
+	Payload []byte
+	/*
+	Operation uint8
 	LocalAddr string
 	AddrSlice []string
+	*/
 }
+
+
 
 
 type Communication interface {
-	Ping(addr string, data []byte) error
-	ReceivePings(cb func(data []byte))
+	SendMsg(addr string, data []byte) error
+	ReceiveMsg(cb func(reader io.Reader))
+	BroadcastMsg(data []byte)
 	ShutDown()
 }
 
-
-func (n *Node) gossip() {
+func (n *Node) gossip () {
 	for {
 		select {
 		case <-n.exitChan:
 			n.log.Info.Println("Exiting gossiping")
 			n.wg.Done()
 			return
-		case <-time.After(time.Second * 5):
-			live := n.getLiveNodes()
-			if len(live) == 0 {
+		case <-time.After(n.gossipTimeout):
+			view := n.getViewAddrs()
+			if len(view) == 0 {
 				continue
 			}
-			allLive := append(live, n.localAddr)
+			fullView := append(view, n.localAddr)
 
-			msg, err := newMsg(n.localAddr, allLive)
+			payload := []byte(&gossip{AddrSlice: view, LocalAddr: n.localAddr})
+
+			msg, err := newMsg(pingCode, payload)
 			if err != nil {
 				n.log.Err.Println(err)
 				continue
 			}
 
-			liveNode := n.getRandomLiveNode()
-			err = n.Communication.Ping(liveNode, msg)
+			peer := n.getRandomViewPeer()
+			err = n.Communication.SendMsg(peer.addr, msg)
 			if err != nil {
 				n.log.Err.Println(err)
-				n.removeLiveNode(liveNode)
-				n.updateState(0)
 			}
 		}
 	}
 }
 
-func (n *Node) receiveGossip(data []byte) {
-	reader := bytes.NewReader(data)
+func (n *Node) monitor () {
+	for {
+		select {
+		case <-n.exitChan:
+			n.log.Info.Println("Stopping monitoring")
+			n.wg.Done()
+			return
+		case <-time.After(n.monitorTimeout):
+		/*
+			msg, err := newMsg(n.localAddr, allLive, ping)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
+		*/
+			for _, ring := range n.ringMap {
+				err = n.Communication.SendMsg(ring.getRingSuccAddr(), []byte("YOU DEAD BRO?"))
+				if err != nil {
+					n.log.Err.Println(err)
+					//n.Communcation.BroadcastMsg(msg)
+				}
+			}
+		}
+	}
+}
 
+func (n *Node) updateView () {
+	for {
+		select {
+		case <-n.exitChan:
+			n.log.Info.Println("Stopping view update")
+			n.wg.Done()
+			return
+		case <-time.After(n.updateViewTimeout):
+			for _, p := range r.viewMap {
+				if p.getAccusation() != nil {
+					n.removePeer(p.addr)
+				}
+			}
+		}
+	}
+}
+
+func (n *Node) receiveTraffic (reader io.Reader) {
 	msg := &message{}
 
 	err := json.NewDecoder(reader).Decode(msg)
@@ -95,25 +153,24 @@ func (n *Node) receiveGossip(data []byte) {
 		n.log.Err.Println(err)
 		return
 	}
+	
+	payloadReader := bytes.NewReader(msg.Payload)
 
-	diff := util.SliceDiff(n.getLiveNodes(), msg.AddrSlice)
-	for _, addr := range diff {
-		if addr == n.localAddr {
-			continue
-		}
-		
-		for id, ring := range n.ringMap {
-			err = ring.add(addr)
-			if err != nil {
-				n.log.Err.Println(err)
-			}
-			n.updateState(id)
-		}
-		n.addLiveNode(addr)
+	switch msg.Code {
+	case ping:
+		break
+	case gossip:
+		n.handleGossip(payloadReader)
+	case accusation:
+		break
+	case rebuttal:
+		break
+	default:
+		n.log.Err.Println("Unknown message received")
 	}
 }
 
-func NewNode(entryAddr string, comm Communication, log *logger.Log, addr string, numRings uint8) *Node {
+func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string, numRings uint8) *Node {
 	var i uint8
 
 	n := &Node{
@@ -124,6 +181,9 @@ func NewNode(entryAddr string, comm Communication, log *logger.Log, addr string,
 		localAddr: addr,
 		ringMap: make(map[uint8]*ring),
 		numRings: numRings,
+		updateTimeout: time.Second * 2,
+		gossipTimeout: time.Second * 3,
+		monitorTimeout: Time.Second * 3,
 	}
 
 	for i = 0; i < numRings; i++ {
@@ -135,17 +195,16 @@ func NewNode(entryAddr string, comm Communication, log *logger.Log, addr string,
 		n.addLiveNode(entryAddr)
 	}
 
-
 	return n
 }
 
-func (n *Node) ShutDownNode() {
+func (n *Node) ShutDownNode () {
 	close(n.exitChan)
 	n.wg.Wait()
 }
 
 
-func (n *Node) Start() {
+func (n *Node) Start () {
 	n.log.Info.Println("Started Node")
 	var i uint8
 
@@ -153,8 +212,10 @@ func (n *Node) Start() {
 		n.add(i)
 	}
 
-	n.wg.Add(2)
+	n.wg.Add(3)
 	go n.gossip()
+	go n.monitor()
+	go n.updateView()
 
 	go func() {
 		<-n.exitChan
@@ -163,5 +224,5 @@ func (n *Node) Start() {
 		n.wg.Done()
 	}()
 
-	n.Communication.ReceivePings(n.receiveGossip)
+	n.Communication.ReceiveMsg(n.receiveTraffic)
 }

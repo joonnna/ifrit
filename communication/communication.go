@@ -9,6 +9,8 @@ import (
 	"errors"
 	"sync"
 	"github.com/joonnna/capstone/logger"
+	"io"
+	"bytes"
 )
 
 const (
@@ -29,7 +31,7 @@ type Comm struct {
 	log *logger.Log
 }
 
-func NewComm(log *logger.Log) *Comm {
+func NewComm (log *logger.Log) *Comm {
 	var l net.Listener
 	var err error
 
@@ -48,7 +50,6 @@ func NewComm(log *logger.Log) *Comm {
 		port += 1
 	}
 
-
 	comm := &Comm{
 		allConnections: make(map[string]net.Conn),
 		localAddr: fmt.Sprintf("%s:%d", hostName, port),
@@ -59,7 +60,41 @@ func NewComm(log *logger.Log) *Comm {
 	return comm
 }
 
-func (c *Comm) Ping(addr string, data []byte) error {
+func (c *Comm) SendMsg (addr string, data []byte) error {
+	return c.sendMsg(addr, data)
+}
+
+func (c *Comm) ReceiveMsg (cb func(reader io.Reader)) {
+	for {
+		conn, err := c.listener.Accept()
+		if err != nil {
+			c.log.Err.Println(err)
+			return
+		}
+
+		go c.handleConn(conn, cb)
+	}
+}
+
+func (c *Comm) BroadcastMsg (addrSlice []string, data []byte) {
+	for _, addr := range addrSlice {
+		_ = c.sendMsg(addr, data)
+	}
+
+}
+
+
+func (c Comm) HostInfo () string {
+	return c.localAddr
+}
+
+
+func (c *Comm) ShutDown () {
+	c.listener.Close()
+}
+
+
+func (c *Comm) sendMsg(addr string, data []byte) error {
 	var conn net.Conn
 	var err error
 
@@ -84,7 +119,7 @@ func (c *Comm) Ping(addr string, data []byte) error {
 }
 
 
-func (c *Comm) dial(addr string) (net.Conn, error) {
+func (c *Comm) dial (addr string) (net.Conn, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		c.log.Err.Println(err)
@@ -96,31 +131,7 @@ func (c *Comm) dial(addr string) (net.Conn, error) {
 	return conn, nil
 }
 
-
-func (c *Comm) ReceivePings(cb func(data []byte)) {
-	for {
-		conn, err := c.listener.Accept()
-		if err != nil {
-			c.log.Err.Println(err)
-			return
-		}
-
-		go c.handleConn(conn, cb)
-	}
-}
-
-func (c Comm) HostInfo() string {
-	return c.localAddr
-}
-
-
-func (c *Comm) ShutDown() {
-	c.listener.Close()
-}
-
-
-
-func (c Comm) handleConn(conn net.Conn, cb func(data []byte)) {
+func (c Comm) handleConn (conn net.Conn, cb func(reader io.Reader)) {
 	data := make([]byte, 2048)
 
 	_, err := conn.Read(data)
@@ -128,6 +139,6 @@ func (c Comm) handleConn(conn net.Conn, cb func(data []byte)) {
 		c.log.Err.Println(err)
 		return
 	} else {
-		cb(data)
+		cb(bytes.NewReader(data))
 	}
 }

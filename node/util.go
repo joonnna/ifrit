@@ -8,10 +8,10 @@ import (
 )
 
 
-func newMsg(localAddr string, addrSlice []string) ([]byte, error) {
+func newMsg(code uint8, payload []byte) ([]byte, error) {
 	msg := &message{
-		AddrSlice: addrSlice,
-		LocalAddr: localAddr,
+		Code: code,
+		Payload: payload,
 	}
 
 	marsh, err := json.Marshal(msg)
