@@ -11,6 +11,8 @@ import (
 var (
 	errSameId = errors.New("Nodes have identical id!?!?!?")
 	errAlreadyExists = errors.New("Node already exists")
+	errRemoveSelf = errors.New("Tried to remove myself from ring?!")
+	errLostSelf = errors.New("Lost track of myself within ring")
 )
 
 type ring struct {
@@ -30,6 +32,16 @@ type ringId struct {
 	nodeId string
 	id *big.Int
 }
+
+func (i *ringId) isSameAddr(target *ringId) bool {
+	return i.nodeId == target.nodeId
+}
+
+
+func (i *ringId) cmpId(target *ringId) int {
+	return i.id.Cmp(target.id)
+}
+
 
 func newRing(ringNum uint8, localId string) *ring {
 	id := genRingId(ringNum, localId)
@@ -75,12 +87,39 @@ func (r *ring) add (newId string) error {
 
 	r.existsMap[newId] = true
 
+	if !r.succList[r.ownIdx].isSameAddr(r.localRingId) {
+		return errLostSelf
+	}
+
 	return nil
 }
 
-func (r *ring) remove (newId string) {
+func (r *ring) remove (addr string) error {
 	r.ringMutex.Lock()
 	defer r.ringMutex.Unlock()
+
+	id := newRingId(genRingId(r.ringNum, addr), addr)
+
+	idx, err := search(r.succList, id)
+	if err != nil {
+		return err
+	}
+	
+	r.existsMap[addr] = false
+	
+	if idx < r.ownIdx {
+		r.ownIdx -= 1
+	} else if idx == r.ownIdx {
+		return errRemoveSelf
+	}
+	
+	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
+	
+	if !r.succList[r.ownIdx].isSameAddr(r.localRingId) {
+		return errLostSelf
+	}
+
+	return nil
 }
 
 
@@ -103,46 +142,3 @@ func newRingId (id *big.Int, nodeId string) *ringId {
 		id: id,
 	}
 }
-/*
-func isBetween(currNext *big.Int, newId *big.Int, localId *big.Int) bool {
-	if currNext.Cmp(localId) == 1 {
-		if newId.Cmp(currNext) == -1 && newId.Cmp(localId) == 1 {
-			return true
-		} else {
-			return false
-		}
-	} else if currNext.Cmp(localId) == -1 {
-		if newId.Cmp(currNext) == 1 && newId.Cmp(localId) == -1 {
-			return true
-		} else {
-			return false
-		}
-	}
-	return false
-}
-
-func (r *ring) checkHighestLowest(newId *ringId) {
-	if r.highestId.id.Cmp(newId.id) == -1 {
-		r.highestId = newId
-	} else if r.lowestId.id.Cmp(newId.id) == 1 {
-		r.lowestId = newId
-	}
-}
-
-func (r *ring) isLowest(id *big.Int) bool {
-	if r.lowestId.id.Cmp(id) == 1 {
-		return true
-	} else {
-		return false
-	}
-}
-
-
-func (r *ring) isHighest(id *big.Int) bool {
-	if r.highestId.id.Cmp(id) == -1 {
-		return true
-	} else {
-		return false
-	}
-}
-*/

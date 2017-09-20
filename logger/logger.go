@@ -2,9 +2,8 @@ package logger
 
 import (
 	"log"
-	"os"
-	"strings"
 	"fmt"
+	"os"
 )
 
 type Log struct {
@@ -14,10 +13,7 @@ type Log struct {
 }
 
 
-func CreateLogger() *Log {
-	host, _ := os.Hostname()
-	hostName := strings.Split(host, ".")[0]
-
+func CreateLogger(hostName string) *Log {
 	errPrefix := fmt.Sprintf("\x1b[31m %s \x1b[0m", hostName)
 	infoPrefix := fmt.Sprintf("\x1b[32m %s \x1b[0m", hostName)
 	debugPrefix := fmt.Sprintf("\x1b[33m %s \x1b[0m", hostName)

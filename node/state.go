@@ -11,6 +11,9 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"github.com/rs/cors"
+	"github.com/gorilla/mux"
 )
 
 type state struct {
@@ -18,9 +21,10 @@ type state struct {
 	//Neighbours []string
 	Next string
 	Prev string
+	HttpAddr string
 }
 
-func (n *Node) httpHandler() {
+func (n *Node) httpHandler(c chan bool) {
 	var l net.Listener
 	var err error
 
@@ -38,15 +42,22 @@ func (n *Node) httpHandler() {
 		}
 		port += 1
 	}
-
-	http.HandleFunc(fmt.Sprintf("%s:%d/shutdownNode", hostName, port), n.shutdownHandler)
+	
+	r := mux.NewRouter()
+	r.HandleFunc("/shutdownNode", n.shutdownHandler)
+	
+	n.httpAddr = fmt.Sprintf("http://%s:%d/shutdownNode", hostName, port)
 
 	go func() {
 		<-n.exitChan
 		l.Close()
 	}()
+	
+	close(c)
 
-	err = http.Serve(l, nil)
+	handler := cors.Default().Handler(r)
+	
+	err = http.Serve(l, handler)
 	if err != nil {
 		n.log.Err.Println(err)
 		return
@@ -54,8 +65,19 @@ func (n *Node) httpHandler() {
 }
 
 func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("HEI SATAN DADASBDASD")
+	/*
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+ 	w.Header().Add("Access-Control-Allow-Methods", "GET") 
+ 	w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
+	*/
+
+
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
+	
+	n.log.Info.Println("Received shutdown request!")
+
 	n.ShutDownNode()
 }
 
@@ -92,6 +114,7 @@ func (n *Node) newState(ringId uint8) io.Reader {
 		//Neighbours: n.getNeighbourAddrs(),
 		Next: nextId,
 		Prev: prevId,
+		HttpAddr: n.httpAddr,
 	}
 
 	buff := new(bytes.Buffer)
@@ -138,7 +161,7 @@ func (n *Node) add(ringId uint8) {
 
 func (n *Node) remove(ringId uint8) {
 	r := n.newState(ringId)
-	req, err := http.NewRequest("POST", "http://129.242.22.74:7560/remove", r)
+	req, err := http.NewRequest("POST", "http://localhost:8080/remove", r)
 	if err != nil {
 		n.log.Err.Println(err)
 	}

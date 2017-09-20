@@ -18,9 +18,10 @@ func StartClient(entryAddr string) *Client {
 	var numRings uint8
 	numRings = 3
 
-	logger := logger.CreateLogger()
+	comm := communication.NewComm()
 
-	comm := communication.NewComm(logger)
+	logger := logger.CreateLogger(comm.HostInfo())
+	comm.SetLogger(logger)
 
 	client := &Client{
 		node: node.NewNode(entryAddr, comm, logger, comm.HostInfo(), numRings),

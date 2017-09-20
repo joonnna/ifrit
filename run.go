@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -26,6 +27,10 @@ func main() {
 		c = client.StartClient(entryPoint)
 		clientList = append(clientList, c)
 	}
+
+	time.Sleep(30 * time.Second)
+
+	clientList[0].ShutDownClient()
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

@@ -3,8 +3,8 @@ package node
 import (
 	"sync"
 	"time"
+
 	"github.com/joonnna/capstone/logger"
-	"github.com/joonnna/capstone/util"
 	"github.com/joonnna/capstone/protobuf"
 )
 
@@ -16,33 +16,43 @@ type Node struct {
 	viewMap map[string]*peer
 	viewMutex sync.RWMutex
 
+	liveMap map[string]*peer
+	liveMutex sync.RWMutex
+
+	timeoutMap map[string]*timeout
+	timeoutMutex sync.RWMutex
+
+	//Read only, don't need mutex
 	ringMap map[uint8]*ring
+	numRings uint8
 
 	wg *sync.WaitGroup
 	exitChan chan bool
 
 	Communication
 
-	numRings uint8
-
 	gossipTimeout time.Duration
 	monitorTimeout time.Duration
 	viewUpdateTimeout time.Duration
+	nodeDeadTimeout float64
 
-	/*
-	notes []Notes
-	accusations
-	timeouts
-	*/
+	epoch uint64
+
+	httpAddr string
 }
 
 type Communication interface {
 	ShutDown()
 	Register(g gossip.GossipServer)
 	Start() error
-	Gossip(addr string, args *gossip.NodeInfo) (*gossip.Nodes, error)
+	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
-	Accuse(addrList []string, args *gossip.Accusation) (*gossip.Empty, error)
+}
+
+type timeout struct {
+	observer string
+	lastNote *note
+	timeStamp time.Time
 }
 
 func (n *Node) gossipLoop () {
@@ -53,21 +63,17 @@ func (n *Node) gossipLoop () {
 			n.wg.Done()
 			return
 		case <-time.After(n.gossipTimeout):
-			peer := n.getRandomViewPeer()
-			args := &gossip.NodeInfo{LocalAddr: n.localAddr}
+			notes, accusations := n.collectGossipContent()
+			args := &gossip.GossipMsg{Notes: notes, Accusations: accusations}
 
-			r, err := n.Communication.Gossip(peer.addr, args)
-			if err != nil {
-				n.log.Err.Println(err)
-				continue
-			}
+			neighbours := n.getNeighbours()
 
-			diff := util.SliceDiff(n.getViewAddrs(), r.GetAddrList())
-			for _, addr := range diff {
-				if addr == n.localAddr {
+			for _, addr := range neighbours {
+				_, err := n.Communication.Gossip(addr, args)
+				if err != nil {
+					n.log.Err.Println(err)
 					continue
 				}
-				n.addViewPeer(addr)
 			}
 		}
 	}
@@ -90,25 +96,17 @@ func (n *Node) monitor () {
 					continue
 				}
 
-				//TODO validate reply
+				//TODO maybe udp? only add accusation
 				_, err = n.Communication.Monitor(succ.nodeId, msg)
 				if err != nil {
-					n.log.Info.Println("%s is dead, accusing", succ.nodeId)
-					accuseMsg := &gossip.Accusation {
-						Accuser: n.localAddr,
-						Accused: succ.nodeId,
-					}
-
-					p, err := n.getViewPeer(succ.nodeId)
-					if err == nil {
-						p.addAccusation(n.localAddr)
-					}
-					
-					//TODO validate reply
-					_, err = n.Communication.Accuse(n.getViewAddrs(), accuseMsg)
-					if err != nil {
-						n.log.Err.Println(err)
-						continue
+					n.log.Info.Printf("%s is dead, accusing", succ.nodeId)
+					p := n.getViewPeer(succ.nodeId)
+					if p != nil {
+						peerNote := p.getNote()
+						p.setAccusation(n.localAddr, peerNote)
+						if !n.timerExist(p.addr) {
+							n.startTimer(p.addr, peerNote, n.localAddr)
+						}
 					}
 				}
 			}	
@@ -116,22 +114,79 @@ func (n *Node) monitor () {
 	}
 }
 
-func (n *Node) updateView () {
+func (n *Node) checkTimeouts () {
 	for {
 		select {
 		case <-n.exitChan:
 			n.log.Info.Println("Stopping view update")
 			n.wg.Done()
 			return
+		//TODO only check timeout set?
 		case <-time.After(n.viewUpdateTimeout):
-			view := n.getView()
-			for _, p := range view {
-				if p.getAccusation() != nil {
-					n.removePeer(p.addr)
+			timeouts := n.getAllTimeouts()
+			for addr, t := range timeouts {
+				n.log.Debug.Println("Have timeout for:", addr)
+				since := time.Since(t.timeStamp)
+				if since.Seconds() > n.nodeDeadTimeout {
+					n.log.Debug.Printf("%s timeout expired, removing from live", addr)
+					n.deleteTimeout(addr)
+					n.removeLivePeer(addr)
 				}
 			}
 		}
 	}
+}
+
+func (n *Node) collectGossipContent() (map[string] *gossip.Note, map[string] *gossip.Accusation) {
+	noteMap := make(map[string]*gossip.Note)
+	accuseMap := make(map[string]*gossip.Accusation)
+
+	view := n.getView() 
+
+	for _, p := range view {
+		peerNote := p.getNote()
+		peerAccuse := p.getAccusation()
+
+		noteEntry := &gossip.Note {
+			Epoch: peerNote.epoch,
+			Addr: p.addr,
+			Mask: peerNote.mask,
+		}
+
+		if peerAccuse != nil {
+			//n.log.Debug.Println("Have accusation for: ", p.addr) 
+			accuseEntry := &gossip.Accusation {
+				Accuser: peerAccuse.accuser,
+				RecentNote: noteEntry,
+			}
+			accuseMap[p.addr] = accuseEntry
+		}
+
+		noteMap[p.addr] = noteEntry
+	}
+	/*
+	for addr, _ := range accuseMap {
+		//n.log.Debug.Println("Gossiping accusation for:", addr)
+	}
+	*/
+
+	noteMap[n.localAddr] = &gossip.Note {
+		Epoch: n.epoch,
+		Addr: n.localAddr,
+	}
+
+	return noteMap, accuseMap
+}
+
+
+
+func (n *Node) checkAccusation(addr string) *accusation {
+	p := n.getViewPeer(addr)
+	if p == nil {
+		return nil
+	}
+
+	return p.getAccusation()
 }
 
 
@@ -147,9 +202,12 @@ func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string
 		ringMap: make(map[uint8]*ring),
 		numRings: numRings,
 		viewMap: make(map[string]*peer),
+		liveMap: make(map[string]*peer),
+		timeoutMap: make(map[string]*timeout),
 		viewUpdateTimeout: time.Second * 2,
 		gossipTimeout: time.Second * 3,
 		monitorTimeout: time.Second * 3,
+		nodeDeadTimeout: 5.0,
 	}
 
 	n.Communication.Register(n)
@@ -159,15 +217,22 @@ func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string
 	}
 
 	if entryAddr != "" {
-		n.addViewPeer(entryAddr)
+		newNote := createNote(0, "")
+		p := newPeer(entryAddr, newNote)
+		n.addViewPeer(p)
+		n.addLivePeer(p)
 	}
 
 	return n
 }
 
 func (n *Node) ShutDownNode () {
+	for i,_ := range n.ringMap {
+		n.remove(i)
+	}
 	close(n.exitChan)
 	n.wg.Wait()
+
 }
 
 
@@ -175,16 +240,21 @@ func (n *Node) Start () {
 	n.log.Info.Println("Started Node")
 	var i uint8
 
-	for i = 0; i < n.numRings; i++ {
-		n.add(i)
-	}
-
+	done := make(chan bool)
+	
 	go n.Communication.Start()
 	n.wg.Add(3)
 	go n.gossipLoop()
 	go n.monitor()
-	go n.updateView()
-	go n.httpHandler()
+	go n.checkTimeouts()
+	go n.httpHandler(done)
+
+	<-done
+	for i = 0; i < n.numRings; i++ {
+		n.add(i)
+	}
+
+
 
 	<-n.exitChan
 	n.Communication.ShutDown()

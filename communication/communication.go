@@ -34,7 +34,7 @@ type Comm struct {
 	log *logger.Log
 }
 
-func NewComm (log *logger.Log) *Comm {
+func NewComm () *Comm {
 	var l net.Listener
 	var err error
 
@@ -45,9 +45,7 @@ func NewComm (log *logger.Log) *Comm {
 
 	for {
 		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
-		if err != nil {
-			log.Err.Println(err)
-		} else {
+		if err == nil {
 			break
 		}
 		port += 1
@@ -57,12 +55,16 @@ func NewComm (log *logger.Log) *Comm {
 		allConnections: make(map[string]gossip.GossipClient),
 		localAddr: fmt.Sprintf("%s:%d", hostName, port),
 		listener: l,
-		log: log,
 		rpcServer: grpc.NewServer(),
 	}
 
 	return comm
 }
+
+func (c *Comm) SetLogger(log *logger.Log) {
+	c.log = log
+}
+
 
 func (c *Comm) Register(g gossip.GossipServer) {
 	gossip.RegisterGossipServer(c.rpcServer, g)
@@ -99,7 +101,7 @@ func (c *Comm) dial (addr string) (gossip.GossipClient, error) {
 	return client, nil
 }
 
-func (c *Comm) Gossip (addr string, args *gossip.NodeInfo) (*gossip.Nodes, error) {
+func (c *Comm) Gossip (addr string, args *gossip.GossipMsg) (*gossip.Empty, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err
@@ -107,6 +109,7 @@ func (c *Comm) Gossip (addr string, args *gossip.NodeInfo) (*gossip.Nodes, error
 
 	r, err := client.Spread(context.Background(), args)
 	if err != nil {
+		c.removeConnection(addr)
 		return nil, err
 	}
 
@@ -121,39 +124,21 @@ func (c *Comm) Monitor (addr string, args *gossip.Ping) (*gossip.Pong, error) {
 
 	r, err := client.Monitor(context.Background(), args)
 	if err != nil {
+		c.removeConnection(addr)
 		return nil, err
 	}
 
 	return r, nil
 }
 
-
-func (c *Comm) Accuse (addrList []string, args *gossip.Accusation) (*gossip.Empty, error) {
-	var r *gossip.Empty
-
-	for _, addr := range addrList {
-		client, err := c.getClient(addr)
-		if err != nil {
-			continue
-		}
-
-		r, err = client.Accuse(context.Background(), args)
-		if err != nil {
-			continue
-		}
-	}
-	return r, nil
-}
-
-
-func (c *Comm) getClient (addr string) (gossip.GossipClient, error) {
+func (c *Comm) getClient(addr string) (gossip.GossipClient, error) {
 	var client gossip.GossipClient
 	var err error
 
 	if !c.existConnection(addr) {
 		client, err = c.dial(addr)
 		if err != nil {
-			return client, err
+			return nil, err
 		}
 	} else {
 		client = c.getConnection(addr)

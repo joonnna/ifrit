@@ -52,9 +52,8 @@ dispatcher.onPost("/add", function(req, res) {
 });
 
 dispatcher.onPost("/remove", function(req, res) {
-    console.log(req)
     var obj = JSON.parse( req.body );
-
+    console.log(obj)
     io.emit('remove', {data: obj})
     res.writeHead(200, {'Content-Type': 'text/plain'});
     res.end()

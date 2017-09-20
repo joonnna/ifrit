@@ -21,14 +21,18 @@
         </style>
         <link src="www.visjs.org/dist/vis.css" rel="stylesheet" type="text/css"/>
         <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
         <script type="text/javascript"  src="http://visjs.org/dist/vis.js"> </script>
     </head>
     </body>
+    <input type="button" value="Add Node" id="addNode">
+    <input type="button" value="Shutdown node" id="shutdownNode">
+    <input type="button" value="Crash segment" id="crashNode">
+    <input type="button" value="Corrupt a segment" id="corruptNode">
     <div id="mynetwork">
         <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
     </div>
     <script type="text/javascript">
-var request = require('request');
 var dataset = new vis.DataSet([])
 var singleEdges = new vis.DataSet([])
 var edges = new vis.DataSet([])
@@ -36,7 +40,7 @@ var edges = new vis.DataSet([])
     var nodata = true
     socket.on('add', function(message) {
         var id = message.data.ID
-        dataset.add([{id: id, label: id}]);
+        dataset.add([{id: id, label: id, http: message.data.HttpAddr}]);
         //message.data.Neighbours.forEach(function(value){
         //    addEdge(id, value)
         //});
@@ -46,7 +50,6 @@ var edges = new vis.DataSet([])
         //         {id: nextid, from: message.data.ID, to: message.data.Next},
                 //{id: previd, from: message.data.ID, to: message.data.Prev},
         //    ]);
-        console.log(edges)
             if (nodata) {
                 init()
             }
@@ -69,7 +72,7 @@ socket.on('update', function(message) {
     nextid = message.data.ID + "next"
     previd = message.data.ID + "prev"
     edges.update({id: nextid, from: message.data.ID, to: message.data.Next})
-    edges.update({id: previd, from: message.data.ID, to: message.data.Prev})
+    edges.update({id: previd, from: message.data.ID, to: message.data.Prev, color: "red"})
 });
 
 function init() {
@@ -95,18 +98,81 @@ function init() {
         }
     };
     var network = new vis.Network(container, data, options)
-        network.on( 'click', function(properties) {
-            var ids = properties.nodes;
-            var clickedNodes = nodes.get(ids);
-            clickedNodes.ForEach(function(val) {
-                var addr = val.id.split("|")[0];
-                var fullAddr = "http//" + addr + "/shutdownNode
-                request.post(fullAddr);
-            });
-            console.log('clicked nodes:', clickedNodes);
+    /*
+    network.on( 'click', function(properties) {
+        var ids = properties.nodes;
+        var clickedNodes = nodes.get(ids);
+        clickedNodes.ForEach(function(val) {
+            var addr = val.id.split("|")[0];
+            var fullAddr = "http//" + addr + "/shutdown
+            request.post()
         });
+        console.log('clicked nodes:', clickedNodes);
+    });
+    */
 
 }
+/*
+$('input').on('click', 'shutdownNode',function (dataset) {
+    var Status = $(this).val();
+    $.ajax({
+        url: 'http://' + addr,
+        type: 'POST'
+        //data: {
+        //    text: $("textarea[name=Status]").val(),
+        //    Status: Status
+        //},
+       // dataType : 'json'
+    });
+});
+*/
+
+function shutdown() {
+    console.log("Here we aree!!!!!");
+    var randomNodes = dataset.distinct("http");
+    console.log(randomNodes.length);
+    if (randomNodes.length === 0) {
+        console.log("YEEEEE");
+        return
+    }
+    var randomNode = randomNodes[0];
+    console.log(randomNode);
+    var x = new XMLHttpRequest();
+    x.open('GET', randomNode, true);
+    x.send(null);
+    /*
+    $.get(randomNode).done(function(data) {
+        console.log(data)
+    });
+    */
+    /*
+    $.ajax({
+        url: randomNode,
+        dataType: 'text',
+        type: 'GET',
+        crossDomain: true,
+        withCredentials: true,
+        error: function(err) {
+            console.log(err.statusCode());
+        },
+        success: function(data) {
+            console.log("success");
+        }
+        //data: {
+        //    text: $("textarea[name=Status]").val(),
+        //    Status: Status
+        //},
+       // dataType : 'json'
+    });
+    */
+}
+
+
+var shutdownButton = document.getElementById('shutdownNode');
+shutdownButton.onclick = function() {shutdown();};
+
+
+
 
 function addEdge(id, destination) {
     var newEdge = id.concat(destination)

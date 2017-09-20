@@ -2,9 +2,15 @@ package node
 
 
 import (
-	"math/big"
+	_"math/big"
 	_"fmt"
+	"errors"
 )
+
+var (
+	errIdNotFound = errors.New("ring id not found")
+)
+
 
 func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
 	length := len(slice)
@@ -21,7 +27,7 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
 			slice = append(slice, nil)
 			copy(slice[currIdx+1:], slice[currIdx:])
 
-			if slice[currIdx].id.Cmp(newId.id) == -1 {
+			if slice[currIdx].cmpId(newId) == -1 {
 				currIdx += 1
 			}
 			slice[currIdx] = newId
@@ -30,7 +36,7 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
 		}
 		mid := (currIdx + maxIdx) / 2
 
-		if slice[mid].id.Cmp(newId.id) == -1 {
+		if slice[mid].cmpId(newId) == -1 {
 			currIdx = mid + 1
 		} else {
 			maxIdx = mid - 1
@@ -39,12 +45,30 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
 }
 
 
-func test(input []*ringId, num *big.Int) int {
-	var idx int
-	for idx, val := range input {
-		if val.id.Cmp(num) == -1 {
-			return idx
+func search (slice []*ringId, searchId *ringId) (int, error) {
+	length := len(slice)
+	currIdx := 0
+	maxIdx := length - 1
+
+	for {
+		if currIdx >= maxIdx {
+			if slice[currIdx].cmpId(searchId) == 0 {
+				return currIdx, nil
+			} else {
+				return -1, errIdNotFound
+			}
+
+		}
+		mid := (currIdx + maxIdx) / 2
+
+		cmp := slice[mid].cmpId(searchId)
+
+		if cmp == -1 {
+			currIdx = mid + 1
+		} else if cmp == 1 {
+			maxIdx = mid - 1
+		} else {
+			return mid, nil
 		}
 	}
-	return idx
 }
