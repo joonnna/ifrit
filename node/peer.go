@@ -7,11 +7,6 @@ import (
 
 
 type peer struct {
-	/*
-	notes map[uint64]*note
-	lastNote uint64
-	*/
-
 	noteMutex sync.RWMutex
 	recentNote *note
 
@@ -24,31 +19,34 @@ type peer struct {
 type note struct {
 	epoch uint64
 	mask string
+	addr string
 	//TODO signature...
 }
 
 type accusation struct {
 	recentNote *note
 	accuser string //TODO certificates...
+	noteMutex sync.RWMutex
 }
 
-func newPeer (addr string, recentNote *note) *peer {
+func newPeer (recentNote *note) *peer {
 	return &peer {
-		addr: addr, 
+		addr: recentNote.addr,
 		recentNote: recentNote,
 	}
 }
 
-func createNote (epoch uint64, mask string) *note {
+func createNote (addr string, epoch uint64, mask string) *note {
 	return &note{
+		addr: addr,
 		epoch: epoch,
 		mask: mask,
 	}
 }
 
 func (p *peer) setAccusation (accuser string, recentNote *note) {
-	p.accuseMutex.Lock()	
-	defer p.accuseMutex.Unlock()	
+	p.accuseMutex.Lock()
+	defer p.accuseMutex.Unlock()
 
 	if p.accusation == nil || p.accusation.recentNote.epoch < recentNote.epoch {
 		a := &accusation {
@@ -59,16 +57,24 @@ func (p *peer) setAccusation (accuser string, recentNote *note) {
 	}
 }
 
+func (p *peer) removeAccusation() {
+	p.accuseMutex.Lock()
+	defer p.accuseMutex.Unlock()
+
+	p.accusation = nil
+}
+
+
 func (p *peer) getAccusation() *accusation {
-	p.accuseMutex.RLock()	
-	defer p.accuseMutex.RUnlock()	
-	
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
 	return p.accusation
 }
 
 func (p *peer) setNote(newNote *note) {
-	p.noteMutex.Lock()	
-	defer p.noteMutex.Unlock()	
+	p.noteMutex.Lock()
+	defer p.noteMutex.Unlock()
 
 	if p.recentNote == nil || p.recentNote.epoch < newNote.epoch {
 		p.recentNote = newNote
@@ -76,35 +82,32 @@ func (p *peer) setNote(newNote *note) {
 }
 
 func (p *peer) getNote() *note {
-	p.noteMutex.RLock()	
-	defer p.noteMutex.RUnlock()	
-	
+	p.noteMutex.RLock()
+	defer p.noteMutex.RUnlock()
+
 	return p.recentNote
 }
+
+
+func (a *accusation) setNote(newNote *note) {
+	a.noteMutex.Lock()
+	defer a.noteMutex.Unlock()
+
+	if a.recentNote == nil || a.recentNote.epoch < newNote.epoch {
+		a.recentNote = newNote
+	}
+}
+
+func (a *accusation) getNote() *note {
+	a.noteMutex.RLock()
+	defer a.noteMutex.RUnlock()
+
+	return a.recentNote
+}
+
+
+
 
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch
 }
-
-/*
-func (p *peer) isRecentNote(epoch uint64) bool {
-	p.noteMutex.RLock()	
-	defer p.noteMutex.RUnlock()	
-	
-	if p.recentNote == nil {
-		return true
-	}
-	return p.recentNote.epoch < epoch
-}
-
-func (p *peer) isRecentAccusation(epoch uint64) bool {
-	p.accuseMutex.RLock()	
-	defer p.accuseMutex.RUnlock()	
-
-	if p.accusation == nil {
-		return true
-	}
-	return p.accusation.recentNote.epoch < epoch
-}
-*/
-

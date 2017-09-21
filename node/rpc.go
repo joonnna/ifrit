@@ -35,56 +35,85 @@ func (n *Node) Monitor (ctx context.Context, args *gossip.Ping) (*gossip.Pong, e
 }
 
 func (n *Node) mergeNotes(notes map[string]*gossip.Note) {
-	for addr, val := range notes {
-		newNote := createNote(val.GetEpoch(), val.GetMask())
-		currPeer := n.getViewPeer(addr)
-		if currPeer == nil {
-			p := newPeer(addr, newNote)
-			n.addViewPeer(p)
-			n.addLivePeer(p)
-		} else {
-			currNote := currPeer.getNote()
-			if currNote == nil || currNote.isMoreRecent(newNote.epoch) {
-				currPeer.setNote(newNote)
-			}
+	for _, newNote:= range notes {
+		if newNote.GetAddr() == n.localAddr {
+			continue
 		}
-		
-
-		/*
-		else if currPeer.isRecentNote(val.GetEpoch()) {
-			currPeer.setNote(newNote)
-		}
-		*/
+		n.evalNote(newNote)
 	}
 }
 
 func (n *Node) mergeAccusations(accusations map[string]*gossip.Accusation) {
-	for addr, val := range accusations {
-		//n.log.Debug.Println("Got accusation for:", addr)
-		if addr == n.localAddr {
-			//TODO rebbuttal shit note.epoch += 1?
-			continue
+	for _, acc := range accusations {
+		n.evalAccusation(acc)
+	}
+}
+
+func (n *Node) evalAccusation(a *gossip.Accusation) {
+	note := a.GetRecentNote()
+	accuser := a.GetAccuser()
+	accused := note.GetAddr()
+	newEpoch := note.GetEpoch()
+	mask := note.GetMask()
+
+	//Rebuttal, TODO only gossip own note, not all?
+	if accused == n.localAddr {
+		n.setEpoch((newEpoch + 1))
+		n.getProtocol().Gossip(n)
+		return
+	}
+
+	p := n.getViewPeer(accused)
+	if p != nil {
+		peerAccuse := p.getAccusation()
+		if peerAccuse == nil || peerAccuse.recentNote.isMoreRecent(newEpoch) {
+			newNote := createNote(p.addr, newEpoch, mask)
+
+			n.log.Debug.Println("Added accusation for: ", p.addr)
+			p.setAccusation(accuser, newNote)
+
+			if !n.timerExist(p.addr) {
+				n.log.Debug.Println("Started timer for: ", p.addr)
+				n.startTimer(p.addr, newNote, accuser)
+			}
 		}
-		currPeer := n.getViewPeer(addr)
-		if currPeer != nil {
-			accuseNote := val.GetRecentNote()
-			newEpoch := accuseNote.GetEpoch()
-			
-			newNote := createNote(newEpoch, accuseNote.GetMask())
-			accuse := currPeer.getAccusation() 
-			if accuse == nil || accuse.recentNote.isMoreRecent(newEpoch) {
-				n.log.Debug.Println("Added accusation for: ", currPeer.addr)
-				currPeer.setAccusation(val.GetAccuser(), newNote)
+	}
+}
 
-				n.log.Debug.Println("Started timer for: ", currPeer.addr)
-				n.startTimer(currPeer.addr, newNote, val.GetAccuser())
-			}
+func (n *Node) evalNote(gossipNote *gossip.Note) {
+	newEpoch := gossipNote.GetEpoch()
+	addr := gossipNote.GetAddr()
+	mask := gossipNote.GetMask()
 
-			/*
-			if currPeer.isRecentAccusation(newEpoch) {
-				currPeer.setAccusation(val.GetAccuser(), newNote)
+	newNote := createNote(addr, newEpoch, mask)
+
+	p := n.getViewPeer(addr)
+
+	//Unseen peer, need to add to both live/view
+	if p == nil {
+		newPeer := newPeer(newNote)
+		n.addViewPeer(newPeer)
+		n.addLivePeer(newPeer)
+	} else {
+		peerAccuse := p.getAccusation()
+
+		//Not accused, only check if newnote is more recent
+		if peerAccuse == nil {
+			currNote := p.getNote()
+
+			//Want to store the most recent note
+			if currNote == nil || currNote.isMoreRecent(newNote.epoch) {
+				p.setNote(newNote)
 			}
-			*/
+		} else {
+			accuseNote := peerAccuse.getNote()
+
+			//Peer is accused, need to check if this note invalidates accusation
+			if accuseNote.isMoreRecent(newNote.epoch) {
+				n.log.Info.Println("Rebuttal received for:", p.addr)
+				p.removeAccusation()
+				n.deleteTimeout(p.addr)
+			}
 		}
 	}
 }

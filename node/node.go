@@ -7,11 +7,19 @@ import (
 	"github.com/joonnna/capstone/logger"
 	"github.com/joonnna/capstone/protobuf"
 )
+const (
+	NormalProtocol = 1
+	SpamAccusationsProtocol = 2
+)
 
 type Node struct {
 	log *logger.Log
 
 	localAddr string
+
+	protocol
+	protocolMutex sync.RWMutex
+
 
 	viewMap map[string]*peer
 	viewMutex sync.RWMutex
@@ -37,16 +45,24 @@ type Node struct {
 	nodeDeadTimeout float64
 
 	epoch uint64
+	epochMutex sync.RWMutex
+
 
 	httpAddr string
 }
 
 type Communication interface {
+	HostInfo() string
 	ShutDown()
 	Register(g gossip.GossipServer)
 	Start() error
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
+}
+
+type protocol interface {
+	Monitor(n *Node)
+	Gossip(n *Node)
 }
 
 type timeout struct {
@@ -63,18 +79,7 @@ func (n *Node) gossipLoop () {
 			n.wg.Done()
 			return
 		case <-time.After(n.gossipTimeout):
-			notes, accusations := n.collectGossipContent()
-			args := &gossip.GossipMsg{Notes: notes, Accusations: accusations}
-
-			neighbours := n.getNeighbours()
-
-			for _, addr := range neighbours {
-				_, err := n.Communication.Gossip(addr, args)
-				if err != nil {
-					n.log.Err.Println(err)
-					continue
-				}
-			}
+			n.getProtocol().Gossip(n)
 		}
 	}
 }
@@ -87,29 +92,7 @@ func (n *Node) monitor () {
 			n.wg.Done()
 			return
 		case <-time.After(n.monitorTimeout):
-			msg := &gossip.Ping{}
-			
-			for _, ring := range n.ringMap {
-				succ, err :=  ring.getRingSucc()
-				if err != nil {
-					n.log.Err.Println(err)
-					continue
-				}
-
-				//TODO maybe udp? only add accusation
-				_, err = n.Communication.Monitor(succ.nodeId, msg)
-				if err != nil {
-					n.log.Info.Printf("%s is dead, accusing", succ.nodeId)
-					p := n.getViewPeer(succ.nodeId)
-					if p != nil {
-						peerNote := p.getNote()
-						p.setAccusation(n.localAddr, peerNote)
-						if !n.timerExist(p.addr) {
-							n.startTimer(p.addr, peerNote, n.localAddr)
-						}
-					}
-				}
-			}	
+			n.getProtocol().Monitor(n)
 		}
 	}
 }
@@ -121,7 +104,6 @@ func (n *Node) checkTimeouts () {
 			n.log.Info.Println("Stopping view update")
 			n.wg.Done()
 			return
-		//TODO only check timeout set?
 		case <-time.After(n.viewUpdateTimeout):
 			timeouts := n.getAllTimeouts()
 			for addr, t := range timeouts {
@@ -141,7 +123,7 @@ func (n *Node) collectGossipContent() (map[string] *gossip.Note, map[string] *go
 	noteMap := make(map[string]*gossip.Note)
 	accuseMap := make(map[string]*gossip.Accusation)
 
-	view := n.getView() 
+	view := n.getView()
 
 	for _, p := range view {
 		peerNote := p.getNote()
@@ -154,7 +136,6 @@ func (n *Node) collectGossipContent() (map[string] *gossip.Note, map[string] *go
 		}
 
 		if peerAccuse != nil {
-			//n.log.Debug.Println("Have accusation for: ", p.addr) 
 			accuseEntry := &gossip.Accusation {
 				Accuser: peerAccuse.accuser,
 				RecentNote: noteEntry,
@@ -164,11 +145,6 @@ func (n *Node) collectGossipContent() (map[string] *gossip.Note, map[string] *go
 
 		noteMap[p.addr] = noteEntry
 	}
-	/*
-	for addr, _ := range accuseMap {
-		//n.log.Debug.Println("Gossiping accusation for:", addr)
-	}
-	*/
 
 	noteMap[n.localAddr] = &gossip.Note {
 		Epoch: n.epoch,
@@ -178,19 +154,31 @@ func (n *Node) collectGossipContent() (map[string] *gossip.Note, map[string] *go
 	return noteMap, accuseMap
 }
 
+func (n *Node) setProtocol(protocol int) {
+	n.protocolMutex.Lock()
+	defer n.protocolMutex.Unlock()
 
-
-func (n *Node) checkAccusation(addr string) *accusation {
-	p := n.getViewPeer(addr)
-	if p == nil {
-		return nil
+	switch protocol {
+	case NormalProtocol:
+		n.protocol = correct{}
+	case SpamAccusationsProtocol:
+		n.protocol = spamAccusations{}
+	default:
+		n.protocol = correct{}
 	}
-
-	return p.getAccusation()
 }
 
 
-func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string, numRings uint8) *Node {
+func (n *Node) getProtocol() protocol {
+	n.protocolMutex.RLock()
+	defer n.protocolMutex.RUnlock()
+
+	return n.protocol
+}
+
+
+
+func NewNode (entryAddr string, protocol int, comm Communication, log *logger.Log, numRings uint8) *Node {
 	var i uint8
 
 	n := &Node{
@@ -198,7 +186,7 @@ func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string
 		log: log,
 		exitChan: make(chan bool, 1),
 		wg: &sync.WaitGroup{},
-		localAddr: addr,
+		localAddr: comm.HostInfo(),
 		ringMap: make(map[uint8]*ring),
 		numRings: numRings,
 		viewMap: make(map[string]*peer),
@@ -216,9 +204,11 @@ func NewNode (entryAddr string, comm Communication, log *logger.Log, addr string
 		n.ringMap[i] = newRing(i, n.localAddr)
 	}
 
+	n.setProtocol(protocol)
+
 	if entryAddr != "" {
-		newNote := createNote(0, "")
-		p := newPeer(entryAddr, newNote)
+		newNote := createNote(entryAddr, 0, "")
+		p := newPeer (newNote)
 		n.addViewPeer(p)
 		n.addLivePeer(p)
 	}
@@ -232,7 +222,6 @@ func (n *Node) ShutDownNode () {
 	}
 	close(n.exitChan)
 	n.wg.Wait()
-
 }
 
 
@@ -241,20 +230,20 @@ func (n *Node) Start () {
 	var i uint8
 
 	done := make(chan bool)
-	
+
 	go n.Communication.Start()
+
 	n.wg.Add(3)
 	go n.gossipLoop()
 	go n.monitor()
 	go n.checkTimeouts()
+
 	go n.httpHandler(done)
 
 	<-done
 	for i = 0; i < n.numRings; i++ {
 		n.add(i)
 	}
-
-
 
 	<-n.exitChan
 	n.Communication.ShutDown()

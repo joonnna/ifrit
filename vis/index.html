@@ -27,8 +27,8 @@
     </body>
     <input type="button" value="Add Node" id="addNode">
     <input type="button" value="Shutdown node" id="shutdownNode">
-    <input type="button" value="Crash segment" id="crashNode">
-    <input type="button" value="Corrupt a segment" id="corruptNode">
+    <input type="button" value="Crash node" id="crashNode">
+    <input type="button" value="Corrupt a node" id="corruptNode">
     <div id="mynetwork">
         <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
     </div>
@@ -41,43 +41,21 @@ var edges = new vis.DataSet([])
     socket.on('add', function(message) {
         var id = message.data.ID
         dataset.add([{id: id, label: id, http: message.data.HttpAddr}]);
-        //message.data.Neighbours.forEach(function(value){
-        //    addEdge(id, value)
-        //});
-        //nextid = message.data.ID + "next"
-        //previd = message.data.ID + "prev"
-        //edges.add([
-        //         {id: nextid, from: message.data.ID, to: message.data.Next},
-                //{id: previd, from: message.data.ID, to: message.data.Prev},
-        //    ]);
-            if (nodata) {
-                init()
-            }
+        if (nodata) {
+            init()
+        }
     });
 socket.on('remove', function(message) {
     dataset.remove({id: message.data.ID});
 });
 socket.on('update', function(message) {
-
-    /*
-    var id = message.data.ID
-    message.data.Neighbours.forEach(function(value){
-        addEdge(id, value)
-    });
-    */
-    //message.data.Neighbours.forEach(function(value){
-    //    id = message.data.ID + value
-    //    edges.update({id: id, from: message.data.ID, to: value})
-    //});
     nextid = message.data.ID + "next"
     previd = message.data.ID + "prev"
     edges.update({id: nextid, from: message.data.ID, to: message.data.Next})
-    edges.update({id: previd, from: message.data.ID, to: message.data.Prev, color: "red"})
+    edges.update({id: previd, from: message.data.ID, to: message.data.Prev})
 });
 
 function init() {
-
-
     var container = document.getElementById('mynetwork')
         var data = {
             nodes: dataset,
@@ -98,79 +76,90 @@ function init() {
         }
     };
     var network = new vis.Network(container, data, options)
-    /*
-    network.on( 'click', function(properties) {
-        var ids = properties.nodes;
-        var clickedNodes = nodes.get(ids);
-        clickedNodes.ForEach(function(val) {
-            var addr = val.id.split("|")[0];
-            var fullAddr = "http//" + addr + "/shutdown
-            request.post()
-        });
-        console.log('clicked nodes:', clickedNodes);
-    });
-    */
-
 }
-/*
-$('input').on('click', 'shutdownNode',function (dataset) {
-    var Status = $(this).val();
-    $.ajax({
-        url: 'http://' + addr,
-        type: 'POST'
-        //data: {
-        //    text: $("textarea[name=Status]").val(),
-        //    Status: Status
-        //},
-       // dataType : 'json'
-    });
-});
-*/
 
 function shutdown() {
-    console.log("Here we aree!!!!!");
-    var randomNodes = dataset.distinct("http");
+    var randomNodes = dataset.get({});
     console.log(randomNodes.length);
     if (randomNodes.length === 0) {
-        console.log("YEEEEE");
         return
     }
-    var randomNode = randomNodes[0];
+    var idx = Math.floor((Math.random() * randomNodes.length) + 1);
+
+    var randomNode = randomNodes[idx];
     console.log(randomNode);
     var x = new XMLHttpRequest();
-    x.open('GET', randomNode, true);
+    x.open('GET', randomNode.http + "/shutdownNode", true);
     x.send(null);
-    /*
-    $.get(randomNode).done(function(data) {
-        console.log(data)
-    });
-    */
-    /*
-    $.ajax({
-        url: randomNode,
-        dataType: 'text',
-        type: 'GET',
-        crossDomain: true,
-        withCredentials: true,
-        error: function(err) {
-            console.log(err.statusCode());
-        },
-        success: function(data) {
-            console.log("success");
-        }
-        //data: {
-        //    text: $("textarea[name=Status]").val(),
-        //    Status: Status
-        //},
-       // dataType : 'json'
-    });
-    */
 }
 
+function crash() {
+    var randomNodes = dataset.get({
+        filter: function(item) {
+            return (item.color != "red");
+        }
+    });
+    console.log(randomNodes.length);
+    if (randomNodes.length === 0) {
+        return
+    }
+    var idx = Math.floor((Math.random() * randomNodes.length) + 1);
+
+    var randomNode = randomNodes[idx];
+    console.log(randomNode);
+    var x = new XMLHttpRequest();
+    x.open('GET', randomNode.http + "/crashNode", true);
+    x.send(null);
+
+    var allRings = dataset.get({
+        filter: function(item) {
+            return (item.http == randomNode.http);
+        }
+    });
+
+    allRings.forEach(function(node) {
+        dataset.update({id: node.id, color: "red"})
+    });
+}
+
+function corrupt() {
+    var randomNodes = dataset.get({
+        filter: function(item) {
+            return (item.color != "red" && item.color != "green");
+        }
+    });
+    console.log(randomNodes.length);
+    if (randomNodes.length === 0) {
+        return
+    }
+    var idx = Math.floor((Math.random() * randomNodes.length) + 1);
+
+    var randomNode = randomNodes[idx];
+    console.log(randomNode);
+    var x = new XMLHttpRequest();
+    x.open('GET', randomNode.http + "/corruptNode", true);
+    x.send(null);
+
+    var allRings = dataset.get({
+        filter: function(item) {
+            return (item.http == randomNode.http);
+        }
+    });
+
+    allRings.forEach(function(node) {
+        dataset.update({id: node.id, color: "green"})
+    });
+
+}
 
 var shutdownButton = document.getElementById('shutdownNode');
 shutdownButton.onclick = function() {shutdown();};
 
+var crashbutton = document.getElementById('crashNode');
+crashbutton.onclick = function() {crash();};
+
+var corruptbutton = document.getElementById('corruptNode');
+corruptbutton.onclick = function() {corrupt();};
 
 
 

@@ -42,21 +42,23 @@ func (n *Node) httpHandler(c chan bool) {
 		}
 		port += 1
 	}
-	
+
 	r := mux.NewRouter()
 	r.HandleFunc("/shutdownNode", n.shutdownHandler)
-	
-	n.httpAddr = fmt.Sprintf("http://%s:%d/shutdownNode", hostName, port)
+	r.HandleFunc("/crashNode", n.crashHandler)
+	r.HandleFunc("/corruptNode", n.corruptHandler)
+
+	n.httpAddr = fmt.Sprintf("http://%s:%d", hostName, port)
 
 	go func() {
 		<-n.exitChan
 		l.Close()
 	}()
-	
+
 	close(c)
 
 	handler := cors.Default().Handler(r)
-	
+
 	err = http.Serve(l, handler)
 	if err != nil {
 		n.log.Err.Println(err)
@@ -65,20 +67,31 @@ func (n *Node) httpHandler(c chan bool) {
 }
 
 func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("HEI SATAN DADASBDASD")
-	/*
-	w.Header().Set("Access-Control-Allow-Origin", "*")
- 	w.Header().Add("Access-Control-Allow-Methods", "GET") 
- 	w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
-	*/
-
-
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
-	
+
 	n.log.Info.Println("Received shutdown request!")
 
 	n.ShutDownNode()
+}
+
+
+func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+	
+	n.log.Info.Println("Received crash request, shutting down local comm")
+
+	n.Communication.ShutDown()
+}
+
+func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+	
+	n.log.Info.Println("Received corrupt request, going rogue!")
+
+	n.setProtocol(SpamAccusationsProtocol)
 }
 
 

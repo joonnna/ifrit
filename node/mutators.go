@@ -69,7 +69,7 @@ func (n *Node) getViewAddrs() []string {
 	defer n.viewMutex.RUnlock()
 
 	ret := make([]string, len(n.viewMap))
-	
+
 	for _, v := range n.viewMap {
 		ret = append(ret, v.addr)
 	}
@@ -82,7 +82,7 @@ func (n *Node) getView() []*peer {
 	defer n.viewMutex.RUnlock()
 
 	ret := make([]*peer, 0)
-	
+
 	for _, v := range n.viewMap {
 		ret = append(ret, v)
 	}
@@ -93,7 +93,7 @@ func (n *Node) getView() []*peer {
 func (n *Node) getRandomViewPeer() *peer {
 	n.viewMutex.RLock()
 	defer n.viewMutex.RUnlock()
-	
+
 	var ret *peer
 
 	for _, v := range n.viewMap {
@@ -120,7 +120,7 @@ func (n *Node) addViewPeer(p *peer) {
 func (n *Node) removeViewPeer (key string) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
-	
+
 	delete(n.viewMap, key)
 }
 
@@ -136,7 +136,7 @@ func (n *Node) viewPeerExist (key string) bool{
 func (n *Node) getViewPeer (key string) *peer {
 	n.viewMutex.RLock()
 	defer n.viewMutex.RUnlock()
-	
+
 	var p *peer
 	var ok bool
 
@@ -197,7 +197,7 @@ func (n *Node) getLivePeerAddrs () []string {
 func (n *Node) getLivePeer (key string) *peer {
 	n.liveMutex.RLock()
 	defer n.liveMutex.RUnlock()
-	
+
 	var ok bool
 	var p *peer
 
@@ -228,7 +228,7 @@ func (n *Node) addLivePeer (p *peer) {
 func (n *Node) removeLivePeer (key string) {
 	n.liveMutex.Lock()
 	defer n.liveMutex.Unlock()
-	
+
 	var ok bool
 	var p *peer
 
@@ -255,7 +255,7 @@ func (n *Node) timerExist(addr string) bool {
 	defer n.timeoutMutex.RUnlock()
 
 	 _, ok := n.timeoutMap[addr]
-	
+
 	return ok
 }
 
@@ -287,7 +287,7 @@ func (n *Node) deleteTimeout(key string) {
 func (n *Node) getAllTimeouts() map[string]*timeout {
 	n.timeoutMutex.RLock()
 	defer n.timeoutMutex.RUnlock()
-	
+
 	ret := make(map[string]*timeout)
 
 	for k, val := range n.timeoutMap {
@@ -296,3 +296,20 @@ func (n *Node) getAllTimeouts() map[string]*timeout {
 
 	return ret
 }
+
+func (n *Node) setEpoch(newEpoch uint64) {
+	n.epochMutex.Lock()
+	defer n.epochMutex.Unlock()
+
+	n.epoch = newEpoch
+}
+
+func (n *Node) getEpoch() uint64 {
+	n.epochMutex.RLock()
+	defer n.epochMutex.RUnlock()
+
+	return n.epoch
+}
+
+
+

@@ -24,7 +24,7 @@ func StartClient(entryAddr string) *Client {
 	comm.SetLogger(logger)
 
 	client := &Client{
-		node: node.NewNode(entryAddr, comm, logger, comm.HostInfo(), numRings),
+		node: node.NewNode(entryAddr, node.NormalProtocol, comm, logger, numRings),
 	}
 
 	go client.node.Start()
