@@ -20,7 +20,7 @@ func StartClient(entryAddr string) *Client {
 
 	comm := communication.NewComm()
 
-	logger := logger.CreateLogger(comm.HostInfo())
+	logger := logger.CreateLogger(comm.HostInfo(), "clientlog")
 	comm.SetLogger(logger)
 
 	client := &Client{

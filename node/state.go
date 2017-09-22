@@ -79,7 +79,7 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
-	
+
 	n.log.Info.Println("Received crash request, shutting down local comm")
 
 	n.Communication.ShutDown()
@@ -88,7 +88,7 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
-	
+
 	n.log.Info.Println("Received corrupt request, going rogue!")
 
 	n.setProtocol(SpamAccusationsProtocol)

@@ -12,13 +12,14 @@ type Log struct {
 	Debug *log.Logger
 }
 
-
-func CreateLogger(hostName string) *Log {
+func CreateLogger(hostName string, logName string) *Log {
 	errPrefix := fmt.Sprintf("\x1b[31m %s \x1b[0m", hostName)
 	infoPrefix := fmt.Sprintf("\x1b[32m %s \x1b[0m", hostName)
 	debugPrefix := fmt.Sprintf("\x1b[33m %s \x1b[0m", hostName)
 
-	logFile, _ := os.OpenFile("/var/tmp/clientlog", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+	logLocation := fmt.Sprintf("/var/tmp/%s", logName)
+
+	logFile, _ := os.OpenFile(logLocation, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 
 	errLog := log.New(logFile, errPrefix, log.Lshortfile)
 	infoLog := log.New(logFile, infoPrefix, log.Lshortfile)

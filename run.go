@@ -1,29 +1,47 @@
 package main
 
 import (
-	"fmt"
 	"github.com/joonnna/capstone/client"
+	"github.com/joonnna/capstone/cauth"
 	"os"
 	"os/signal"
 	"syscall"
-	"strings"
 )
 
+func startCa() string {
+	addrChan := make(chan string)
+
+	if err != nil {
+		panic(err)
+	}
+
+	err = c.NewGroup()
+	if err != nil {
+		panic(err)
+	}
+
+	go c.HttpHandler(addrChan)
+
+	return <-addrChan
+}
+
+
+
+
 func main() {
+	caAddr := startCa()
+	/*
 	host, _ := os.Hostname()
-
 	hostName := strings.Split(host, ".")[0]
-
+	*/
 	var clientList []*client.Client
 
-	c := client.StartClient("")
+	c := client.StartClient(caAddr)
 
 	clientList = append(clientList, c)
 
-	entryPoint := fmt.Sprintf("%s:%d", hostName, 8345)
-
 	for i := 0; i < 8; i++ {
-		c = client.StartClient(entryPoint)
+		c = client.StartClient(caAddr)
 		clientList = append(clientList, c)
 	}
 
