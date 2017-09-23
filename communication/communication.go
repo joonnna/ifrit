@@ -1,16 +1,16 @@
 package communication
 
-
 import (
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
-	"net"
-	"errors"
-	"golang.org/x/net/context"
 	"sync"
+
 	"github.com/joonnna/capstone/logger"
 	"github.com/joonnna/capstone/protobuf"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
 
@@ -23,18 +23,18 @@ var (
 )
 
 type Comm struct {
-	allConnections map[string]gossip.GossipClient
+	allConnections  map[string]gossip.GossipClient
 	connectionMutex sync.RWMutex
 
 	rpcServer *grpc.Server
 
 	localAddr string
-	listener net.Listener
+	listener  net.Listener
 
 	log *logger.Log
 }
 
-func NewComm () *Comm {
+func NewComm() *Comm {
 	var l net.Listener
 	var err error
 
@@ -51,11 +51,11 @@ func NewComm () *Comm {
 		port += 1
 	}
 
-	comm := &Comm {
+	comm := &Comm{
 		allConnections: make(map[string]gossip.GossipClient),
-		localAddr: fmt.Sprintf("%s:%d", hostName, port),
-		listener: l,
-		rpcServer: grpc.NewServer(),
+		localAddr:      fmt.Sprintf("%s:%d", hostName, port),
+		listener:       l,
+		rpcServer:      grpc.NewServer(),
 	}
 
 	return comm
@@ -65,26 +65,23 @@ func (c *Comm) SetLogger(log *logger.Log) {
 	c.log = log
 }
 
-
 func (c *Comm) Register(g gossip.GossipServer) {
 	gossip.RegisterGossipServer(c.rpcServer, g)
 }
-
 
 func (c *Comm) Start() error {
 	return c.rpcServer.Serve(c.listener)
 }
 
-func (c Comm) HostInfo () string {
+func (c Comm) HostInfo() string {
 	return c.localAddr
 }
 
-func (c *Comm) ShutDown () {
+func (c *Comm) ShutDown() {
 	c.rpcServer.GracefulStop()
 }
 
-
-func (c *Comm) dial (addr string) (gossip.GossipClient, error) {
+func (c *Comm) dial(addr string) (gossip.GossipClient, error) {
 	var client gossip.GossipClient
 
 	opts := grpc.WithInsecure()
@@ -101,7 +98,7 @@ func (c *Comm) dial (addr string) (gossip.GossipClient, error) {
 	return client, nil
 }
 
-func (c *Comm) Gossip (addr string, args *gossip.GossipMsg) (*gossip.Empty, error) {
+func (c *Comm) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err
@@ -116,7 +113,7 @@ func (c *Comm) Gossip (addr string, args *gossip.GossipMsg) (*gossip.Empty, erro
 	return r, nil
 }
 
-func (c *Comm) Monitor (addr string, args *gossip.Ping) (*gossip.Pong, error) {
+func (c *Comm) Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err

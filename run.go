@@ -1,16 +1,18 @@
 package main
 
 import (
-	"github.com/joonnna/capstone/client"
-	"github.com/joonnna/capstone/cauth"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/joonnna/capstone/cauth"
+	"github.com/joonnna/capstone/client"
 )
 
 func startCa() string {
 	addrChan := make(chan string)
 
+	c, err := cauth.NewCa()
 	if err != nil {
 		panic(err)
 	}
@@ -25,14 +27,11 @@ func startCa() string {
 	return <-addrChan
 }
 
-
-
-
 func main() {
 	caAddr := startCa()
 	/*
-	host, _ := os.Hostname()
-	hostName := strings.Split(host, ".")[0]
+		host, _ := os.Hostname()
+		hostName := strings.Split(host, ".")[0]
 	*/
 	var clientList []*client.Client
 

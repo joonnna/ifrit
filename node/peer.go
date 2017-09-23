@@ -1,13 +1,11 @@
 package node
 
-
 import (
 	"sync"
 )
 
-
 type peer struct {
-	noteMutex sync.RWMutex
+	noteMutex  sync.RWMutex
 	recentNote *note
 
 	addr string
@@ -18,40 +16,40 @@ type peer struct {
 
 type note struct {
 	epoch uint64
-	mask string
-	addr string
+	mask  string
+	addr  string
 	//TODO signature...
 }
 
 type accusation struct {
 	recentNote *note
-	accuser string //TODO certificates...
-	noteMutex sync.RWMutex
+	accuser    string //TODO certificates...
+	noteMutex  sync.RWMutex
 }
 
-func newPeer (recentNote *note) *peer {
-	return &peer {
-		addr: recentNote.addr,
+func newPeer(recentNote *note) *peer {
+	return &peer{
+		addr:       recentNote.addr,
 		recentNote: recentNote,
 	}
 }
 
-func createNote (addr string, epoch uint64, mask string) *note {
+func createNote(addr string, epoch uint64, mask string) *note {
 	return &note{
-		addr: addr,
+		addr:  addr,
 		epoch: epoch,
-		mask: mask,
+		mask:  mask,
 	}
 }
 
-func (p *peer) setAccusation (accuser string, recentNote *note) {
+func (p *peer) setAccusation(accuser string, recentNote *note) {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
 	if p.accusation == nil || p.accusation.recentNote.epoch < recentNote.epoch {
-		a := &accusation {
+		a := &accusation{
 			recentNote: recentNote,
-			accuser: accuser,
+			accuser:    accuser,
 		}
 		p.accusation = a
 	}
@@ -63,7 +61,6 @@ func (p *peer) removeAccusation() {
 
 	p.accusation = nil
 }
-
 
 func (p *peer) getAccusation() *accusation {
 	p.accuseMutex.RLock()
@@ -88,7 +85,6 @@ func (p *peer) getNote() *note {
 	return p.recentNote
 }
 
-
 func (a *accusation) setNote(newNote *note) {
 	a.noteMutex.Lock()
 	defer a.noteMutex.Unlock()
@@ -104,9 +100,6 @@ func (a *accusation) getNote() *note {
 
 	return a.recentNote
 }
-
-
-
 
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch

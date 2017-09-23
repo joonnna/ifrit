@@ -1,41 +1,39 @@
 package cauth
 
 import (
-	"github.com/joonnna/capstone/logger"
-	"crypto/x509"
-	"crypto/rsa"
-	"crypto/rand"
-	"crypto"
-	"math/big"
-	"os"
-	"strings"
 	"bytes"
-	"net"
-	"net/http"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
+	"net/http"
+	"os"
+	"strings"
+
+	"github.com/joonnna/capstone/logger"
 )
 
 const (
 	startPort = 7234
 )
 
-
 type Ca struct {
 	log *logger.Log
 
 	privKey *rsa.PrivateKey
-	pubKey crypto.PublicKey
+	pubKey  crypto.PublicKey
 
 	groups []*group
 }
 
 type group struct {
 	nodeAddrs []string
-	cert *x509.Certificate
+	cert      *x509.Certificate
 }
-
-
 
 func NewCa() (*Ca, error) {
 	privKey, err := genKeys()
@@ -44,23 +42,22 @@ func NewCa() (*Ca, error) {
 	}
 
 	c := &Ca{
-		log: logger.CreateLogger("ca", "caLog"),
+		log:     logger.CreateLogger("ca", "caLog"),
 		privKey: privKey,
-		pubKey: privKey.Public(),
+		pubKey:  privKey.Public(),
 	}
 
 	return c, nil
 }
 
-
 func (c *Ca) NewGroup() error {
 	caCert := &x509.Certificate{
-		SerialNumber: big.NewInt(1653),
-		SubjectKeyId: []byte{1,2,3,4,5},
+		SerialNumber:          big.NewInt(1653),
+		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:        true,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage: x509.KeyUsageDigitalSignature|x509.KeyUsageCertSign,
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
@@ -77,7 +74,7 @@ func (c *Ca) NewGroup() error {
 		return err
 	}
 
-	g := &group {
+	g := &group{
 		cert: cert,
 	}
 
@@ -130,11 +127,12 @@ func (c *Ca) HttpHandler(ch chan string) {
 	}
 }
 
-
 func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	var body *bytes.Buffer
 	io.Copy(body, r.Body)
 	r.Body.Close()
+
+	c.log.Info.Println("Got a certificate request!")
 
 	reqCert, err := x509.ParseCertificateRequest(body.Bytes())
 	if err != nil {
@@ -149,11 +147,11 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	/*
-	cert, err := x509.ParseCertificate(newCert)
-	if err != nil {
-		c.log.Err.Println(err)
-		return
-	}
+		cert, err := x509.ParseCertificate(newCert)
+		if err != nil {
+			c.log.Err.Println(err)
+			return
+		}
 	*/
 	_, err = w.Write(newCert)
 	if err != nil {
@@ -162,7 +160,6 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func (c *Ca) downloadHandler(w http.ResponseWriter, r *http.Request) {
-
+	c.log.Info.Println("Got a download request!")
 }
