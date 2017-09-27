@@ -1,26 +1,26 @@
 package node
 
 import (
-	"encoding/json"
-	_"time"
 	"bytes"
-	"net/http"
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
-	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
+	_ "time"
 
-	"github.com/rs/cors"
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 type state struct {
 	ID string
 	//Neighbours []string
-	Next string
-	Prev string
+	Next     string
+	Prev     string
 	HttpAddr string
 }
 
@@ -75,14 +75,13 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	n.ShutDownNode()
 }
 
-
 func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
 	n.log.Info.Println("Received crash request, shutting down local comm")
 
-	n.Communication.ShutDown()
+	n.NodeComm.ShutDown()
 }
 
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
@@ -94,9 +93,8 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 	n.setProtocol(SpamAccusationsProtocol)
 }
 
-
 /* Periodically sends the nodes current state to the state server*/
-func (n *Node) updateState(ringId uint8){
+func (n *Node) updateState(ringId uint8) {
 	client := &http.Client{}
 	s := n.newState(ringId)
 	n.updateReq(s, client)
@@ -122,11 +120,11 @@ func (n *Node) newState(ringId uint8) io.Reader {
 		prevId = fmt.Sprintf("%s|%d", prev.nodeId, ringId)
 	}
 
-	s := state {
+	s := state{
 		ID: id,
 		//Neighbours: n.getNeighbourAddrs(),
-		Next: nextId,
-		Prev: prevId,
+		Next:     nextId,
+		Prev:     prevId,
 		HttpAddr: n.httpAddr,
 	}
 
@@ -154,6 +152,7 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 		resp.Body.Close()
 	}
 }
+
 /* Sends a post request to the state server add endpoint */
 func (n *Node) add(ringId uint8) {
 	r := n.newState(ringId)
@@ -188,4 +187,3 @@ func (n *Node) remove(ringId uint8) {
 		resp.Body.Close()
 	}
 }
-

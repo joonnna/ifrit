@@ -1,12 +1,12 @@
 package client
 
 import (
-	"github.com/joonnna/capstone/node"
-	"github.com/joonnna/capstone/communication"
-	"github.com/joonnna/capstone/logger"
 	"runtime"
-)
 
+	"github.com/joonnna/capstone/logger"
+	"github.com/joonnna/capstone/node"
+	"github.com/joonnna/capstone/node/rpc"
+)
 
 type Client struct {
 	node *node.Node
@@ -15,19 +15,24 @@ type Client struct {
 func StartClient(entryAddr string) *Client {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	var numRings uint8
-	numRings = 3
-
-	comm := communication.NewComm()
+	comm, err := rpc.NewComm(entryAddr)
+	if err != nil {
+		panic(err)
+	}
 
 	logger := logger.CreateLogger(comm.HostInfo(), "clientlog")
 	comm.SetLogger(logger)
 
-	client := &Client{
-		node: node.NewNode(entryAddr, node.NormalProtocol, comm, logger, numRings),
+	n, err := node.NewNode(comm, logger)
+	if err != nil {
+		panic(err)
 	}
 
-	go client.node.Start()
+	client := &Client{
+		node: n,
+	}
+
+	go client.node.Start(node.NormalProtocol)
 
 	return client
 }

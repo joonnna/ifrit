@@ -6,11 +6,11 @@ import (
 )
 
 var (
-	errNotFound = errors.New("No node info found")
+	errNotFound     = errors.New("No node info found")
 	errPeerNotFound = errors.New("No peer info found")
 )
 
-func (r *ring) getRingList () []*ringId {
+func (r *ring) getRingList() []*ringId {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
 
@@ -104,7 +104,6 @@ func (n *Node) getRandomViewPeer() *peer {
 	return ret
 }
 
-
 func (n *Node) addViewPeer(p *peer) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
@@ -117,14 +116,14 @@ func (n *Node) addViewPeer(p *peer) {
 	n.viewMap[p.addr] = p
 }
 
-func (n *Node) removeViewPeer (key string) {
+func (n *Node) removeViewPeer(key string) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
 
 	delete(n.viewMap, key)
 }
 
-func (n *Node) viewPeerExist (key string) bool{
+func (n *Node) viewPeerExist(key string) bool {
 	n.viewMutex.RLock()
 	defer n.viewMutex.RUnlock()
 
@@ -133,7 +132,7 @@ func (n *Node) viewPeerExist (key string) bool{
 	return ok
 }
 
-func (n *Node) getViewPeer (key string) *peer {
+func (n *Node) getViewPeer(key string) *peer {
 	n.viewMutex.RLock()
 	defer n.viewMutex.RUnlock()
 
@@ -147,16 +146,15 @@ func (n *Node) getViewPeer (key string) *peer {
 	return p
 }
 
-
 func (n *Node) getNeighbours() []string {
 	var neighbours []string
 	for _, ring := range n.ringMap {
-		succ, err :=  ring.getRingSucc()
+		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Info.Println(err)
 		}
 
-		prev, err :=  ring.getRingPrev()
+		prev, err := ring.getRingPrev()
 		if err != nil {
 			n.log.Info.Println(err)
 		}
@@ -165,8 +163,7 @@ func (n *Node) getNeighbours() []string {
 	return neighbours
 }
 
-
-func (n *Node) getLivePeers () []*peer {
+func (n *Node) getLivePeers() []*peer {
 	n.liveMutex.RLock()
 	defer n.liveMutex.RUnlock()
 
@@ -181,7 +178,7 @@ func (n *Node) getLivePeers () []*peer {
 	return ret
 }
 
-func (n *Node) getLivePeerAddrs () []string {
+func (n *Node) getLivePeerAddrs() []string {
 	n.liveMutex.RLock()
 	defer n.liveMutex.RUnlock()
 
@@ -194,7 +191,7 @@ func (n *Node) getLivePeerAddrs () []string {
 	return ret
 }
 
-func (n *Node) getLivePeer (key string) *peer {
+func (n *Node) getLivePeer(key string) *peer {
 	n.liveMutex.RLock()
 	defer n.liveMutex.RUnlock()
 
@@ -208,7 +205,7 @@ func (n *Node) getLivePeer (key string) *peer {
 	return p
 }
 
-func (n *Node) addLivePeer (p *peer) {
+func (n *Node) addLivePeer(p *peer) {
 	n.liveMutex.Lock()
 	defer n.liveMutex.Unlock()
 
@@ -220,12 +217,12 @@ func (n *Node) addLivePeer (p *peer) {
 	n.liveMap[p.addr] = p
 
 	for k, ring := range n.ringMap {
-		ring.add(p.addr)
+		ring.add(p.id, p.addr)
 		n.updateState(k)
 	}
 }
 
-func (n *Node) removeLivePeer (key string) {
+func (n *Node) removeLivePeer(key string) {
 	n.liveMutex.Lock()
 	defer n.liveMutex.Unlock()
 
@@ -236,12 +233,13 @@ func (n *Node) removeLivePeer (key string) {
 		return
 	}
 	addr := p.addr
+	id := p.id
 
 	n.log.Debug.Printf("Removed livePeer: %s", key)
 	delete(n.liveMap, key)
 
 	for k, ring := range n.ringMap {
-		err := ring.remove(addr)
+		err := ring.remove(id, addr)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -254,7 +252,7 @@ func (n *Node) timerExist(addr string) bool {
 	n.timeoutMutex.RLock()
 	defer n.timeoutMutex.RUnlock()
 
-	 _, ok := n.timeoutMap[addr]
+	_, ok := n.timeoutMap[addr]
 
 	return ok
 }
@@ -269,9 +267,9 @@ func (n *Node) startTimer(addr string, newNote *note, observer string) {
 		}
 	}
 
-	newTimeout := &timeout {
-		observer: observer,
-		lastNote: newNote,
+	newTimeout := &timeout{
+		observer:  observer,
+		lastNote:  newNote,
 		timeStamp: time.Now(),
 	}
 	n.timeoutMap[addr] = newTimeout
@@ -310,6 +308,3 @@ func (n *Node) getEpoch() uint64 {
 
 	return n.epoch
 }
-
-
-

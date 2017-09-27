@@ -1,33 +1,25 @@
 package node
 
 import (
+	"crypto/x509"
+
 	"github.com/joonnna/capstone/protobuf"
 	"golang.org/x/net/context"
 )
 
 //TODO accusations and notes
-func (n *Node) Spread (ctx context.Context, args *gossip.GossipMsg) (*gossip.Empty, error) {
-	//Only for pull based
-	/*
-	remoteAddr := remoteNote.GetAddr()
-	if !n.viewPeerExist(remoteAddr) {
-		newNote := createNote(remoteNote.GetEpoch(), remoteNote.GetMask(), remoteNote.GetSignature())
-		p := newPeer(remoteAddr, newNote)
-		n.addViewPeer(p)
-		n.addLivePeer(p)
-	}
-	*/
-
+func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Empty, error) {
 	reply := &gossip.Empty{}
 
+	n.mergeCertificates(args.GetCerts())
 	n.mergeNotes(args.GetNotes())
 	n.mergeAccusations(args.GetAccusations())
 
 	return reply, nil
 }
 
-func (n *Node) Monitor (ctx context.Context, args *gossip.Ping) (*gossip.Pong, error) {
-	reply := &gossip.Pong {
+func (n *Node) Monitor(ctx context.Context, args *gossip.Ping) (*gossip.Pong, error) {
+	reply := &gossip.Pong{
 		LocalAddr: n.localAddr,
 	}
 
@@ -35,7 +27,7 @@ func (n *Node) Monitor (ctx context.Context, args *gossip.Ping) (*gossip.Pong, e
 }
 
 func (n *Node) mergeNotes(notes map[string]*gossip.Note) {
-	for _, newNote:= range notes {
+	for _, newNote := range notes {
 		if newNote.GetAddr() == n.localAddr {
 			continue
 		}
@@ -46,6 +38,17 @@ func (n *Node) mergeNotes(notes map[string]*gossip.Note) {
 func (n *Node) mergeAccusations(accusations map[string]*gossip.Accusation) {
 	for _, acc := range accusations {
 		n.evalAccusation(acc)
+	}
+}
+
+func (n *Node) mergeCertificates(certs map[string]*gossip.Certificate) {
+	for _, b := range certs {
+		cert, err := x509.ParseCertificate(b.GetRaw())
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
+		n.evalCertificate(cert)
 	}
 }
 
@@ -89,11 +92,9 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 
 	p := n.getViewPeer(addr)
 
-	//Unseen peer, need to add to both live/view
+	//No certificate received for this peer, ignore
 	if p == nil {
-		newPeer := newPeer(newNote)
-		n.addViewPeer(newPeer)
-		n.addLivePeer(newPeer)
+		return
 	} else {
 		peerAccuse := p.getAccusation()
 
@@ -115,5 +116,22 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 				n.deleteTimeout(p.addr)
 			}
 		}
+	}
+}
+
+func (n *Node) evalCertificate(cert *x509.Certificate) {
+	if len(cert.Subject.Locality) < 1 {
+		return
+	}
+	addr := cert.Subject.Locality[0]
+	if addr == n.localAddr {
+		return
+	}
+
+	p := n.getViewPeer(addr)
+	if p == nil {
+		p := newPeer(nil, cert)
+		n.addViewPeer(p)
+		n.addLivePeer(p)
 	}
 }

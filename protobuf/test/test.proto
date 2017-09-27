@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+//import "google/protobuf/struct.proto";
+
+service PingService{
+    rpc DoShit (Ping) returns (Pong) {}
+}
+
+message Empty {
+
+}
+
+message Ping {
+    string msg = 1;
+}
+
+
+message Pong {
+    string msg = 1;
+}

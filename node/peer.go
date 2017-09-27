@@ -1,17 +1,21 @@
 package node
 
 import (
+	"crypto/x509"
 	"sync"
 )
 
 type peer struct {
+	addr string
+
 	noteMutex  sync.RWMutex
 	recentNote *note
 
-	addr string
-
 	accuseMutex sync.RWMutex
 	*accusation
+
+	id   []byte
+	cert *x509.Certificate
 }
 
 type note struct {
@@ -27,10 +31,12 @@ type accusation struct {
 	noteMutex  sync.RWMutex
 }
 
-func newPeer(recentNote *note) *peer {
+func newPeer(recentNote *note, cert *x509.Certificate) *peer {
 	return &peer{
-		addr:       recentNote.addr,
+		addr:       cert.Subject.Locality[0],
 		recentNote: recentNote,
+		cert:       cert,
+		id:         cert.SubjectKeyId,
 	}
 }
 
@@ -46,7 +52,7 @@ func (p *peer) setAccusation(accuser string, recentNote *note) {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	if p.accusation == nil || p.accusation.recentNote.epoch < recentNote.epoch {
+	if p.accusation == nil || recentNote == nil || p.accusation.recentNote.epoch < recentNote.epoch {
 		a := &accusation{
 			recentNote: recentNote,
 			accuser:    accuser,

@@ -1,6 +1,9 @@
 package node
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"sync"
 	"time"
 
@@ -17,6 +20,7 @@ type Node struct {
 	log *logger.Log
 
 	localAddr string
+	localId   []byte
 
 	protocol
 	protocolMutex sync.RWMutex
@@ -37,7 +41,7 @@ type Node struct {
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
-	Communication
+	NodeComm
 
 	gossipTimeout     time.Duration
 	monitorTimeout    time.Duration
@@ -50,13 +54,18 @@ type Node struct {
 	httpAddr string
 }
 
-type Communication interface {
+type NodeComm interface {
 	HostInfo() string
 	ShutDown()
 	Register(g gossip.GossipServer)
 	Start() error
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
+
+	//Might change this...
+	EntryCertificates() []*x509.Certificate
+	ID() []byte
+	NumRings() uint8
 }
 
 type protocol interface {
@@ -118,9 +127,12 @@ func (n *Node) checkTimeouts() {
 	}
 }
 
-func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*gossip.Accusation) {
+func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*gossip.Accusation, map[string]*gossip.Certificate) {
+	var noteEntry *gossip.Note
+
 	noteMap := make(map[string]*gossip.Note)
 	accuseMap := make(map[string]*gossip.Accusation)
+	certMap := make(map[string]*gossip.Certificate)
 
 	view := n.getView()
 
@@ -128,10 +140,13 @@ func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*goss
 		peerNote := p.getNote()
 		peerAccuse := p.getAccusation()
 
-		noteEntry := &gossip.Note{
-			Epoch: peerNote.epoch,
-			Addr:  p.addr,
-			Mask:  peerNote.mask,
+		if peerNote != nil {
+			noteEntry = &gossip.Note{
+				Epoch: peerNote.epoch,
+				Addr:  p.addr,
+				Mask:  peerNote.mask,
+			}
+			noteMap[p.addr] = noteEntry
 		}
 
 		if peerAccuse != nil {
@@ -142,7 +157,7 @@ func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*goss
 			accuseMap[p.addr] = accuseEntry
 		}
 
-		noteMap[p.addr] = noteEntry
+		certMap[p.addr] = &gossip.Certificate{Raw: p.cert.Raw}
 	}
 
 	noteMap[n.localAddr] = &gossip.Note{
@@ -150,7 +165,7 @@ func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*goss
 		Addr:  n.localAddr,
 	}
 
-	return noteMap, accuseMap
+	return noteMap, accuseMap, certMap
 }
 
 func (n *Node) setProtocol(protocol int) {
@@ -174,18 +189,17 @@ func (n *Node) getProtocol() protocol {
 	return n.protocol
 }
 
-func NewNode(comm Communication, log *logger.Log) *Node {
-	priv, pub, err := genKeys()
-	if err != nil {
-		n.log.Err.Panic(err)
-	}
+func NewNode(comm NodeComm, log *logger.Log) (*Node, error) {
+	var i uint8
 
 	n := &Node{
-		Communication:     comm,
+		NodeComm:          comm,
 		log:               log,
 		exitChan:          make(chan bool, 1),
 		wg:                &sync.WaitGroup{},
 		localAddr:         comm.HostInfo(),
+		localId:           comm.ID(),
+		numRings:          comm.NumRings(),
 		ringMap:           make(map[uint8]*ring),
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
@@ -196,9 +210,20 @@ func NewNode(comm Communication, log *logger.Log) *Node {
 		nodeDeadTimeout:   5.0,
 	}
 
-	n.Communication.Register(n)
+	n.NodeComm.Register(n)
 
-	return n
+	for i = 0; i < n.numRings; i++ {
+		n.ringMap[i] = newRing(i, n.localId, n.localAddr)
+	}
+
+	certs := n.NodeComm.EntryCertificates()
+	for _, c := range certs {
+		p := newPeer(nil, c)
+		n.addViewPeer(p)
+		n.addLivePeer(p)
+	}
+
+	return n, nil
 }
 
 func (n *Node) ShutDownNode() {
@@ -209,26 +234,15 @@ func (n *Node) ShutDownNode() {
 	n.wg.Wait()
 }
 
-func (n *Node) Start(protocol int, caAddr string) {
-	n.log.Info.Println("Started Node")
+func (n *Node) Start(protocol int) {
 	var i uint8
+	n.log.Info.Println("Started Node")
 
 	done := make(chan bool)
 
-	for i = 0; i < numRings; i++ {
-		n.ringMap[i] = newRing(i, n.localAddr)
-	}
-
-	if entryAddr != "" {
-		newNote := createNote(entryAddr, 0, "")
-		p := newPeer(newNote)
-		n.addViewPeer(p)
-		n.addLivePeer(p)
-	}
-
 	n.setProtocol(protocol)
 
-	go n.Communication.Start()
+	go n.NodeComm.Start()
 
 	n.wg.Add(3)
 	go n.gossipLoop()
@@ -238,11 +252,21 @@ func (n *Node) Start(protocol int, caAddr string) {
 	go n.httpHandler(done)
 
 	<-done
+
 	for i = 0; i < n.numRings; i++ {
 		n.add(i)
 	}
 
 	<-n.exitChan
-	n.Communication.ShutDown()
+	n.NodeComm.ShutDown()
 	n.log.Info.Println("Exiting node")
+}
+
+func genKeys() (*rsa.PrivateKey, error) {
+	privKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		return nil, err
+	}
+
+	return privKey, nil
 }

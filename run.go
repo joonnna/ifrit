@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,6 +11,8 @@ import (
 )
 
 func startCa() string {
+	var i uint8
+	i = 3
 	addrChan := make(chan string)
 
 	c, err := cauth.NewCa()
@@ -17,7 +20,7 @@ func startCa() string {
 		panic(err)
 	}
 
-	err = c.NewGroup()
+	err = c.NewGroup(i)
 	if err != nil {
 		panic(err)
 	}
@@ -29,18 +32,21 @@ func startCa() string {
 
 func main() {
 	caAddr := startCa()
+	fmt.Println(caAddr)
 	/*
 		host, _ := os.Hostname()
 		hostName := strings.Split(host, ".")[0]
 	*/
-	var clientList []*client.Client
 
-	c := client.StartClient(caAddr)
+	entry := fmt.Sprintf("%s/certificateRequest", caAddr)
+
+	var clientList []*client.Client
+	c := client.StartClient(entry)
 
 	clientList = append(clientList, c)
 
 	for i := 0; i < 8; i++ {
-		c = client.StartClient(caAddr)
+		c = client.StartClient(entry)
 		clientList = append(clientList, c)
 	}
 

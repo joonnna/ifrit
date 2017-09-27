@@ -5,21 +5,22 @@ import (
 )
 
 type correct struct {
-
 }
 
 type spamAccusations struct {
-
 }
 
 func (c correct) Gossip(n *Node) {
-	notes, accusations := n.collectGossipContent()
-	args := &gossip.GossipMsg{Notes: notes, Accusations: accusations}
+	notes, accusations, certs := n.collectGossipContent()
+	args := &gossip.GossipMsg{Notes: notes, Accusations: accusations, Certs: certs}
 
 	neighbours := n.getNeighbours()
 
 	for _, addr := range neighbours {
-		_, err := n.Communication.Gossip(addr, args)
+		if addr == n.localAddr {
+			continue
+		}
+		_, err := n.NodeComm.Gossip(addr, args)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -31,14 +32,18 @@ func (c correct) Monitor(n *Node) {
 	msg := &gossip.Ping{}
 
 	for _, ring := range n.ringMap {
-		succ, err :=  ring.getRingSucc()
+		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
 		}
 
+		if succ.nodeId == n.localAddr {
+			continue
+		}
+
 		//TODO maybe udp?
-		_, err = n.Communication.Monitor(succ.nodeId, msg)
+		_, err = n.NodeComm.Monitor(succ.nodeId, msg)
 		if err != nil {
 			n.log.Info.Printf("%s is dead, accusing", succ.nodeId)
 			p := n.getViewPeer(succ.nodeId)
@@ -60,7 +65,7 @@ func (sa spamAccusations) Gossip(n *Node) {
 	allNodes := n.getView()
 
 	for _, p := range allNodes {
-		_, err := n.Communication.Gossip(p.addr, args)
+		_, err := n.NodeComm.Gossip(p.addr, args)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -70,7 +75,7 @@ func (sa spamAccusations) Gossip(n *Node) {
 
 func (sa spamAccusations) Monitor(n *Node) {
 	for _, ring := range n.ringMap {
-		succ, err :=  ring.getRingSucc()
+		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -87,8 +92,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 	}
 }
 
-
-func createFalseAccusations(n *Node) (map[string] *gossip.Note, map[string] *gossip.Accusation) {
+func createFalseAccusations(n *Node) (map[string]*gossip.Note, map[string]*gossip.Accusation) {
 	noteMap := make(map[string]*gossip.Note)
 	accuseMap := make(map[string]*gossip.Accusation)
 
@@ -97,14 +101,14 @@ func createFalseAccusations(n *Node) (map[string] *gossip.Note, map[string] *gos
 	for _, p := range view {
 		peerNote := p.getNote()
 
-		noteEntry := &gossip.Note {
+		noteEntry := &gossip.Note{
 			Epoch: peerNote.epoch,
-			Addr: p.addr,
-			Mask: peerNote.mask,
+			Addr:  p.addr,
+			Mask:  peerNote.mask,
 		}
 
-		accuseEntry := &gossip.Accusation {
-			Accuser: n.localAddr,
+		accuseEntry := &gossip.Accusation{
+			Accuser:    n.localAddr,
 			RecentNote: noteEntry,
 		}
 
@@ -112,9 +116,9 @@ func createFalseAccusations(n *Node) (map[string] *gossip.Note, map[string] *gos
 		noteMap[p.addr] = noteEntry
 	}
 
-	noteMap[n.localAddr] = &gossip.Note {
+	noteMap[n.localAddr] = &gossip.Note{
 		Epoch: n.epoch,
-		Addr: n.localAddr,
+		Addr:  n.localAddr,
 	}
 
 	return noteMap, accuseMap
