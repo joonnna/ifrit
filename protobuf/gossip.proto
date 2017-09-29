@@ -4,8 +4,8 @@ syntax = "proto3";
 
 service gossip {
     rpc Monitor (Ping) returns (Pong) {}
-    //rpc Accuse (Accusation) returns (Empty) {}
     rpc Spread (GossipMsg) returns (Empty) {}
+    //rpc Accuse (Accusation) returns (Empty) {}
     //rpc NotDead (Rebuttal) returns (Empty) {}
 }
 
@@ -20,11 +20,14 @@ message NodeInfo {
 message GossipMsg {
     //google.protobuf.Struct notes = 1;
     //google.protobuf.Struct accusations = 2;
-
+    repeated Certificate certificates = 1;
+    repeated Note notes = 2;
+    repeated Accusation accusations = 3;
+    /*
     map<string, Note> notes = 1;
     map<string, Accusation> accusations = 2;
     map<string, Certificate> certs = 3;
-
+    */
     //repeated Note notes = 1;
     //repeated Accusation accusations = 2;
 }
@@ -34,29 +37,25 @@ message Certificate {
 }
 
 message Accusation {
-    string accuser = 1;
-    Note recentNote = 2;
+    uint64 epoch = 1;
+    bytes accuser = 2;
+    bytes accused = 3;
+    bytes signature = 4;
 }
 
 message Note {
     uint64 epoch = 1;
-    string addr = 2;
+    bytes id = 2;
     string mask = 3;
+    bytes signature = 4;
 }
 
 message Ping {
-    string localAddr = 1;
+    bytes nonce = 1;
+    bytes signature = 2;
 }
 
 message Pong {
-    string localAddr = 1;
-}
-
-message Nodes {
-    string localAddr = 1;
-    repeated string addrList = 2;
-}
-
-message Rebuttal {
-
+    bytes nonce = 1;
+    bytes signature = 2;
 }

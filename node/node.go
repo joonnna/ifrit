@@ -20,7 +20,7 @@ type Node struct {
 	log *logger.Log
 
 	localAddr string
-	localId   []byte
+	*peerId
 
 	protocol
 	protocolMutex sync.RWMutex
@@ -54,6 +54,9 @@ type Node struct {
 	httpAddr string
 }
 
+//TODO Getting too large and specific,
+//either cut down or simply include the rpc package and drop the interface
+//Or make rpc apart of the node package(probably not)
 type NodeComm interface {
 	HostInfo() string
 	ShutDown()
@@ -64,6 +67,7 @@ type NodeComm interface {
 
 	//Might change this...
 	EntryCertificates() []*x509.Certificate
+	OwnCertificate() *x509.Certificate
 	ID() []byte
 	NumRings() uint8
 }
@@ -74,7 +78,7 @@ type protocol interface {
 }
 
 type timeout struct {
-	observer  string
+	observer  *peer
 	lastNote  *note
 	timeStamp time.Time
 }
@@ -114,58 +118,60 @@ func (n *Node) checkTimeouts() {
 			return
 		case <-time.After(n.viewUpdateTimeout):
 			timeouts := n.getAllTimeouts()
-			for addr, t := range timeouts {
-				n.log.Debug.Println("Have timeout for:", addr)
+			for key, t := range timeouts {
+				n.log.Debug.Println("Have timeout for: ", key)
 				since := time.Since(t.timeStamp)
 				if since.Seconds() > n.nodeDeadTimeout {
-					n.log.Debug.Printf("%s timeout expired, removing from live", addr)
-					n.deleteTimeout(addr)
-					n.removeLivePeer(addr)
+					n.log.Debug.Printf("%s timeout expired, removing from live", key)
+					n.deleteTimeout(key)
+					n.removeLivePeer(key)
 				}
 			}
 		}
 	}
 }
 
-func (n *Node) collectGossipContent() (map[string]*gossip.Note, map[string]*gossip.Accusation, map[string]*gossip.Certificate) {
-	var noteEntry *gossip.Note
-
-	noteMap := make(map[string]*gossip.Note)
-	accuseMap := make(map[string]*gossip.Accusation)
-	certMap := make(map[string]*gossip.Certificate)
+func (n *Node) collectGossipContent() *gossip.GossipMsg {
+	msg := &gossip.GossipMsg{}
 
 	view := n.getView()
 
+	/*
+		viewLen := len(view)
+
+		msg.Certificates = make([]*gossip.Certificate, viewLen)
+		msg.Notes = make([]*gossip.Note, viewLen)
+		msg.Accusations = make([]*gossip.Accusation, 0)
+	*/
 	for _, p := range view {
-		peerNote := p.getNote()
-		peerAccuse := p.getAccusation()
+		c, n, a := p.createPbInfo()
 
-		if peerNote != nil {
-			noteEntry = &gossip.Note{
-				Epoch: peerNote.epoch,
-				Addr:  p.addr,
-				Mask:  peerNote.mask,
-			}
-			noteMap[p.addr] = noteEntry
+		msg.Certificates = append(msg.Certificates, c)
+
+		if n != nil {
+			msg.Notes = append(msg.Notes, n)
 		}
 
-		if peerAccuse != nil {
-			accuseEntry := &gossip.Accusation{
-				Accuser:    peerAccuse.accuser,
-				RecentNote: noteEntry,
-			}
-			accuseMap[p.addr] = accuseEntry
+		if a != nil {
+			msg.Accusations = append(msg.Accusations, a)
 		}
-
-		certMap[p.addr] = &gossip.Certificate{Raw: p.cert.Raw}
 	}
 
-	noteMap[n.localAddr] = &gossip.Note{
-		Epoch: n.epoch,
-		Addr:  n.localAddr,
+	ownCert := n.NodeComm.OwnCertificate()
+	certMsg := &gossip.Certificate{
+		Raw: ownCert.Raw,
 	}
 
-	return noteMap, accuseMap, certMap
+	noteMsg := &gossip.Note{
+		Id:        n.NodeComm.ID(),
+		Epoch:     n.getEpoch(),
+		Signature: ownCert.Signature,
+	}
+
+	msg.Certificates = append(msg.Certificates, certMsg)
+	msg.Notes = append(msg.Notes, noteMsg)
+
+	return msg
 }
 
 func (n *Node) setProtocol(protocol int) {
@@ -175,8 +181,10 @@ func (n *Node) setProtocol(protocol int) {
 	switch protocol {
 	case NormalProtocol:
 		n.protocol = correct{}
-	case SpamAccusationsProtocol:
-		n.protocol = spamAccusations{}
+	/*
+		case SpamAccusationsProtocol:
+			n.protocol = spamAccusations{}
+	*/
 	default:
 		n.protocol = correct{}
 	}
@@ -198,7 +206,7 @@ func NewNode(comm NodeComm, log *logger.Log) (*Node, error) {
 		exitChan:          make(chan bool, 1),
 		wg:                &sync.WaitGroup{},
 		localAddr:         comm.HostInfo(),
-		localId:           comm.ID(),
+		peerId:            newPeerId(comm.ID()),
 		numRings:          comm.NumRings(),
 		ringMap:           make(map[uint8]*ring),
 		viewMap:           make(map[string]*peer),
@@ -213,12 +221,16 @@ func NewNode(comm NodeComm, log *logger.Log) (*Node, error) {
 	n.NodeComm.Register(n)
 
 	for i = 0; i < n.numRings; i++ {
-		n.ringMap[i] = newRing(i, n.localId, n.localAddr)
+		n.ringMap[i] = newRing(i, n.id, n.key, n.localAddr)
 	}
 
 	certs := n.NodeComm.EntryCertificates()
 	for _, c := range certs {
-		p := newPeer(nil, c)
+		p, err := newPeer(nil, c)
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
 		n.addViewPeer(p)
 		n.addLivePeer(p)
 	}

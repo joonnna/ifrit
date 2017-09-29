@@ -11,16 +11,14 @@ type spamAccusations struct {
 }
 
 func (c correct) Gossip(n *Node) {
-	notes, accusations, certs := n.collectGossipContent()
-	args := &gossip.GossipMsg{Notes: notes, Accusations: accusations, Certs: certs}
-
+	msg := n.collectGossipContent()
 	neighbours := n.getNeighbours()
 
 	for _, addr := range neighbours {
 		if addr == n.localAddr {
 			continue
 		}
-		_, err := n.NodeComm.Gossip(addr, args)
+		_, err := n.NodeComm.Gossip(addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -38,26 +36,37 @@ func (c correct) Monitor(n *Node) {
 			continue
 		}
 
-		if succ.nodeId == n.localAddr {
+		if succ.addr == n.localAddr {
 			continue
 		}
 
 		//TODO maybe udp?
-		_, err = n.NodeComm.Monitor(succ.nodeId, msg)
+		_, err = n.NodeComm.Monitor(succ.addr, msg)
 		if err != nil {
-			n.log.Info.Printf("%s is dead, accusing", succ.nodeId)
-			p := n.getViewPeer(succ.nodeId)
+			n.log.Info.Printf("%s is dead, accusing", succ.addr)
+			p := n.getViewPeer(succ.peerKey)
 			if p != nil {
 				peerNote := p.getNote()
-				p.setAccusation(n.localAddr, peerNote)
-				if !n.timerExist(p.addr) {
-					n.startTimer(p.addr, peerNote, n.localAddr)
+				a, err := newAccusation(p.peerId, (peerNote.epoch + 1), n.NodeComm.OwnCertificate().Raw, n.peerId)
+				if err != nil {
+					n.log.Err.Println(err)
+					return
+				}
+				err = p.setAccusation(a)
+				if err != nil {
+					n.log.Err.Println(err)
+					return
+				}
+				if !n.timerExist(p.key) {
+					//TODO change timeout observer to peer? create local peer in node struct
+					n.startTimer(p.key, peerNote, nil)
 				}
 			}
 		}
 	}
 }
 
+/*
 func (sa spamAccusations) Gossip(n *Node) {
 	notes, accusations := createFalseAccusations(n)
 	args := &gossip.GossipMsg{Notes: notes, Accusations: accusations}
@@ -123,3 +132,4 @@ func createFalseAccusations(n *Node) (map[string]*gossip.Note, map[string]*gossi
 
 	return noteMap, accuseMap
 }
+*/

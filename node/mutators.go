@@ -33,20 +33,6 @@ func (r *ring) getRingSucc() (ringId, error) {
 	}
 }
 
-func (r *ring) getRingSuccAddr() (string, error) {
-	r.ringMutex.RLock()
-	defer r.ringMutex.RUnlock()
-
-	len := len(r.succList)
-
-	if len == 0 {
-		return "", errNotFound
-	} else {
-		idx := (r.ownIdx + 1) % len
-		return r.succList[idx].nodeId, nil
-	}
-}
-
 func (r *ring) getRingPrev() (ringId, error) {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
@@ -108,12 +94,12 @@ func (n *Node) addViewPeer(p *peer) {
 	n.viewMutex.Lock()
 	defer n.viewMutex.Unlock()
 
-	if _, ok := n.viewMap[p.addr]; ok {
+	if _, ok := n.viewMap[p.key]; ok {
 		n.log.Err.Printf("Tried to add peer twice to viewMap: %s", p.addr)
 		return
 	}
 
-	n.viewMap[p.addr] = p
+	n.viewMap[p.key] = p
 }
 
 func (n *Node) removeViewPeer(key string) {
@@ -158,7 +144,7 @@ func (n *Node) getNeighbours() []string {
 		if err != nil {
 			n.log.Info.Println(err)
 		}
-		neighbours = append(neighbours, succ.nodeId, prev.nodeId)
+		neighbours = append(neighbours, succ.addr, prev.addr)
 	}
 	return neighbours
 }
@@ -209,15 +195,15 @@ func (n *Node) addLivePeer(p *peer) {
 	n.liveMutex.Lock()
 	defer n.liveMutex.Unlock()
 
-	if _, ok := n.liveMap[p.addr]; ok {
+	if _, ok := n.liveMap[p.key]; ok {
 		n.log.Err.Printf("Tried to add peer twice to liveMap: %s", p.addr)
 		return
 	}
 
-	n.liveMap[p.addr] = p
+	n.liveMap[p.key] = p
 
 	for k, ring := range n.ringMap {
-		ring.add(p.id, p.addr)
+		ring.add(p.id, p.key, p.addr)
 		n.updateState(k)
 	}
 }
@@ -232,14 +218,14 @@ func (n *Node) removeLivePeer(key string) {
 	if p, ok = n.liveMap[key]; !ok {
 		return
 	}
-	addr := p.addr
+	peerKey := p.key
 	id := p.id
 
 	n.log.Debug.Printf("Removed livePeer: %s", key)
 	delete(n.liveMap, key)
 
 	for k, ring := range n.ringMap {
-		err := ring.remove(id, addr)
+		err := ring.remove(id, peerKey)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -248,31 +234,33 @@ func (n *Node) removeLivePeer(key string) {
 	}
 }
 
-func (n *Node) timerExist(addr string) bool {
+func (n *Node) timerExist(key string) bool {
 	n.timeoutMutex.RLock()
 	defer n.timeoutMutex.RUnlock()
 
-	_, ok := n.timeoutMap[addr]
+	_, ok := n.timeoutMap[key]
 
 	return ok
 }
 
-func (n *Node) startTimer(addr string, newNote *note, observer string) {
+func (n *Node) startTimer(key string, newNote *note, observer *peer) {
 	n.timeoutMutex.Lock()
 	defer n.timeoutMutex.Unlock()
 
-	if t, ok := n.timeoutMap[addr]; ok {
-		if !t.lastNote.isMoreRecent(newNote.epoch) {
-			return
+	/*
+		if t, ok := n.timeoutMap[key]; ok {
+			if t.lastNote.epoch > newNote.epoch {
+				return
+			}
 		}
-	}
+	*/
 
 	newTimeout := &timeout{
 		observer:  observer,
 		lastNote:  newNote,
 		timeStamp: time.Now(),
 	}
-	n.timeoutMap[addr] = newTimeout
+	n.timeoutMap[key] = newTimeout
 }
 
 func (n *Node) deleteTimeout(key string) {

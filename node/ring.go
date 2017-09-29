@@ -8,10 +8,11 @@ import (
 )
 
 var (
-	errSameId        = errors.New("Nodes have identical id!?!?!?")
-	errAlreadyExists = errors.New("Node already exists")
-	errRemoveSelf    = errors.New("Tried to remove myself from ring?!")
-	errLostSelf      = errors.New("Lost track of myself within ring")
+	errSameId             = errors.New("Nodes have identical id!?!?!?")
+	errAlreadyExists      = errors.New("Node already exists")
+	errRemoveSelf         = errors.New("Tried to remove myself from ring?!")
+	errLostSelf           = errors.New("Lost track of myself within ring")
+	errRingMemberNotFound = errors.New("Ring member not found")
 )
 
 type ring struct {
@@ -27,24 +28,22 @@ type ring struct {
 }
 
 type ringId struct {
-	nodeId string
-	id     []byte
+	peerKey string
+	id      []byte
+	addr    string
 }
 
-func (rI *ringId) isSameAddr(target *ringId) bool {
-	return rI.nodeId == target.nodeId
+func (rI *ringId) equal(target *ringId) bool {
+	return rI.peerKey == target.peerKey
 }
 
 func (rI *ringId) cmpId(other *ringId) int {
 	return bytes.Compare(rI.id, other.id)
 }
 
-func newRing(ringNum uint8, id []byte, addr string) *ring {
-	rId := genRingId(ringNum, id)
-	localRingId := &ringId{
-		id:     rId,
-		nodeId: addr,
-	}
+func newRing(ringNum uint8, id []byte, peerKey string, addr string) *ring {
+	h := hashId(ringNum, id)
+	localRingId := newRingId(h, peerKey, addr)
 
 	r := &ring{
 		ringNum:     ringNum,
@@ -55,52 +54,54 @@ func newRing(ringNum uint8, id []byte, addr string) *ring {
 	return r
 }
 
-func (r *ring) add(newId []byte, addr string) error {
+func (r *ring) add(newId []byte, peerKey string, addr string) error {
 	r.ringMutex.Lock()
 	defer r.ringMutex.Unlock()
 
-	if ok, _ := r.existsMap[addr]; ok {
+	if ok, _ := r.existsMap[peerKey]; ok {
 		return errAlreadyExists
 	}
 
-	id := genRingId(r.ringNum, newId)
-	ringIdentity := newRingId(id, addr)
+	h := hashId(r.ringNum, newId)
+	ringIdentity := newRingId(h, peerKey, addr)
 
 	cmp := ringIdentity.cmpId(r.localRingId)
-
 	if cmp == 0 {
 		return errSameId
 	}
 
 	newList, idx := insert(r.succList, ringIdentity)
-
 	r.succList = newList
 
 	if idx <= r.ownIdx {
 		r.ownIdx += 1
 	}
 
-	r.existsMap[addr] = true
+	r.existsMap[peerKey] = true
 
-	if !r.succList[r.ownIdx].isSameAddr(r.localRingId) {
+	if !r.succList[r.ownIdx].equal(r.localRingId) {
 		return errLostSelf
 	}
 
 	return nil
 }
 
-func (r *ring) remove(removeId []byte, addr string) error {
+func (r *ring) remove(removeId []byte, peerKey string) error {
 	r.ringMutex.Lock()
 	defer r.ringMutex.Unlock()
 
-	id := newRingId(genRingId(r.ringNum, removeId), addr)
+	if _, ok := r.existsMap[peerKey]; !ok {
+		return errRingMemberNotFound
+	}
+
+	h := hashId(r.ringNum, removeId)
+	//Dont need addr, just want ringId struct to perform search
+	id := newRingId(h, peerKey, "")
 
 	idx, err := search(r.succList, id)
 	if err != nil {
 		return err
 	}
-
-	r.existsMap[addr] = false
 
 	if idx < r.ownIdx {
 		r.ownIdx -= 1
@@ -108,16 +109,17 @@ func (r *ring) remove(removeId []byte, addr string) error {
 		return errRemoveSelf
 	}
 
+	r.existsMap[peerKey] = false
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
 
-	if !r.succList[r.ownIdx].isSameAddr(r.localRingId) {
+	if !r.succList[r.ownIdx].equal(r.localRingId) {
 		return errLostSelf
 	}
 
 	return nil
 }
 
-func genRingId(ringNum uint8, id []byte) []byte {
+func hashId(ringNum uint8, id []byte) []byte {
 	preHashId := append(id, ringNum)
 
 	h := sha256.New()
@@ -126,9 +128,10 @@ func genRingId(ringNum uint8, id []byte) []byte {
 	return h.Sum(nil)
 }
 
-func newRingId(id []byte, nodeId string) *ringId {
+func newRingId(id []byte, peerKey string, addr string) *ringId {
 	return &ringId{
-		nodeId: nodeId,
-		id:     id,
+		peerKey: peerKey,
+		id:      id,
+		addr:    addr,
 	}
 }

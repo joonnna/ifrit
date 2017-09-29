@@ -110,14 +110,14 @@ func (n *Node) newState(ringId uint8) io.Reader {
 	if err != nil {
 		nextId = ""
 	} else {
-		nextId = fmt.Sprintf("%s|%d", succ.nodeId, ringId)
+		nextId = fmt.Sprintf("%s|%d", succ.addr, ringId)
 	}
 
 	prev, err := n.ringMap[ringId].getRingPrev()
 	if err != nil {
 		prevId = ""
 	} else {
-		prevId = fmt.Sprintf("%s|%d", prev.nodeId, ringId)
+		prevId = fmt.Sprintf("%s|%d", prev.addr, ringId)
 	}
 
 	s := state{

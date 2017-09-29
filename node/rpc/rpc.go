@@ -115,6 +115,10 @@ func (c Comm) EntryCertificates() []*x509.Certificate {
 	return c.entryCerts
 }
 
+func (c Comm) OwnCertificate() *x509.Certificate {
+	return c.localCert
+}
+
 func (c *Comm) SetLogger(log *logger.Log) {
 	c.log = log
 }
