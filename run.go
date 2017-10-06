@@ -45,7 +45,7 @@ func main() {
 
 	clientList = append(clientList, c)
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 7; i++ {
 		c = client.StartClient(entry)
 		clientList = append(clientList, c)
 	}

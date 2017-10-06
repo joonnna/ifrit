@@ -47,7 +47,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Cert
 		peerKey := n.findNeighbour(cert.SubjectKeyId)
 		if peerKey == n.key {
 			n.log.Debug.Println("MYSELF YET AGAIN")
-			reply.Raw = n.NodeComm.OwnCertificate().Raw
+			reply.Raw = n.localCert.Raw
 			return reply, nil
 		}
 

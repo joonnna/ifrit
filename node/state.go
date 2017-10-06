@@ -81,7 +81,7 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 
 	n.log.Info.Println("Received crash request, shutting down local comm")
 
-	n.NodeComm.ShutDown()
+	n.server.ShutDown()
 }
 
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {

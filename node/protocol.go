@@ -20,11 +20,11 @@ func (c correct) Rebuttal(n *Node) {
 
 	noteMsg := &gossip.Note{
 		Epoch: n.getEpoch(),
-		Id:    n.NodeComm.ID(),
+		Id:    n.id,
 	}
 
 	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.NodeComm.PrivateKey())
+	signature, err := signContent(b, n.privKey)
 	if err != nil {
 		n.log.Err.Println(err)
 		return
@@ -41,7 +41,7 @@ func (c correct) Rebuttal(n *Node) {
 		if addr == n.localAddr {
 			continue
 		}
-		_, err := n.NodeComm.Gossip(addr, msg)
+		_, err := n.client.Gossip(addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -60,7 +60,7 @@ func (c correct) Gossip(n *Node) {
 		if addr == n.localAddr {
 			continue
 		}
-		reply, err := n.NodeComm.Gossip(addr, msg)
+		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
 			if reply.GetRaw() == nil {
 				n.log.Err.Println(err)
@@ -100,7 +100,7 @@ func (c correct) Monitor(n *Node) {
 		}
 
 		//TODO maybe udp?
-		_, err = n.NodeComm.Monitor(succ.addr, msg)
+		_, err = n.client.Monitor(succ.addr, msg)
 		if err != nil {
 			n.log.Info.Printf("%s is dead, accusing", succ.addr)
 			p := n.getViewPeer(succ.peerKey)
@@ -117,7 +117,7 @@ func (c correct) Monitor(n *Node) {
 				}
 
 				b := []byte(fmt.Sprintf("%v", tmp))
-				signature, err := signContent(b, n.NodeComm.PrivateKey())
+				signature, err := signContent(b, n.privKey)
 				if err != nil {
 					n.log.Err.Println(err)
 					return
@@ -154,7 +154,7 @@ func (sa spamAccusations) Gossip(n *Node) {
 	allNodes := n.getView()
 
 	for _, p := range allNodes {
-		_, err := n.NodeComm.Gossip(p.addr, msg)
+		_, err := n.client.Gossip(p.addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -181,7 +181,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 			}
 
 			b := []byte(fmt.Sprintf("%v", a))
-			signature, err := signContent(b, n.NodeComm.PrivateKey())
+			signature, err := signContent(b, n.privKey)
 			if err != nil {
 				n.log.Err.Println(err)
 				return
@@ -207,12 +207,12 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 	msg := &gossip.GossipMsg{}
 
 	noteMsg := &gossip.Note{
-		Id:    n.NodeComm.ID(),
+		Id:    n.id,
 		Epoch: n.getEpoch(),
 	}
 
 	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.NodeComm.PrivateKey())
+	signature, err := signContent(b, n.privKey)
 	if err != nil {
 		n.log.Err.Println(err)
 		return
@@ -229,7 +229,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 		if addr == n.localAddr {
 			continue
 		}
-		_, err := n.NodeComm.Gossip(addr, msg)
+		_, err := n.client.Gossip(addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -246,13 +246,13 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 		peerNote := p.getNote()
 
 		a := &gossip.Accusation{
-			Accuser: n.NodeComm.ID(),
+			Accuser: n.id,
 			Epoch:   (peerNote.epoch + 1),
 			Accused: peerNote.id,
 		}
 
 		b := []byte(fmt.Sprintf("%v", a))
-		signature, err := signContent(b, n.NodeComm.PrivateKey())
+		signature, err := signContent(b, n.privKey)
 		if err != nil {
 			n.log.Err.Println(err)
 			return nil, err
@@ -267,12 +267,12 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 	}
 
 	noteMsg := &gossip.Note{
-		Id:    n.NodeComm.ID(),
+		Id:    n.id,
 		Epoch: n.getEpoch(),
 	}
 
 	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.NodeComm.PrivateKey())
+	signature, err := signContent(b, n.privKey)
 	if err != nil {
 		return nil, err
 	}

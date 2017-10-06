@@ -1,13 +1,21 @@
 package node
 
 import (
+	"crypto/ecdsa"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/joonnna/capstone/logger"
-	"github.com/joonnna/capstone/node/rpc"
 	"github.com/joonnna/capstone/protobuf"
+)
+
+var (
+	errNoRingNum = errors.New("No ringnumber present in received certificate")
+	errNoId      = errors.New("No id present in received certificate")
 )
 
 const (
@@ -40,7 +48,8 @@ type Node struct {
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
-	NodeComm *rpc.Comm
+	client Client
+	server Server
 
 	gossipTimeout     time.Duration
 	monitorTimeout    time.Duration
@@ -50,30 +59,25 @@ type Node struct {
 	epoch      uint64
 	epochMutex sync.RWMutex
 
+	privKey   *ecdsa.PrivateKey
+	localCert *x509.Certificate
+
 	httpAddr string
 }
 
-//TODO Getting too large and specific,
-//either cut down or simply include the rpc package and drop the interface
-//Or make rpc apart of the node package(probably not)
-/*
-type NodeComm interface {
-	Register(g gossip.GossipServer)
-
-	HostInfo() string
-	ShutDown()
-	Start() error
-	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error)
+type Client interface {
+	//Init(ownCert *tls.Certificate, caCertPool *x509.CertPool)
+	Init(config *tls.Config)
+	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Certificate, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
-
-	//Might change this...
-	EntryCertificates() []*x509.Certificate
-	OwnCertificate() *x509.Certificate
-	ID() []byte
-	NumRings() uint8
-	PrivateKey() *ecdsa.PrivateKey
 }
-*/
+
+type Server interface {
+	Init(config *tls.Config, n interface{}) error
+	HostInfo() string
+	Start() error
+	ShutDown()
+}
 
 type protocol interface {
 	Monitor(n *Node)
@@ -157,12 +161,12 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 	}
 
 	noteMsg := &gossip.Note{
-		Id:    n.NodeComm.ID(),
+		Id:    n.id,
 		Epoch: n.getEpoch(),
 	}
 
 	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.NodeComm.PrivateKey())
+	signature, err := signContent(b, n.privKey)
 	if err != nil {
 		n.log.Err.Println(err)
 		return nil, err
@@ -234,14 +238,32 @@ func (n *Node) findNeighbour(id []byte) string {
 	return ""
 }
 
-func NewNode(entryAddr string) (*Node, error) {
+func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 	var i uint8
 
-	c, err := rpc.NewComm(entryAddr)
+	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
+
+	privKey, err := genKeys()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	logger := logger.CreateLogger(c.HostInfo(), "nodelog")
+
+	certs, err := sendCertRequest(caAddr, privKey, s.HostInfo())
+	if err != nil {
+		return nil, err
+	}
+
+	ext := certs.ownCert.Extensions
+
+	if len(ext) < 1 || len(ext[0].Value) < 1 {
+		return nil, errNoRingNum
+	}
+
+	if len(certs.ownCert.SubjectKeyId) < 1 {
+		return nil, errNoId
+	}
+
+	config := genServerConfig(certs, privKey)
 
 	n := &Node{
 		exitChan:          make(chan bool, 1),
@@ -254,24 +276,28 @@ func NewNode(entryAddr string) (*Node, error) {
 		gossipTimeout:     time.Second * 3,
 		monitorTimeout:    time.Second * 3,
 		nodeDeadTimeout:   5.0,
-		NodeComm:          c,
-		numRings:          c.NumRings(),
-		localAddr:         c.HostInfo(),
-		peerId:            newPeerId(c.ID()),
+		privKey:           privKey,
+		peerId:            newPeerId(certs.ownCert.SubjectKeyId),
+		client:            c,
+		server:            s,
+		numRings:          ext[0].Value[0],
+		localAddr:         s.HostInfo(),
 		log:               logger,
+		localCert:         certs.ownCert,
 	}
 
-	n.NodeComm.SetLogger(logger)
-	n.NodeComm.Register(n)
+	err = n.server.Init(config, n)
+	if err != nil {
+		return nil, err
+	}
 
-	go n.NodeComm.Start()
+	n.client.Init(genClientConfig(certs, privKey))
 
 	for i = 0; i < n.numRings; i++ {
 		n.ringMap[i] = newRing(i, n.id, n.key, n.localAddr)
 	}
 
-	certs := n.NodeComm.EntryCertificates()
-	for _, c := range certs {
+	for _, c := range certs.knownCerts {
 		p, err := newPeer(nil, c)
 		if err != nil {
 			n.log.Err.Println(err)
@@ -300,7 +326,7 @@ func (n *Node) Start(protocol int) {
 
 	n.setProtocol(protocol)
 
-	go n.NodeComm.Start()
+	go n.server.Start()
 
 	n.wg.Add(3)
 	go n.gossipLoop()
@@ -316,6 +342,6 @@ func (n *Node) Start(protocol int) {
 	}
 
 	<-n.exitChan
-	n.NodeComm.ShutDown()
+	n.server.ShutDown()
 	n.log.Info.Println("Exiting node")
 }
