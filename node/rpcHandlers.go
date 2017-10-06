@@ -2,16 +2,65 @@ package node
 
 import (
 	"crypto/x509"
+	"errors"
+	"fmt"
 
 	"github.com/joonnna/capstone/protobuf"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc/credentials"
+	grpcPeer "google.golang.org/grpc/peer"
+)
+
+var (
+	errNoPeerInCtx           = errors.New("No peer information found in provided context")
+	errNoTLSInfo             = errors.New("No TLS info provided in peer context")
+	errNoCert                = errors.New("No local certificate present in request")
+	errNeighbourPeerNotFound = errors.New("Neighbour peer was  not found")
+	errNotMyNeighbour        = errors.New("Invalid gossip partner, not my neighbour")
 )
 
 //TODO accusations and notes
-func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Empty, error) {
-	reply := &gossip.Empty{}
+func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Certificate, error) {
+	var tlsInfo credentials.TLSInfo
+	var ok bool
 
-	n.mergeCertificates(args.GetCertificates())
+	reply := &gossip.Certificate{}
+
+	p, ok := grpcPeer.FromContext(ctx)
+	if !ok {
+		return nil, errNoPeerInCtx
+	}
+
+	if tlsInfo, ok = p.AuthInfo.(credentials.TLSInfo); !ok {
+		return nil, errNoTLSInfo
+	}
+
+	if len(tlsInfo.State.PeerCertificates) < 1 {
+		return nil, errNoCert
+	}
+
+	cert := tlsInfo.State.PeerCertificates[0]
+
+	if !n.shouldBeNeighbours(cert.SubjectKeyId) {
+		n.log.Err.Println(errNotMyNeighbour)
+		n.log.Debug.Println("SATALLARRIS")
+		peerKey := n.findNeighbour(cert.SubjectKeyId)
+		if peerKey == n.key {
+			n.log.Debug.Println("MYSELF YET AGAIN")
+			reply.Raw = n.NodeComm.OwnCertificate().Raw
+			return reply, nil
+		}
+
+		peer := n.getLivePeer(peerKey)
+		if peer == nil {
+			return reply, errNeighbourPeerNotFound
+		}
+
+		reply.Raw = peer.cert.Raw
+		return reply, nil
+	}
+
+	n.mergeCertificates(args.GetCertificates(), cert)
 	n.mergeNotes(args.GetNotes())
 	n.mergeAccusations(args.GetAccusations())
 
@@ -40,7 +89,9 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 }
 
-func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
+func (n *Node) mergeCertificates(certs []*gossip.Certificate, remoteCert *x509.Certificate) {
+	n.evalCertificate(remoteCert)
+
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
@@ -52,7 +103,7 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 }
 
 func (n *Node) evalAccusation(a *gossip.Accusation) {
-	signature := a.GetSignature()
+	sign := a.GetSignature()
 	epoch := a.GetEpoch()
 	accuser := a.GetAccuser()
 	accused := a.GetAccused()
@@ -60,10 +111,9 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	accusedKey := string(accused[:])
 	accuserKey := string(accuser[:])
 
-	//Rebuttal, TODO only gossip own note, not all?
 	if n.peerId.equal(&peerId{id: accused}) {
 		n.setEpoch((epoch + 1))
-		n.getProtocol().Gossip(n)
+		n.getProtocol().Rebuttal(n)
 		return
 	}
 
@@ -76,13 +126,40 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 				return
 			}
 
-			newAcc, err := newAccusation(p.peerId, epoch, signature, accuserPeer.peerId)
+			tmp := &gossip.Accusation{
+				Epoch:   epoch,
+				Accuser: accuser,
+				Accused: accused,
+			}
+			b := []byte(fmt.Sprintf("%v", tmp))
+
+			valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
 			if err != nil {
 				n.log.Err.Println(err)
 				return
 			}
 
-			err = p.setAccusation(newAcc)
+			if !valid {
+				n.log.Info.Println("Invalid signature on note, ignoring")
+				return
+			}
+
+			if !n.isPrev(accuserPeer, p) {
+				n.log.Err.Println("Accuser is not pre-decessor of accused, invalid accusation")
+				return
+			}
+
+			a := &accusation{
+				peerId:  p.peerId,
+				epoch:   epoch,
+				accuser: accuserPeer.peerId,
+				signature: &signature{
+					r: sign.GetR(),
+					s: sign.GetS(),
+				},
+			}
+
+			err = p.setAccusation(a)
 			if err != nil {
 				n.log.Err.Println(err)
 				return
@@ -90,14 +167,8 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			n.log.Debug.Println("Added accusation for: ", p.addr)
 
 			if !n.timerExist(accusedKey) {
-				//TODO fix mask shit
-				newNote, err := createNote(p.peerId, epoch, signature, "")
-				if err != nil {
-					n.log.Err.Println(err)
-					return
-				}
 				n.log.Debug.Println("Started timer for: ", p.addr)
-				n.startTimer(p.key, newNote, accuserPeer)
+				n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
 			}
 		}
 	}
@@ -105,28 +176,45 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 func (n *Node) evalNote(gossipNote *gossip.Note) {
 	epoch := gossipNote.GetEpoch()
-	mask := gossipNote.GetMask()
-	signature := gossipNote.GetSignature()
+	sign := gossipNote.GetSignature()
 	id := gossipNote.GetId()
 
 	peerKey := string(id[:])
 
 	p := n.getViewPeer(peerKey)
 
-	//No certificate received for this peer, ignore
 	if p != nil {
-		peerAccuse := p.getAccusation()
+		tmp := &gossip.Note{
+			Epoch: epoch,
+			Id:    id,
+		}
+		b := []byte(fmt.Sprintf("%v", tmp))
 
+		valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
+		if err != nil {
+			n.log.Err.Println(err)
+			return
+		}
+
+		if !valid {
+			n.log.Info.Println("Invalid signature on note, ignoring")
+			return
+		}
+
+		peerAccuse := p.getAccusation()
 		//Not accused, only need to check if newnote is more recent
 		if peerAccuse == nil {
 			currNote := p.getNote()
 
 			//Want to store the most recent note
 			if currNote == nil || currNote.epoch < epoch {
-				newNote, err := createNote(p.peerId, epoch, signature, mask)
-				if err != nil {
-					n.log.Err.Println(err)
-					return
+				newNote := &note{
+					peerId: p.peerId,
+					epoch:  epoch,
+					signature: &signature{
+						r: sign.GetR(),
+						s: sign.GetS(),
+					},
 				}
 				p.setNote(newNote)
 			}

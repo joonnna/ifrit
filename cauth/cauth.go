@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/joonnna/capstone/logger"
 	"github.com/satori/go.uuid"
@@ -70,6 +71,8 @@ func (c *Ca) NewGroup(ringNum uint8) error {
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
 		IsCA:        true,
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().AddDate(10, 0, 0),
 		PublicKey:   c.pubKey,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
@@ -189,6 +192,8 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		SubjectKeyId:          id,
 		Subject:               reqCert.Subject,
 		BasicConstraintsValid: true,
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
 		Extensions:            extensions,
 		PublicKey:             reqCert.PublicKey,
 		IPAddresses:           []net.IP{ip},

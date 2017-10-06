@@ -1,13 +1,12 @@
 package node
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/joonnna/capstone/logger"
+	"github.com/joonnna/capstone/node/rpc"
 	"github.com/joonnna/capstone/protobuf"
 )
 
@@ -41,7 +40,7 @@ type Node struct {
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
-	NodeComm
+	NodeComm *rpc.Comm
 
 	gossipTimeout     time.Duration
 	monitorTimeout    time.Duration
@@ -57,10 +56,12 @@ type Node struct {
 //TODO Getting too large and specific,
 //either cut down or simply include the rpc package and drop the interface
 //Or make rpc apart of the node package(probably not)
+/*
 type NodeComm interface {
+	Register(g gossip.GossipServer)
+
 	HostInfo() string
 	ShutDown()
-	Register(g gossip.GossipServer)
 	Start() error
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
@@ -70,17 +71,23 @@ type NodeComm interface {
 	OwnCertificate() *x509.Certificate
 	ID() []byte
 	NumRings() uint8
+	PrivateKey() *ecdsa.PrivateKey
 }
+*/
 
 type protocol interface {
 	Monitor(n *Node)
 	Gossip(n *Node)
+	Rebuttal(n *Node)
 }
 
 type timeout struct {
 	observer  *peer
 	lastNote  *note
 	timeStamp time.Time
+
+	//For debugging
+	addr string
 }
 
 func (n *Node) gossipLoop() {
@@ -119,10 +126,10 @@ func (n *Node) checkTimeouts() {
 		case <-time.After(n.viewUpdateTimeout):
 			timeouts := n.getAllTimeouts()
 			for key, t := range timeouts {
-				n.log.Debug.Println("Have timeout for: ", key)
+				n.log.Debug.Println("Have timeout for: ", t.addr)
 				since := time.Since(t.timeStamp)
 				if since.Seconds() > n.nodeDeadTimeout {
-					n.log.Debug.Printf("%s timeout expired, removing from live", key)
+					n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
 					n.deleteTimeout(key)
 					n.removeLivePeer(key)
 				}
@@ -131,23 +138,15 @@ func (n *Node) checkTimeouts() {
 	}
 }
 
-func (n *Node) collectGossipContent() *gossip.GossipMsg {
+func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 	msg := &gossip.GossipMsg{}
 
 	view := n.getView()
 
-	/*
-		viewLen := len(view)
-
-		msg.Certificates = make([]*gossip.Certificate, viewLen)
-		msg.Notes = make([]*gossip.Note, viewLen)
-		msg.Accusations = make([]*gossip.Accusation, 0)
-	*/
 	for _, p := range view {
 		c, n, a := p.createPbInfo()
 
 		msg.Certificates = append(msg.Certificates, c)
-
 		if n != nil {
 			msg.Notes = append(msg.Notes, n)
 		}
@@ -157,21 +156,25 @@ func (n *Node) collectGossipContent() *gossip.GossipMsg {
 		}
 	}
 
-	ownCert := n.NodeComm.OwnCertificate()
-	certMsg := &gossip.Certificate{
-		Raw: ownCert.Raw,
-	}
-
 	noteMsg := &gossip.Note{
-		Id:        n.NodeComm.ID(),
-		Epoch:     n.getEpoch(),
-		Signature: ownCert.Signature,
+		Id:    n.NodeComm.ID(),
+		Epoch: n.getEpoch(),
 	}
 
-	msg.Certificates = append(msg.Certificates, certMsg)
+	b := []byte(fmt.Sprintf("%v", noteMsg))
+	signature, err := signContent(b, n.NodeComm.PrivateKey())
+	if err != nil {
+		n.log.Err.Println(err)
+		return nil, err
+	}
+	noteMsg.Signature = &gossip.Signature{
+		R: signature.r,
+		S: signature.s,
+	}
+
 	msg.Notes = append(msg.Notes, noteMsg)
 
-	return msg
+	return msg, nil
 }
 
 func (n *Node) setProtocol(protocol int) {
@@ -181,10 +184,8 @@ func (n *Node) setProtocol(protocol int) {
 	switch protocol {
 	case NormalProtocol:
 		n.protocol = correct{}
-	/*
-		case SpamAccusationsProtocol:
-			n.protocol = spamAccusations{}
-	*/
+	case SpamAccusationsProtocol:
+		n.protocol = spamAccusations{}
 	default:
 		n.protocol = correct{}
 	}
@@ -197,17 +198,54 @@ func (n *Node) getProtocol() protocol {
 	return n.protocol
 }
 
-func NewNode(comm NodeComm, log *logger.Log) (*Node, error) {
+func (n *Node) isPrev(p *peer, other *peer) bool {
+	for _, r := range n.ringMap {
+		prev, err := r.isPrev(p, other)
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
+
+		if prev {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *Node) shouldBeNeighbours(id []byte) bool {
+	pId := newPeerId(id)
+
+	for _, r := range n.ringMap {
+		if r.betweenNeighbours(pId) {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *Node) findNeighbour(id []byte) string {
+	pId := newPeerId(id)
+
+	//For now only return one neighbour, might change this
+	for _, r := range n.ringMap {
+		return r.findNeighbour(pId)
+	}
+	return ""
+}
+
+func NewNode(entryAddr string) (*Node, error) {
 	var i uint8
 
+	c, err := rpc.NewComm(entryAddr)
+	if err != nil {
+		panic(err)
+	}
+	logger := logger.CreateLogger(c.HostInfo(), "nodelog")
+
 	n := &Node{
-		NodeComm:          comm,
-		log:               log,
 		exitChan:          make(chan bool, 1),
 		wg:                &sync.WaitGroup{},
-		localAddr:         comm.HostInfo(),
-		peerId:            newPeerId(comm.ID()),
-		numRings:          comm.NumRings(),
 		ringMap:           make(map[uint8]*ring),
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
@@ -216,9 +254,17 @@ func NewNode(comm NodeComm, log *logger.Log) (*Node, error) {
 		gossipTimeout:     time.Second * 3,
 		monitorTimeout:    time.Second * 3,
 		nodeDeadTimeout:   5.0,
+		NodeComm:          c,
+		numRings:          c.NumRings(),
+		localAddr:         c.HostInfo(),
+		peerId:            newPeerId(c.ID()),
+		log:               logger,
 	}
 
+	n.NodeComm.SetLogger(logger)
 	n.NodeComm.Register(n)
+
+	go n.NodeComm.Start()
 
 	for i = 0; i < n.numRings; i++ {
 		n.ringMap[i] = newRing(i, n.id, n.key, n.localAddr)
@@ -272,13 +318,4 @@ func (n *Node) Start(protocol int) {
 	<-n.exitChan
 	n.NodeComm.ShutDown()
 	n.log.Info.Println("Exiting node")
-}
-
-func genKeys() (*rsa.PrivateKey, error) {
-	privKey, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return nil, err
-	}
-
-	return privKey, nil
 }

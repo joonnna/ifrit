@@ -43,7 +43,11 @@ func (rI *ringId) cmpId(other *ringId) int {
 
 func newRing(ringNum uint8, id []byte, peerKey string, addr string) *ring {
 	h := hashId(ringNum, id)
-	localRingId := newRingId(h, peerKey, addr)
+	localRingId := &ringId{
+		id:      h,
+		peerKey: peerKey,
+		addr:    addr,
+	}
 
 	r := &ring{
 		ringNum:     ringNum,
@@ -63,14 +67,18 @@ func (r *ring) add(newId []byte, peerKey string, addr string) error {
 	}
 
 	h := hashId(r.ringNum, newId)
-	ringIdentity := newRingId(h, peerKey, addr)
+	id := &ringId{
+		id:      h,
+		peerKey: peerKey,
+		addr:    addr,
+	}
 
-	cmp := ringIdentity.cmpId(r.localRingId)
+	cmp := id.cmpId(r.localRingId)
 	if cmp == 0 {
 		return errSameId
 	}
 
-	newList, idx := insert(r.succList, ringIdentity)
+	newList, idx := insert(r.succList, id)
 	r.succList = newList
 
 	if idx <= r.ownIdx {
@@ -96,7 +104,10 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 
 	h := hashId(r.ringNum, removeId)
 	//Dont need addr, just want ringId struct to perform search
-	id := newRingId(h, peerKey, "")
+	id := &ringId{
+		id:      h,
+		peerKey: peerKey,
+	}
 
 	idx, err := search(r.succList, id)
 	if err != nil {
@@ -109,7 +120,8 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 		return errRemoveSelf
 	}
 
-	r.existsMap[peerKey] = false
+	delete(r.existsMap, peerKey)
+
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
 
 	if !r.succList[r.ownIdx].equal(r.localRingId) {
@@ -128,10 +140,114 @@ func hashId(ringNum uint8, id []byte) []byte {
 	return h.Sum(nil)
 }
 
-func newRingId(id []byte, peerKey string, addr string) *ringId {
-	return &ringId{
-		peerKey: peerKey,
-		id:      id,
-		addr:    addr,
+func (r *ring) isPrev(p, other *peer) (bool, error) {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len <= 1 && other.key == r.localRingId.peerKey {
+		return true, nil
+	}
+
+	h := hashId(r.ringNum, p.id)
+	//Dont need addr, just want ringId struct to perform search
+	id := &ringId{
+		id:      h,
+		peerKey: p.key,
+	}
+
+	i, err := search(r.succList, id)
+	if err != nil {
+		return false, errNotFound
+	}
+
+	idx := (i + 1) % len
+	if r.succList[idx].peerKey == other.key {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (r *ring) betweenNeighbours(other *peerId) bool {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len <= 1 {
+		return true
+	}
+
+	h := hashId(r.ringNum, other.id)
+	id := &ringId{
+		id:      h,
+		peerKey: other.key,
+	}
+
+	idx := (r.ownIdx + 1) % len
+	succ := r.succList[idx]
+
+	prevIdx := (r.ownIdx - 1) % len
+	if prevIdx < 0 {
+		prevIdx = prevIdx + len
+	}
+	prev := r.succList[prevIdx]
+
+	if !isBetween(r.localRingId, succ, id) && !isBetween(prev, r.localRingId, id) {
+		return false
+	} else {
+		return true
+	}
+}
+
+func (r *ring) findNeighbour(p *peerId) string {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len <= 1 {
+		return r.localRingId.peerKey
+	}
+
+	h := hashId(r.ringNum, p.id)
+	id := &ringId{
+		id:      h,
+		peerKey: p.key,
+	}
+
+	idx := findNeighbourIdx(r.succList, id)
+	return r.succList[idx].peerKey
+}
+
+func isBetween(start, end, new *ringId) bool {
+	startEndCmp := start.cmpId(end)
+	startNewCmp := start.cmpId(new)
+	endNewCmp := end.cmpId(new)
+
+	if endNewCmp == 0 || startNewCmp == 0 {
+		return true
+	}
+
+	//Start has lower id value
+	if startEndCmp == -1 {
+		if startNewCmp == -1 && endNewCmp == 1 {
+			return true
+		} else {
+			return false
+		}
+		//Start has higher id value
+	} else if startEndCmp == 1 {
+		if startNewCmp == 1 && endNewCmp == 1 {
+			return true
+		} else if startNewCmp == -1 && endNewCmp == -1 {
+			return true
+		} else {
+			return false
+		}
+	} else {
+		return true
 	}
 }

@@ -1,8 +1,7 @@
 package rpc
 
 import (
-	"crypto"
-	"crypto/rsa"
+	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
@@ -10,14 +9,12 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/joonnna/capstone/logger"
 	"github.com/joonnna/capstone/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/keepalive"
 )
 
 const (
@@ -25,7 +22,9 @@ const (
 )
 
 var (
-	errReachable = errors.New("Remote entity not reachable")
+	errReachable     = errors.New("Remote entity not reachable")
+	errNoCertificate = errors.New("No certificates?!")
+	errRefuseGossip  = errors.New("Not a valid gossip partner")
 )
 
 type Comm struct {
@@ -37,15 +36,17 @@ type Comm struct {
 	localAddr string
 	listener  net.Listener
 
-	privKey    *rsa.PrivateKey
-	pubKey     crypto.PublicKey
+	privKey    *ecdsa.PrivateKey
+	pubKey     ecdsa.PublicKey
 	localCert  *x509.Certificate
 	entryCerts []*x509.Certificate
 	caCertPool *x509.CertPool
 
 	log *logger.Log
 
-	dialCreds grpc.DialOption
+	tlsCert *tls.Certificate
+
+	//dialCreds grpc.DialOption
 }
 
 func NewComm(caAddr string) (*Comm, error) {
@@ -68,7 +69,7 @@ func NewComm(caAddr string) (*Comm, error) {
 		return nil, err
 	}
 
-	config, err := genServerConfig(certs, privKey)
+	config, tlsCert, err := genServerConfig(certs, privKey)
 	if err != nil {
 		return nil, err
 	}
@@ -77,13 +78,6 @@ func NewComm(caAddr string) (*Comm, error) {
 
 	options := grpc.Creds(creds)
 
-	keepAlive := keepalive.ServerParameters{
-		Time:    time.Second * 60,
-		Timeout: time.Second * 20,
-	}
-
-	opt := grpc.KeepaliveParams(keepAlive)
-
 	pool := x509.NewCertPool()
 	pool.AddCert(certs.caCert)
 
@@ -91,13 +85,13 @@ func NewComm(caAddr string) (*Comm, error) {
 		allConnections: make(map[string]gossip.GossipClient),
 		localAddr:      addr,
 		listener:       l,
-		rpcServer:      grpc.NewServer(options, opt),
 		privKey:        privKey,
-		pubKey:         privKey.Public(),
+		pubKey:         privKey.PublicKey,
 		localCert:      certs.ownCert,
 		entryCerts:     certs.knownCerts,
 		caCertPool:     pool,
-		//dialCreds:      grpc.WithTransportCredentials(creds),
+		rpcServer:      grpc.NewServer(options),
+		tlsCert:        tlsCert,
 	}
 
 	return comm, nil
@@ -139,28 +133,20 @@ func (c *Comm) ShutDown() {
 	c.rpcServer.GracefulStop()
 }
 
+func (c Comm) PrivateKey() *ecdsa.PrivateKey {
+	return c.privKey
+}
+
 func (c *Comm) dial(addr string) (gossip.GossipClient, error) {
 	var client gossip.GossipClient
 
-	test := tls.Certificate{
-		Certificate: [][]byte{c.localCert.Raw},
-		PrivateKey:  c.privKey,
-		//Leaf:        c.localCert,
-	}
-
-	keepAlive := keepalive.ClientParameters{
-		Time:    time.Second * 60,
-		Timeout: time.Second * 20,
-	}
-
 	creds := credentials.NewTLS(&tls.Config{
-		Certificates:       []tls.Certificate{test},
-		ServerName:         strings.Split(addr, ":")[0], // NOTE: this is required!
-		RootCAs:            c.caCertPool,
-		InsecureSkipVerify: true,
+		Certificates: []tls.Certificate{*c.tlsCert},
+		ServerName:   strings.Split(addr, ":")[0], // NOTE: this is required!
+		RootCAs:      c.caCertPool,
 	})
 
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(creds), grpc.WithKeepaliveParams(keepAlive))
+	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		c.log.Err.Println(err)
 		return nil, errReachable
@@ -172,7 +158,7 @@ func (c *Comm) dial(addr string) (gossip.GossipClient, error) {
 	return client, nil
 }
 
-func (c *Comm) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Empty, error) {
+func (c *Comm) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Certificate, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err
@@ -259,3 +245,27 @@ func getOpenPort(hostName string) (net.Listener, string) {
 
 	return nil, ""
 }
+
+/*
+func (c *Comm) checkCert(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	if len(verifiedChains) == 0 {
+		c.log.Err.Println(errNoCertificate)
+		return errNoCertificate
+	}
+
+	//Index 0 is incoming cert, index 1 is ca cert...
+	cert := verifiedChains[0][0]
+
+	if len(cert.SubjectKeyId) == 0 {
+		c.log.Err.Println(errRefuseGossip)
+		return errRefuseGossip
+	}
+
+	if !c.gossipValidation.AcceptGossip(cert.SubjectKeyId) {
+		c.log.Err.Println(errRefuseGossip)
+		return errRefuseGossip
+	}
+
+	return nil
+}
+*/

@@ -1,18 +1,16 @@
 package node
 
-
 import (
-	_"math/big"
-	_"fmt"
 	"errors"
+	_ "fmt"
+	_ "math/big"
 )
 
 var (
 	errIdNotFound = errors.New("ring id not found")
 )
 
-
-func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
+func insert(slice []*ringId, newId *ringId) ([]*ringId, int) {
 	length := len(slice)
 	currIdx := 0
 	maxIdx := length - 1
@@ -44,8 +42,7 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int){
 	}
 }
 
-
-func search (slice []*ringId, searchId *ringId) (int, error) {
+func search(slice []*ringId, searchId *ringId) (int, error) {
 	length := len(slice)
 	currIdx := 0
 	maxIdx := length - 1
@@ -69,6 +66,29 @@ func search (slice []*ringId, searchId *ringId) (int, error) {
 			maxIdx = mid - 1
 		} else {
 			return mid, nil
+		}
+	}
+}
+
+func findNeighbourIdx(slice []*ringId, searchId *ringId) int {
+	length := len(slice)
+	currIdx := 0
+	maxIdx := length - 1
+
+	for {
+		if currIdx >= maxIdx {
+			return currIdx
+		}
+		mid := (currIdx + maxIdx) / 2
+
+		cmp := slice[mid].cmpId(searchId)
+
+		if cmp == -1 {
+			currIdx = mid + 1
+		} else if cmp == 1 {
+			maxIdx = mid - 1
+		} else {
+			return mid
 		}
 	}
 }

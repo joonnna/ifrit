@@ -221,7 +221,7 @@ func (n *Node) removeLivePeer(key string) {
 	peerKey := p.key
 	id := p.id
 
-	n.log.Debug.Printf("Removed livePeer: %s", key)
+	n.log.Debug.Printf("Removed livePeer: %s", p.addr)
 	delete(n.liveMap, key)
 
 	for k, ring := range n.ringMap {
@@ -243,22 +243,21 @@ func (n *Node) timerExist(key string) bool {
 	return ok
 }
 
-func (n *Node) startTimer(key string, newNote *note, observer *peer) {
+func (n *Node) startTimer(key string, newNote *note, observer *peer, addr string) {
 	n.timeoutMutex.Lock()
 	defer n.timeoutMutex.Unlock()
 
-	/*
-		if t, ok := n.timeoutMap[key]; ok {
-			if t.lastNote.epoch > newNote.epoch {
-				return
-			}
+	if t, ok := n.timeoutMap[key]; ok {
+		if t.lastNote.epoch >= newNote.epoch {
+			return
 		}
-	*/
+	}
 
 	newTimeout := &timeout{
 		observer:  observer,
 		lastNote:  newNote,
 		timeStamp: time.Now(),
+		addr:      addr,
 	}
 	n.timeoutMap[key] = newTimeout
 }

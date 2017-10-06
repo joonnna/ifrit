@@ -2,8 +2,9 @@ package rpc
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -23,7 +24,7 @@ type certSet struct {
 	knownCerts []*x509.Certificate
 }
 
-func sendCertRequest(caAddr string, privKey *rsa.PrivateKey, localAddr string) (*certSet, error) {
+func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, localAddr string) (*certSet, error) {
 	var certs certResponse
 
 	set := &certSet{}
@@ -33,7 +34,7 @@ func sendCertRequest(caAddr string, privKey *rsa.PrivateKey, localAddr string) (
 	}
 
 	template := x509.CertificateRequest{
-		SignatureAlgorithm: x509.SHA256WithRSA,
+		SignatureAlgorithm: x509.ECDSAWithSHA256,
 		Subject:            s,
 	}
 
@@ -74,7 +75,7 @@ func sendCertRequest(caAddr string, privKey *rsa.PrivateKey, localAddr string) (
 	return set, nil
 }
 
-func genServerConfig(certs *certSet, key *rsa.PrivateKey) (*tls.Config, error) {
+func genServerConfig(certs *certSet, key *ecdsa.PrivateKey) (*tls.Config, *tls.Certificate, error) {
 	tlsCert := tls.Certificate{
 		Certificate: [][]byte{certs.ownCert.Raw},
 		PrivateKey:  key,
@@ -85,18 +86,15 @@ func genServerConfig(certs *certSet, key *rsa.PrivateKey) (*tls.Config, error) {
 
 	c := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
-		//No idea if they should be the same...
-		//RootCAs:    pool,
-
-		ClientCAs:  pool,
-		ClientAuth: tls.NoClientCert,
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
 	}
 
-	return c, nil
+	return c, &tlsCert, nil
 }
 
-func genKeys() (*rsa.PrivateKey, error) {
-	privKey, err := rsa.GenerateKey(rand.Reader, 1024)
+func genKeys() (*ecdsa.PrivateKey, error) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}

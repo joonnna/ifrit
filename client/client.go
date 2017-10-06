@@ -3,9 +3,7 @@ package client
 import (
 	"runtime"
 
-	"github.com/joonnna/capstone/logger"
 	"github.com/joonnna/capstone/node"
-	"github.com/joonnna/capstone/node/rpc"
 )
 
 type Client struct {
@@ -15,15 +13,16 @@ type Client struct {
 func StartClient(entryAddr string) *Client {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	comm, err := rpc.NewComm(entryAddr)
-	if err != nil {
-		panic(err)
-	}
+	/*
+		comm, err := rpc.NewComm(entryAddr)
+		if err != nil {
+			panic(err)
+		}
 
-	logger := logger.CreateLogger(comm.HostInfo(), "clientlog")
-	comm.SetLogger(logger)
-
-	n, err := node.NewNode(comm, logger)
+		logger := logger.CreateLogger(n.NodeComm.HostInfo(), "nodelog")
+		comm.SetLogger(logger)
+	*/
+	n, err := node.NewNode(entryAddr)
 	if err != nil {
 		panic(err)
 	}

@@ -6,7 +6,7 @@ func TestSort(t *testing.T) {
 
 	var i int64
 
-	for i = 0; i < 21; i += 3 {
+	for i = 0; i < 21; i+= 3 {
 		newInt := big.NewInt(i)
 
 		id := &ringId{
@@ -22,7 +22,7 @@ func TestSearch(t *testing.T) {
 
 	var i int64
 
-	for i = 0; i < 21; i += 3 {
+	for i = 0; i < 21; i+= 3 {
 		newInt := big.NewInt(i)
 
 		id := &ringId{
@@ -32,13 +32,15 @@ func TestSearch(t *testing.T) {
 		newSlice, _ = insert(newSlice, id)
 	}
 
+
 	for _, val := range newSlice {
 		fmt.Println(val.id.Int64())
 	}
 	fmt.Printf("LEN :%d", len(newSlice))
 	fmt.Println("\n\n")
 
-	for i = 0; i < 21; i += 3 {
+
+	for i = 0; i < 21; i+= 3 {
 		newInt := big.NewInt(i)
 
 		id := &ringId{
@@ -51,6 +53,5 @@ func TestSearch(t *testing.T) {
 		}
 		fmt.Println(idx)
 	}
-
 }
 */
