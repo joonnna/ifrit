@@ -12,19 +12,20 @@ import (
 )
 
 var (
-	errNoPeerInCtx           = errors.New("No peer information found in provided context")
-	errNoTLSInfo             = errors.New("No TLS info provided in peer context")
-	errNoCert                = errors.New("No local certificate present in request")
-	errNeighbourPeerNotFound = errors.New("Neighbour peer was  not found")
-	errNotMyNeighbour        = errors.New("Invalid gossip partner, not my neighbour")
+	errNoPeerInCtx            = errors.New("No peer information found in provided context")
+	errNoTLSInfo              = errors.New("No TLS info provided in peer context")
+	errNoCert                 = errors.New("No local certificate present in request")
+	errNeighbourPeerNotFound  = errors.New("Neighbour peer was  not found")
+	errNotMyNeighbour         = errors.New("Invalid gossip partner, not my neighbour")
+	errInvalidPeerInformation = errors.New("Could not create local peer representation")
 )
 
 //TODO accusations and notes
-func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Certificate, error) {
+func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Partners, error) {
 	var tlsInfo credentials.TLSInfo
 	var ok bool
 
-	reply := &gossip.Certificate{}
+	reply := &gossip.Partners{}
 
 	p, ok := grpcPeer.FromContext(ctx)
 	if !ok {
@@ -44,19 +45,28 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Cert
 	if !n.shouldBeNeighbours(cert.SubjectKeyId) {
 		n.log.Err.Println(errNotMyNeighbour)
 		n.log.Debug.Println("SATALLARRIS")
-		peerKey := n.findNeighbour(cert.SubjectKeyId)
-		if peerKey == n.key {
-			n.log.Debug.Println("MYSELF YET AGAIN")
-			reply.Raw = n.localCert.Raw
-			return reply, nil
+
+		key := string(cert.SubjectKeyId[:])
+
+		if !n.viewPeerExist(key) {
+			p, err := newPeer(nil, cert)
+			if err != nil {
+				n.log.Err.Println(err)
+				return nil, errInvalidPeerInformation
+			}
+			n.addViewPeer(p)
+			n.addLivePeer(p)
 		}
 
-		peer := n.getLivePeer(peerKey)
-		if peer == nil {
-			return reply, errNeighbourPeerNotFound
+		peerKeys := n.findNeighbours(cert.SubjectKeyId)
+		for _, k := range peerKeys {
+			p := n.getLivePeer(k)
+			if p != nil {
+				c := &gossip.Certificate{Raw: p.cert.Raw}
+				reply.Certificates = append(reply.Certificates, c)
+			}
 		}
 
-		reply.Raw = peer.cert.Raw
 		return reply, nil
 	}
 

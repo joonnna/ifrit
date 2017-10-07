@@ -70,6 +70,10 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
+	if n.setExitFlag() {
+		return
+	}
+
 	n.log.Info.Println("Received shutdown request!")
 
 	n.ShutDownNode()
@@ -186,4 +190,16 @@ func (n *Node) remove(ringId uint8) {
 	} else {
 		resp.Body.Close()
 	}
+}
+
+func (n *Node) setExitFlag() bool {
+	n.exitMutex.Lock()
+	defer n.exitMutex.Unlock()
+
+	if n.exitFlag {
+		return true
+	}
+
+	n.exitFlag = true
+	return false
 }

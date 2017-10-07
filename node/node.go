@@ -48,6 +48,9 @@ type Node struct {
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
+	exitFlag  bool
+	exitMutex sync.RWMutex
+
 	client Client
 	server Server
 
@@ -68,7 +71,7 @@ type Node struct {
 type Client interface {
 	//Init(ownCert *tls.Certificate, caCertPool *x509.CertPool)
 	Init(config *tls.Config)
-	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Certificate, error)
+	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
 }
 
@@ -228,14 +231,20 @@ func (n *Node) shouldBeNeighbours(id []byte) bool {
 	return false
 }
 
-func (n *Node) findNeighbour(id []byte) string {
+func (n *Node) findNeighbours(id []byte) []string {
+	keys := make([]string, 0)
+
 	pId := newPeerId(id)
 
 	//For now only return one neighbour, might change this
 	for _, r := range n.ringMap {
-		return r.findNeighbour(pId)
+		key, err := r.findNeighbour(pId)
+		if err != nil {
+			continue
+		}
+		keys = append(keys, key)
 	}
-	return ""
+	return keys
 }
 
 func NewNode(caAddr string, c Client, s Server) (*Node, error) {

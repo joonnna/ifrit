@@ -35,7 +35,7 @@ func (c *Client) Init(config *tls.Config) {
 	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
 }
 
-func (c *Client) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Certificate, error) {
+func (c *Client) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err

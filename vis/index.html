@@ -152,6 +152,15 @@ function corrupt() {
 
 }
 
+
+function add() {
+    var x = new XMLHttpRequest();
+    x.open('GET', "http://localhost:5632/addNode", true);
+    x.send(null);
+}
+
+
+
 var shutdownButton = document.getElementById('shutdownNode');
 shutdownButton.onclick = function() {shutdown();};
 
@@ -161,6 +170,8 @@ crashbutton.onclick = function() {crash();};
 var corruptbutton = document.getElementById('corruptNode');
 corruptbutton.onclick = function() {corrupt();};
 
+var addbutton = document.getElementById('addNode');
+addbutton.onclick = function() {add();};
 
 
 function addEdge(id, destination) {

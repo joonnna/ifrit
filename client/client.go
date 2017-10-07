@@ -31,6 +31,6 @@ func StartClient(entryAddr string) *Client {
 	return client
 }
 
-func (c *Client) ShutDownClient() {
+func (c *Client) ShutDown() {
 	c.node.ShutDownNode()
 }

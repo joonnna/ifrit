@@ -202,14 +202,14 @@ func (r *ring) betweenNeighbours(other *peerId) bool {
 	}
 }
 
-func (r *ring) findNeighbour(p *peerId) string {
+func (r *ring) findNeighbour(p *peerId) (string, error) {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
 
 	len := len(r.succList)
 
 	if len <= 1 {
-		return r.localRingId.peerKey
+		return r.localRingId.peerKey, nil
 	}
 
 	h := hashId(r.ringNum, p.id)
@@ -218,8 +218,14 @@ func (r *ring) findNeighbour(p *peerId) string {
 		peerKey: p.key,
 	}
 
-	idx := findNeighbourIdx(r.succList, id)
-	return r.succList[idx].peerKey
+	idx, err := search(r.succList, id)
+	if err != nil {
+		return "", errNotFound
+	}
+
+	neighbourIdx := (idx + 1) % len
+
+	return r.succList[neighbourIdx].peerKey, nil
 }
 
 func isBetween(start, end, new *ringId) bool {

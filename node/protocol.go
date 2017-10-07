@@ -62,23 +62,27 @@ func (c correct) Gossip(n *Node) {
 		}
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
-			if reply.GetRaw() == nil {
+			certs := reply.GetCertificates()
+			if certs == nil {
 				n.log.Err.Println(err)
 				continue
 			} else {
-				cert, err := x509.ParseCertificate(reply.GetRaw())
-				if err != nil {
-					n.log.Err.Println(err)
-					return
-				}
-				p, err := newPeer(nil, cert)
-				if err != nil {
-					n.log.Err.Println(err)
-					return
-				}
+				for _, c := range certs {
+					cert, err := x509.ParseCertificate(c.GetRaw())
+					if err != nil {
+						n.log.Err.Println(err)
+						return
+					}
+					p, err := newPeer(nil, cert)
+					if err != nil {
+						n.log.Err.Println(err)
+						return
+					}
 
-				n.addViewPeer(p)
-				n.addLivePeer(p)
+					n.addViewPeer(p)
+					n.addLivePeer(p)
+
+				}
 			}
 
 		}
@@ -173,6 +177,9 @@ func (sa spamAccusations) Monitor(n *Node) {
 		p := n.getViewPeer(succ.peerKey)
 		if p != nil {
 			peerNote := p.getNote()
+			if peerNote == nil {
+				return
+			}
 
 			a := &accusation{
 				peerId:  p.peerId,
@@ -244,6 +251,9 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 
 	for _, p := range view {
 		peerNote := p.getNote()
+		if peerNote == nil {
+			continue
+		}
 
 		a := &gossip.Accusation{
 			Accuser: n.id,
