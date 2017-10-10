@@ -65,11 +65,11 @@ type Node struct {
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
 
-	httpAddr string
+	trustedBootNode bool
+	httpAddr        string
 }
 
 type Client interface {
-	//Init(ownCert *tls.Certificate, caCertPool *x509.CertPool)
 	Init(config *tls.Config)
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
@@ -148,7 +148,7 @@ func (n *Node) checkTimeouts() {
 func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 	msg := &gossip.GossipMsg{}
 
-	view := n.getView()
+	view := n.getLivePeers()
 
 	for _, p := range view {
 		c, n, a := p.createPbInfo()
@@ -220,6 +220,16 @@ func (n *Node) isPrev(p *peer, other *peer) bool {
 	return false
 }
 
+func (n *Node) isHigherRank(p, other *peerId) bool {
+	for _, r := range n.ringMap {
+		if r.isHigher(p, other) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (n *Node) shouldBeNeighbours(id []byte) bool {
 	pId := newPeerId(id)
 
@@ -236,7 +246,6 @@ func (n *Node) findNeighbours(id []byte) []string {
 
 	pId := newPeerId(id)
 
-	//For now only return one neighbour, might change this
 	for _, r := range n.ringMap {
 		key, err := r.findNeighbour(pId)
 		if err != nil {
@@ -293,6 +302,7 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		localAddr:         s.HostInfo(),
 		log:               logger,
 		localCert:         certs.ownCert,
+		trustedBootNode:   certs.trusted,
 	}
 
 	err = n.server.Init(config, n)
@@ -337,10 +347,11 @@ func (n *Node) Start(protocol int) {
 
 	go n.server.Start()
 
-	n.wg.Add(3)
+	n.wg.Add(4)
 	go n.gossipLoop()
 	go n.monitor()
 	go n.checkTimeouts()
+	go n.updateState()
 
 	go n.httpHandler(done)
 

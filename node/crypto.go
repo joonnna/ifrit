@@ -23,12 +23,14 @@ type certResponse struct {
 	OwnCert    []byte
 	KnownCerts [][]byte
 	CaCert     []byte
+	Trusted    bool
 }
 
 type certSet struct {
 	ownCert    *x509.Certificate
 	caCert     *x509.Certificate
 	knownCerts []*x509.Certificate
+	trusted    bool
 }
 
 func hashContent(data []byte) []byte {
@@ -107,6 +109,8 @@ func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, localAddr string)
 		}
 		set.knownCerts = append(set.knownCerts, c)
 	}
+
+	set.trusted = certs.Trusted
 
 	return set, nil
 }

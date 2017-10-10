@@ -110,11 +110,7 @@ func (p *peer) setAccusation(a *accusation) error {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	if p.recentNote == nil {
-		return errNoNote
-	}
-
-	if p.recentNote.epoch > a.epoch {
+	if p.recentNote != nil && p.recentNote.epoch > a.epoch {
 		return errOldEpoch
 	}
 

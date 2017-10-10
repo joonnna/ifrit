@@ -138,13 +138,16 @@ func (n *Node) getNeighbours() []string {
 		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Info.Println(err)
+		} else {
+			neighbours = append(neighbours, succ.addr)
 		}
 
 		prev, err := ring.getRingPrev()
 		if err != nil {
 			n.log.Info.Println(err)
+		} else {
+			neighbours = append(neighbours, prev.addr)
 		}
-		neighbours = append(neighbours, succ.addr, prev.addr)
 	}
 	return neighbours
 }
@@ -202,9 +205,9 @@ func (n *Node) addLivePeer(p *peer) {
 
 	n.liveMap[p.key] = p
 
-	for k, ring := range n.ringMap {
+	for _, ring := range n.ringMap {
 		ring.add(p.id, p.key, p.addr)
-		n.updateState(k)
+		//n.updateState(k)
 	}
 }
 
@@ -224,13 +227,13 @@ func (n *Node) removeLivePeer(key string) {
 	n.log.Debug.Printf("Removed livePeer: %s", p.addr)
 	delete(n.liveMap, key)
 
-	for k, ring := range n.ringMap {
+	for _, ring := range n.ringMap {
 		err := ring.remove(id, peerKey)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
 		}
-		n.updateState(k)
+		//n.updateState(k)
 	}
 }
 
@@ -247,7 +250,7 @@ func (n *Node) startTimer(key string, newNote *note, observer *peer, addr string
 	n.timeoutMutex.Lock()
 	defer n.timeoutMutex.Unlock()
 
-	if t, ok := n.timeoutMap[key]; ok {
+	if t, ok := n.timeoutMap[key]; ok && newNote != nil {
 		if t.lastNote.epoch >= newNote.epoch {
 			return
 		}

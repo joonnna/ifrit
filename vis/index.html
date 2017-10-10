@@ -29,10 +29,12 @@
     <input type="button" value="Shutdown node" id="shutdownNode">
     <input type="button" value="Crash node" id="crashNode">
     <input type="button" value="Corrupt a node" id="corruptNode">
+    <input type="button" value="Stabilize" id="stabilize">
     <div id="mynetwork">
         <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
     </div>
     <script type="text/javascript">
+var network;
 var dataset = new vis.DataSet([])
 var singleEdges = new vis.DataSet([])
 var edges = new vis.DataSet([])
@@ -40,13 +42,19 @@ var edges = new vis.DataSet([])
     var nodata = true
     socket.on('add', function(message) {
         var id = message.data.ID
-        dataset.add([{id: id, label: id, http: message.data.HttpAddr}]);
+        var trusted = message.data.Trusted
+        dataset.add([{id: id, label: id, http: message.data.HttpAddr, trusted: trusted}]);
         if (nodata) {
             init()
         }
     });
 socket.on('remove', function(message) {
     dataset.remove({id: message.data.ID});
+
+    nextid = message.data.ID + "next"
+    previd = message.data.ID + "prev"
+    edges.remove({id: nextid})
+    edges.remove({id: previd})
 });
 socket.on('update', function(message) {
     nextid = message.data.ID + "next"
@@ -62,6 +70,12 @@ function init() {
             edges: edges
         };
     var options = {
+        layout: {
+            improvedLayout: true,
+        },
+        physics: {
+            stabilization: false,
+        },
         nodes: {
             shape: 'dot',
             size: 15,
@@ -69,17 +83,19 @@ function init() {
                 size: 12,
                 color: '#ffffff'
             },
-            borderWidth: 2
+            borderWidth: 2,
         },
         edges: {
-            width: 2
+            width: 2,
         }
     };
-    var network = new vis.Network(container, data, options)
+    network = new vis.Network(container, data, options)
 }
 
 function shutdown() {
-    var randomNodes = dataset.get({});
+    var randomNodes = dataset.get().filter(function(node) {
+        return node.trusted === false
+    });
     console.log(randomNodes.length);
     if (randomNodes.length === 0) {
         return
@@ -87,6 +103,9 @@ function shutdown() {
     var idx = Math.floor((Math.random() * randomNodes.length) + 1);
 
     var randomNode = randomNodes[idx];
+    if (randomNode === null) {
+        return
+    }
     console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/shutdownNode", true);
@@ -96,7 +115,7 @@ function shutdown() {
 function crash() {
     var randomNodes = dataset.get({
         filter: function(item) {
-            return (item.color != "red");
+            return (item.color != "red" && item.trusted === false);
         }
     });
     console.log(randomNodes.length);
@@ -159,6 +178,9 @@ function add() {
     x.send(null);
 }
 
+function stabilize() {
+    network.stabilize();
+}
 
 
 var shutdownButton = document.getElementById('shutdownNode');
@@ -172,6 +194,9 @@ corruptbutton.onclick = function() {corrupt();};
 
 var addbutton = document.getElementById('addNode');
 addbutton.onclick = function() {add();};
+
+var stabbutton = document.getElementById('stabilize');
+stabbutton.onclick = function() {stabilize();};
 
 
 function addEdge(id, destination) {

@@ -88,6 +88,7 @@ func (r *ring) add(newId []byte, peerKey string, addr string) error {
 	r.existsMap[peerKey] = true
 
 	if !r.succList[r.ownIdx].equal(r.localRingId) {
+		panic(errLostSelf)
 		return errLostSelf
 	}
 
@@ -117,6 +118,7 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 	if idx < r.ownIdx {
 		r.ownIdx -= 1
 	} else if idx == r.ownIdx {
+		panic(errRemoveSelf)
 		return errRemoveSelf
 	}
 
@@ -125,6 +127,7 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
 
 	if !r.succList[r.ownIdx].equal(r.localRingId) {
+		panic(errLostSelf)
 		return errLostSelf
 	}
 
@@ -135,9 +138,46 @@ func hashId(ringNum uint8, id []byte) []byte {
 	preHashId := append(id, ringNum)
 
 	h := sha256.New()
-	h.Write([]byte(preHashId))
+	h.Write(preHashId)
 
 	return h.Sum(nil)
+}
+
+func (r *ring) rank(other *peerId) (int, error) {
+	h := hashId(r.ringNum, other.id)
+	id := &ringId{
+		id: h,
+	}
+
+	idx, err := search(r.succList, id)
+	if err != nil {
+		return -1, errNotFound
+	}
+
+	ret := r.ownIdx - idx
+
+	if ret < 0 {
+		ret = -ret
+	}
+
+	return ret, nil
+}
+
+func (r *ring) isHigher(p, other *peerId) bool {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	r1, err := r.rank(p)
+	if err != nil {
+		return false
+	}
+
+	r2, err := r.rank(other)
+	if err != nil {
+		return true
+	}
+
+	return r1 >= r2
 }
 
 func (r *ring) isPrev(p, other *peer) (bool, error) {

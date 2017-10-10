@@ -77,11 +77,6 @@ func main() {
 	http.HandleFunc("/addNode", b.addNodeHandler)
 	go http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 
-	/*
-		for i := 0; i < 7; i++ {
-			b.startClient()
-		}
-	*/
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
 	<-channel

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 
 	"github.com/joonnna/capstone/protobuf"
@@ -96,7 +97,7 @@ func getOpenPort(hostName string) (net.Listener, string) {
 	port := startPort
 
 	for {
-		addr := fmt.Sprintf("%s:%d", hostName, port)
+		addr := fmt.Sprintf("%s:%d", hostName, (1000 + (rand.Int() % port)))
 		l, err = net.Listen("tcp", addr)
 		if err == nil {
 			return l, addr

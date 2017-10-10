@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	mrand "math/rand"
 	"net"
 	"net/http"
 	"os"
 	"strings"
-	_ "time"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -22,19 +23,35 @@ type state struct {
 	Next     string
 	Prev     string
 	HttpAddr string
+	Trusted  bool
+}
+
+func (s state) equal(other *state) bool {
+	return (s.Next == other.Next && s.Prev == other.Prev)
+}
+
+func (s *state) marshal() io.Reader {
+	buff := new(bytes.Buffer)
+
+	_ = json.NewEncoder(buff).Encode(s)
+
+	return bytes.NewReader(buff.Bytes())
 }
 
 func (n *Node) httpHandler(c chan bool) {
 	var l net.Listener
 	var err error
+	var addr string
 
 	host, _ := os.Hostname()
 	hostName := strings.Split(host, ".")[0]
 
-	port := 2345
+	port := 5000
 
 	for {
-		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
+		addr = fmt.Sprintf("%s:%d", hostName, (1000 + (mrand.Int() % port)))
+		l, err = net.Listen("tcp", addr)
+
 		if err != nil {
 			n.log.Err.Println(err)
 		} else {
@@ -48,7 +65,7 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/crashNode", n.crashHandler)
 	r.HandleFunc("/corruptNode", n.corruptHandler)
 
-	n.httpAddr = fmt.Sprintf("http://%s:%d", hostName, port)
+	n.httpAddr = fmt.Sprintf("http://%s", addr)
 
 	go func() {
 		<-n.exitChan
@@ -70,6 +87,11 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
+	if n.trustedBootNode {
+		n.log.Info.Println("Boot node, ignoring shutdown request")
+		return
+	}
+
 	if n.setExitFlag() {
 		return
 	}
@@ -82,6 +104,11 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
+
+	if n.trustedBootNode {
+		n.log.Info.Println("Boot node, ignoring crash request")
+		return
+	}
 
 	n.log.Info.Println("Received crash request, shutting down local comm")
 
@@ -98,14 +125,40 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 /* Periodically sends the nodes current state to the state server*/
-func (n *Node) updateState(ringId uint8) {
+func (n *Node) updateState() {
 	client := &http.Client{}
-	s := n.newState(ringId)
-	n.updateReq(s, client)
+
+	prevStates := make([]*state, n.numRings)
+
+	for i := 0; i < len(prevStates); i++ {
+		prevStates[i] = &state{}
+	}
+
+	for {
+		select {
+		case <-n.exitChan:
+			n.wg.Done()
+			return
+
+		case <-time.After(time.Second * 5):
+			for idx, r := range n.ringMap {
+				s := n.newState(r.ringNum)
+
+				if prevStates[idx].equal(s) {
+					continue
+				}
+
+				prevStates[idx] = s
+
+				n.updateReq(s.marshal(), client)
+			}
+
+		}
+	}
 }
 
 /* Creates a new state */
-func (n *Node) newState(ringId uint8) io.Reader {
+func (n *Node) newState(ringId uint8) *state {
 	id := fmt.Sprintf("%s|%d", n.localAddr, ringId)
 
 	var nextId, prevId string
@@ -124,22 +177,14 @@ func (n *Node) newState(ringId uint8) io.Reader {
 		prevId = fmt.Sprintf("%s|%d", prev.addr, ringId)
 	}
 
-	s := state{
+	return &state{
 		ID: id,
 		//Neighbours: n.getNeighbourAddrs(),
 		Next:     nextId,
 		Prev:     prevId,
 		HttpAddr: n.httpAddr,
+		Trusted:  n.trustedBootNode,
 	}
-
-	buff := new(bytes.Buffer)
-
-	err = json.NewEncoder(buff).Encode(s)
-	if err != nil {
-		n.log.Err.Println(err)
-	}
-
-	return bytes.NewReader(buff.Bytes())
 }
 
 /* Sends the node state to the state server*/
@@ -153,14 +198,16 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 	if err != nil {
 		n.log.Err.Println(err)
 	} else {
+		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
 }
 
 /* Sends a post request to the state server add endpoint */
 func (n *Node) add(ringId uint8) {
-	r := n.newState(ringId)
-	req, err := http.NewRequest("POST", "http://localhost:8080/add", r)
+	s := n.newState(ringId)
+	bytes := s.marshal()
+	req, err := http.NewRequest("POST", "http://localhost:8080/add", bytes)
 	if err != nil {
 		n.log.Err.Println(err)
 	}
@@ -171,13 +218,15 @@ func (n *Node) add(ringId uint8) {
 	if err != nil {
 		n.log.Err.Println(err)
 	} else {
+		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
 }
 
 func (n *Node) remove(ringId uint8) {
-	r := n.newState(ringId)
-	req, err := http.NewRequest("POST", "http://localhost:8080/remove", r)
+	s := n.newState(ringId)
+	bytes := s.marshal()
+	req, err := http.NewRequest("POST", "http://localhost:8080/remove", bytes)
 	if err != nil {
 		n.log.Err.Println(err)
 	}
@@ -188,6 +237,7 @@ func (n *Node) remove(ringId uint8) {
 	if err != nil {
 		n.log.Err.Println(err)
 	} else {
+		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
 }

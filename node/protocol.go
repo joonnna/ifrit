@@ -62,35 +62,42 @@ func (c correct) Gossip(n *Node) {
 		}
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
-			certs := reply.GetCertificates()
-			if certs == nil {
-				n.log.Err.Println(err)
-				continue
-			} else {
-				for _, c := range certs {
-					cert, err := x509.ParseCertificate(c.GetRaw())
-					if err != nil {
-						n.log.Err.Println(err)
-						return
-					}
-					p, err := newPeer(nil, cert)
-					if err != nil {
-						n.log.Err.Println(err)
-						return
-					}
+			n.log.Err.Println(err)
+			continue
+		}
 
-					n.addViewPeer(p)
-					n.addLivePeer(p)
-
+		certs := reply.GetCertificates()
+		if certs == nil {
+			continue
+		} else {
+			for _, c := range certs {
+				cert, err := x509.ParseCertificate(c.GetRaw())
+				if err != nil {
+					n.log.Err.Println(err)
+					continue
 				}
-			}
 
+				if n.viewPeerExist(string(cert.SubjectKeyId[:])) {
+					continue
+				}
+
+				p, err := newPeer(nil, cert)
+				if err != nil {
+					n.log.Err.Println(err)
+					continue
+				}
+
+				n.addViewPeer(p)
+				n.addLivePeer(p)
+
+			}
 		}
 	}
 }
 
 func (c correct) Monitor(n *Node) {
 	msg := &gossip.Ping{}
+	var noteEpoch uint64
 
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
@@ -111,11 +118,13 @@ func (c correct) Monitor(n *Node) {
 			if p != nil {
 				peerNote := p.getNote()
 				if peerNote == nil {
-					return
+					noteEpoch = 1
+				} else {
+					noteEpoch = peerNote.epoch + 1
 				}
 
 				tmp := &gossip.Accusation{
-					Epoch:   (peerNote.epoch + 1),
+					Epoch:   noteEpoch,
 					Accuser: n.peerId.id,
 					Accused: p.peerId.id,
 				}
@@ -129,7 +138,7 @@ func (c correct) Monitor(n *Node) {
 
 				a := &accusation{
 					peerId:    p.peerId,
-					epoch:     (peerNote.epoch + 1),
+					epoch:     noteEpoch,
 					accuser:   n.peerId,
 					signature: signature,
 				}

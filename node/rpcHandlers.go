@@ -20,7 +20,6 @@ var (
 	errInvalidPeerInformation = errors.New("Could not create local peer representation")
 )
 
-//TODO accusations and notes
 func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Partners, error) {
 	var tlsInfo credentials.TLSInfo
 	var ok bool
@@ -42,11 +41,15 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 
 	cert := tlsInfo.State.PeerCertificates[0]
 
+	key := string(cert.SubjectKeyId[:])
+
 	if !n.shouldBeNeighbours(cert.SubjectKeyId) {
 		n.log.Err.Println(errNotMyNeighbour)
-		n.log.Debug.Println("SATALLARRIS")
-
-		key := string(cert.SubjectKeyId[:])
+		n.log.Debug.Println(cert.Subject.Locality[0])
+		n.log.Debug.Println("LivePeers: ", len(n.getLivePeers()))
+		n.log.Debug.Println("Neighbours: ", n.getNeighbours())
+		n.log.Debug.Println("Entire view: ", n.getViewAddrs())
+		n.log.Debug.Println("Live view: ", n.getLivePeerAddrs())
 
 		if !n.viewPeerExist(key) {
 			p, err := newPeer(nil, cert)
@@ -59,6 +62,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 		}
 
 		peerKeys := n.findNeighbours(cert.SubjectKeyId)
+		//peers := n.getLivePeers()
 		for _, k := range peerKeys {
 			p := n.getLivePeer(k)
 			if p != nil {
@@ -67,7 +71,19 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 			}
 		}
 
+		n.log.Debug.Println(len(reply.Certificates))
+
 		return reply, nil
+	}
+
+	if !n.viewPeerExist(key) {
+		p, err := newPeer(nil, cert)
+		if err != nil {
+			n.log.Err.Println(err)
+			return nil, errInvalidPeerInformation
+		}
+		n.addViewPeer(p)
+		n.addLivePeer(p)
 	}
 
 	n.mergeCertificates(args.GetCertificates(), cert)
@@ -127,13 +143,23 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 		return
 	}
 
-	p := n.getViewPeer(accusedKey)
+	p := n.getLivePeer(accusedKey)
 	if p != nil {
-		peerAccusation := p.getAccusation()
-		if peerAccusation == nil || peerAccusation.epoch < epoch {
-			accuserPeer := n.getViewPeer(accuserKey)
+		peerNote := p.getNote()
+
+		if peerNote == nil || epoch > peerNote.epoch {
+			accuserPeer := n.getLivePeer(accuserKey)
 			if accuserPeer == nil {
 				return
+			}
+
+			peerAccusation := p.getAccusation()
+
+			if peerAccusation != nil {
+				if !n.isHigherRank(accuserPeer.peerId, peerAccusation.accuser) {
+					n.log.Info.Println("Already have accusation from higher ranked member, discarding")
+					return
+				}
 			}
 
 			tmp := &gossip.Accusation{
@@ -227,13 +253,17 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 					},
 				}
 				p.setNote(newNote)
+				if n.getLivePeer(peerKey) == nil {
+					n.addLivePeer(p)
+				}
 			}
 		} else {
 			//Peer is accused, need to check if this note invalidates accusation
 			if peerAccuse.epoch < epoch {
 				n.log.Info.Println("Rebuttal received for:", p.addr)
-				p.removeAccusation()
 				n.deleteTimeout(peerKey)
+				p.removeAccusation()
+				n.addLivePeer(p)
 			}
 		}
 	}
@@ -258,6 +288,5 @@ func (n *Node) evalCertificate(cert *x509.Certificate) {
 			return
 		}
 		n.addViewPeer(p)
-		n.addLivePeer(p)
 	}
 }

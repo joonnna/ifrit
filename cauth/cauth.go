@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joonnna/capstone/logger"
@@ -39,9 +40,14 @@ type Ca struct {
 }
 
 type group struct {
-	ringNum    uint8
-	knownCerts []*x509.Certificate
-	groupCert  *x509.Certificate
+	ringNum uint8
+
+	knownCerts      []*x509.Certificate
+	knownCertsMutex sync.RWMutex
+
+	groupCert *x509.Certificate
+
+	bootNodes int
 }
 
 func NewCa() (*Ca, error) {
@@ -94,6 +100,7 @@ func (c *Ca) NewGroup(ringNum uint8) error {
 		groupCert:  cert,
 		ringNum:    ringNum,
 		knownCerts: make([]*x509.Certificate, 0),
+		bootNodes:  3,
 	}
 
 	c.groups = append(c.groups, g)
@@ -149,7 +156,6 @@ func (c *Ca) HttpHandler(ch chan string) {
 }
 
 func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
-	var rawCerts [][]byte
 	var body bytes.Buffer
 
 	io.Copy(&body, r.Body)
@@ -207,21 +213,24 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for idx, cert := range g.knownCerts {
-		if idx > 2 {
-			break
-		}
-		rawCerts = append(rawCerts, cert.Raw)
+	knownCert, err := x509.ParseCertificate(signedCert)
+	if err != nil {
+		c.log.Err.Println(err)
+		return
 	}
+
+	trusted := g.addKnownCert(knownCert)
 
 	respStruct := struct {
 		OwnCert    []byte
 		KnownCerts [][]byte
 		CaCert     []byte
+		Trusted    bool
 	}{
 		OwnCert:    signedCert,
-		KnownCerts: rawCerts,
+		KnownCerts: g.getTrustedNodes(),
 		CaCert:     g.groupCert.Raw,
+		Trusted:    trusted,
 	}
 
 	b := new(bytes.Buffer)
@@ -232,22 +241,65 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		c.log.Err.Println(err)
 		return
 	}
-
-	knownCert, err := x509.ParseCertificate(signedCert)
-	if err != nil {
-		c.log.Err.Println(err)
-		return
-	}
-
-	g.knownCerts = append(g.knownCerts, knownCert)
 }
 
 func (c *Ca) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	c.log.Info.Println("Got a download request!")
 }
 
+func (g *group) addKnownCert(new *x509.Certificate) bool {
+	g.knownCertsMutex.Lock()
+	defer g.knownCertsMutex.Unlock()
+
+	g.knownCerts = append(g.knownCerts, new)
+
+	return len(g.knownCerts) <= g.bootNodes
+}
+
+func (g *group) getTrustedNodes() [][]byte {
+	g.knownCertsMutex.RLock()
+	defer g.knownCertsMutex.RUnlock()
+	var certs []*x509.Certificate
+	var ret [][]byte
+
+	if len(g.knownCerts) < g.bootNodes {
+		certs = g.knownCerts
+	} else {
+		certs = g.knownCerts[:g.bootNodes]
+	}
+
+	for _, c := range certs {
+		ret = append(ret, c.Raw)
+	}
+
+	return ret
+}
+
 func genId() []byte {
-	return uuid.NewV4().Bytes()
+	/*
+		var id []byte
+
+		for {
+			id = uuid.NewV4().Bytes()
+			exists := false
+
+			for _, c := range existing {
+				if bytes.Equal(c.SubjectKeyId, id) {
+					exists = true
+					break
+				}
+			}
+
+			if !exists {
+				break
+			}
+		}
+
+		return id
+	*/
+
+	//return append(uuid.NewV1().Bytes(), uuid.NewV1().Bytes()...)
+	return uuid.NewV1().Bytes()
 }
 
 func getLocalIP() string {
