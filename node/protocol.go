@@ -16,29 +16,14 @@ type spamAccusations struct {
 func (c correct) Rebuttal(n *Node) {
 	neighbours := n.getNeighbours()
 
-	msg := &gossip.GossipMsg{}
+	noteMsg := n.localNoteToPbMsg()
 
-	noteMsg := &gossip.Note{
-		Epoch: n.getEpoch(),
-		Id:    n.id,
+	msg := &gossip.GossipMsg{
+		Notes: []*gossip.Note{noteMsg},
 	}
-
-	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.privKey)
-	if err != nil {
-		n.log.Err.Println(err)
-		return
-	}
-
-	noteMsg.Signature = &gossip.Signature{
-		R: signature.r,
-		S: signature.s,
-	}
-
-	msg.Notes = append(msg.Notes, noteMsg)
 
 	for _, addr := range neighbours {
-		if addr == n.localAddr {
+		if addr == n.addr {
 			continue
 		}
 		_, err := n.client.Gossip(addr, msg)
@@ -57,12 +42,12 @@ func (c correct) Gossip(n *Node) {
 	neighbours := n.getNeighbours()
 
 	for _, addr := range neighbours {
-		if addr == n.localAddr {
+		if addr == n.addr {
 			continue
 		}
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
-			n.log.Err.Println(err)
+			n.log.Err.Println(err, addr)
 			continue
 		}
 
@@ -97,7 +82,6 @@ func (c correct) Gossip(n *Node) {
 
 func (c correct) Monitor(n *Node) {
 	msg := &gossip.Ping{}
-	var noteEpoch uint64
 
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
@@ -106,7 +90,7 @@ func (c correct) Monitor(n *Node) {
 			continue
 		}
 
-		if succ.addr == n.localAddr {
+		if succ.addr == n.addr {
 			continue
 		}
 
@@ -114,19 +98,18 @@ func (c correct) Monitor(n *Node) {
 		_, err = n.client.Monitor(succ.addr, msg)
 		if err != nil {
 			n.log.Info.Printf("%s is dead, accusing", succ.addr)
-			p := n.getViewPeer(succ.peerKey)
+			p := n.getLivePeer(succ.peerKey)
 			if p != nil {
 				peerNote := p.getNote()
 				if peerNote == nil {
-					noteEpoch = 1
-				} else {
-					noteEpoch = peerNote.epoch + 1
+					continue
 				}
 
 				tmp := &gossip.Accusation{
-					Epoch:   noteEpoch,
+					Epoch:   peerNote.epoch,
 					Accuser: n.peerId.id,
 					Accused: p.peerId.id,
+					Mask:    peerNote.mask,
 				}
 
 				b := []byte(fmt.Sprintf("%v", tmp))
@@ -138,7 +121,7 @@ func (c correct) Monitor(n *Node) {
 
 				a := &accusation{
 					peerId:    p.peerId,
-					epoch:     noteEpoch,
+					epoch:     peerNote.epoch,
 					accuser:   n.peerId,
 					signature: signature,
 				}
@@ -149,8 +132,7 @@ func (c correct) Monitor(n *Node) {
 					return
 				}
 				if !n.timerExist(p.key) {
-					//TODO insert local peer in node struct?
-					n.startTimer(p.key, peerNote, nil, p.addr)
+					n.startTimer(p.key, peerNote, n.peer, p.addr)
 				}
 			}
 		}
@@ -183,26 +165,33 @@ func (sa spamAccusations) Monitor(n *Node) {
 			continue
 		}
 
-		p := n.getViewPeer(succ.peerKey)
+		p := n.getLivePeer(succ.peerKey)
 		if p != nil {
 			peerNote := p.getNote()
 			if peerNote == nil {
 				return
 			}
 
-			a := &accusation{
-				peerId:  p.peerId,
-				epoch:   (peerNote.epoch + 1),
-				accuser: n.peerId,
+			tmp := &gossip.Accusation{
+				Epoch:   peerNote.epoch,
+				Accuser: n.peerId.id,
+				Accused: p.peerId.id,
+				Mask:    peerNote.mask,
 			}
 
-			b := []byte(fmt.Sprintf("%v", a))
+			b := []byte(fmt.Sprintf("%v", tmp))
 			signature, err := signContent(b, n.privKey)
 			if err != nil {
 				n.log.Err.Println(err)
 				return
 			}
-			a.signature = signature
+
+			a := &accusation{
+				peerId:    p.peerId,
+				epoch:     peerNote.epoch,
+				accuser:   n.peerId,
+				signature: signature,
+			}
 
 			err = p.setAccusation(a)
 			if err != nil {
@@ -211,7 +200,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 			}
 
 			if !n.timerExist(p.key) {
-				n.startTimer(p.key, peerNote, nil, p.addr)
+				n.startTimer(p.key, peerNote, n.peer, p.addr)
 			}
 		}
 	}
@@ -220,29 +209,14 @@ func (sa spamAccusations) Monitor(n *Node) {
 func (sa spamAccusations) Rebuttal(n *Node) {
 	neighbours := n.getNeighbours()
 
-	msg := &gossip.GossipMsg{}
+	noteMsg := n.localNoteToPbMsg()
 
-	noteMsg := &gossip.Note{
-		Id:    n.id,
-		Epoch: n.getEpoch(),
+	msg := &gossip.GossipMsg{
+		Notes: []*gossip.Note{noteMsg},
 	}
-
-	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.privKey)
-	if err != nil {
-		n.log.Err.Println(err)
-		return
-	}
-
-	noteMsg.Signature = &gossip.Signature{
-		R: signature.r,
-		S: signature.s,
-	}
-
-	msg.Notes = append(msg.Notes, noteMsg)
 
 	for _, addr := range neighbours {
-		if addr == n.localAddr {
+		if addr == n.addr {
 			continue
 		}
 		_, err := n.client.Gossip(addr, msg)
@@ -268,6 +242,7 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 			Accuser: n.id,
 			Epoch:   (peerNote.epoch + 1),
 			Accused: peerNote.id,
+			Mask:    peerNote.mask,
 		}
 
 		b := []byte(fmt.Sprintf("%v", a))
@@ -285,21 +260,7 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 		msg.Accusations = append(msg.Accusations, a)
 	}
 
-	noteMsg := &gossip.Note{
-		Id:    n.id,
-		Epoch: n.getEpoch(),
-	}
-
-	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.privKey)
-	if err != nil {
-		return nil, err
-	}
-
-	noteMsg.Signature = &gossip.Signature{
-		R: signature.r,
-		S: signature.s,
-	}
+	noteMsg := n.localNoteToPbMsg()
 
 	msg.Notes = append(msg.Notes, noteMsg)
 

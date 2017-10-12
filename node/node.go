@@ -26,8 +26,8 @@ const (
 type Node struct {
 	log *logger.Log
 
-	localAddr string
-	*peerId
+	//Local peer representation
+	*peer
 
 	protocol
 	protocolMutex sync.RWMutex
@@ -58,9 +58,6 @@ type Node struct {
 	monitorTimeout    time.Duration
 	viewUpdateTimeout time.Duration
 	nodeDeadTimeout   float64
-
-	epoch      uint64
-	epochMutex sync.RWMutex
 
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
@@ -163,21 +160,7 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 		}
 	}
 
-	noteMsg := &gossip.Note{
-		Id:    n.id,
-		Epoch: n.getEpoch(),
-	}
-
-	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.privKey)
-	if err != nil {
-		n.log.Err.Println(err)
-		return nil, err
-	}
-	noteMsg.Signature = &gossip.Signature{
-		R: signature.r,
-		S: signature.s,
-	}
+	noteMsg := n.localNoteToPbMsg()
 
 	msg.Notes = append(msg.Notes, noteMsg)
 
@@ -205,8 +188,16 @@ func (n *Node) getProtocol() protocol {
 	return n.protocol
 }
 
-func (n *Node) isPrev(p *peer, other *peer) bool {
-	for _, r := range n.ringMap {
+func (n *Node) isPrev(p, other *peer, mask []byte) bool {
+	if len(mask) != len(n.ringMap) {
+		n.log.Err.Printf("Mask is of invalid length, %d != %d ", len(mask), len(n.ringMap))
+		return false
+	}
+
+	for idx, r := range n.ringMap {
+		if mask[idx] == 0 {
+			continue
+		}
 		prev, err := r.isPrev(p, other)
 		if err != nil {
 			n.log.Err.Println(err)
@@ -220,8 +211,16 @@ func (n *Node) isPrev(p *peer, other *peer) bool {
 	return false
 }
 
-func (n *Node) isHigherRank(p, other *peerId) bool {
-	for _, r := range n.ringMap {
+func (n *Node) isHigherRank(p, other *peerId, mask []byte) bool {
+	if len(mask) != len(n.ringMap) {
+		n.log.Err.Printf("Mask is of invalid length, %d != %d ", len(mask), len(n.ringMap))
+		return false
+	}
+
+	for idx, r := range n.ringMap {
+		if mask[idx] == 0 {
+			continue
+		}
 		if r.isHigher(p, other) {
 			return true
 		}
@@ -239,6 +238,13 @@ func (n *Node) shouldBeNeighbours(id []byte) bool {
 		}
 	}
 	return false
+}
+
+func (n *Node) localNoteToPbMsg() *gossip.Note {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	return n.recentNote.toPbMsg()
 }
 
 func (n *Node) findNeighbours(id []byte) []string {
@@ -281,7 +287,16 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		return nil, errNoId
 	}
 
+	numRings := ext[0].Value[0]
+
 	config := genServerConfig(certs, privKey)
+
+	peerId := newPeerId(certs.ownCert.SubjectKeyId)
+
+	localPeer := &peer{
+		addr:   s.HostInfo(),
+		peerId: peerId,
+	}
 
 	n := &Node{
 		exitChan:          make(chan bool, 1),
@@ -295,11 +310,10 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		monitorTimeout:    time.Second * 3,
 		nodeDeadTimeout:   5.0,
 		privKey:           privKey,
-		peerId:            newPeerId(certs.ownCert.SubjectKeyId),
 		client:            c,
 		server:            s,
-		numRings:          ext[0].Value[0],
-		localAddr:         s.HostInfo(),
+		numRings:          numRings,
+		peer:              localPeer,
 		log:               logger,
 		localCert:         certs.ownCert,
 		trustedBootNode:   certs.trusted,
@@ -313,8 +327,33 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 	n.client.Init(genClientConfig(certs, privKey))
 
 	for i = 0; i < n.numRings; i++ {
-		n.ringMap[i] = newRing(i, n.id, n.key, n.localAddr)
+		n.ringMap[i] = newRing(i, n.id, n.key, n.addr)
 	}
+
+	localNote := &note{
+		epoch:  1,
+		mask:   make([]byte, numRings),
+		peerId: n.peerId,
+	}
+	for i = 0; i < n.numRings; i++ {
+		localNote.mask[i] = 1
+	}
+
+	noteMsg := &gossip.Note{
+		Epoch: localNote.epoch,
+		Mask:  localNote.mask,
+		Id:    localNote.id,
+	}
+
+	b := []byte(fmt.Sprintf("%v", noteMsg))
+	signature, err := signContent(b, n.privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	localNote.signature = signature
+
+	n.recentNote = localNote
 
 	for _, c := range certs.knownCerts {
 		p, err := newPeer(nil, c)

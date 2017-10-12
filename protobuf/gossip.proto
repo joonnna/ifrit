@@ -1,35 +1,14 @@
 syntax = "proto3";
 
-//import "google/protobuf/struct.proto";
-
 service gossip {
     rpc Monitor (Ping) returns (Pong) {}
     rpc Spread (GossipMsg) returns (Partners) {}
-    //rpc Accuse (Accusation) returns (Empty) {}
-    //rpc NotDead (Rebuttal) returns (Empty) {}
-}
-
-message Empty {
-
-}
-
-message NodeInfo {
-    string localAddr = 1;
 }
 
 message GossipMsg {
-    //google.protobuf.Struct notes = 1;
-    //google.protobuf.Struct accusations = 2;
     repeated Certificate certificates = 1;
     repeated Note notes = 2;
     repeated Accusation accusations = 3;
-    /*
-    map<string, Note> notes = 1;
-    map<string, Accusation> accusations = 2;
-    map<string, Certificate> certs = 3;
-    */
-    //repeated Note notes = 1;
-    //repeated Accusation accusations = 2;
 }
 
 message Certificate {
@@ -45,12 +24,13 @@ message Accusation {
     bytes accuser = 2;
     bytes accused = 3;
     Signature signature = 4;
+    bytes mask = 5;
 }
 
 message Note {
     uint64 epoch = 1;
     bytes id = 2;
-    string mask = 3;
+    bytes mask = 3;
     Signature signature = 4;
 }
 

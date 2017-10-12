@@ -159,7 +159,7 @@ func (n *Node) updateState() {
 
 /* Creates a new state */
 func (n *Node) newState(ringId uint8) *state {
-	id := fmt.Sprintf("%s|%d", n.localAddr, ringId)
+	id := fmt.Sprintf("%s|%d", n.addr, ringId)
 
 	var nextId, prevId string
 

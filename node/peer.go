@@ -54,7 +54,7 @@ type signature struct {
 
 type note struct {
 	epoch uint64
-	mask  string
+	mask  []byte
 	*peerId
 	*signature
 }
@@ -62,6 +62,7 @@ type note struct {
 type accusation struct {
 	epoch   uint64
 	accuser *peerId
+	mask    []byte
 	*peerId
 	*signature
 }
@@ -171,6 +172,7 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, *gossip.Accusa
 	return c, n, a
 }
 
+/*
 func createNote(id *peerId, epoch uint64, mask string) (*note, error) {
 	if len(id.id) == 0 {
 		return nil, errNoteId
@@ -182,6 +184,7 @@ func createNote(id *peerId, epoch uint64, mask string) (*note, error) {
 		mask:   mask,
 	}, nil
 }
+*/
 
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch

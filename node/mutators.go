@@ -286,15 +286,38 @@ func (n *Node) getAllTimeouts() map[string]*timeout {
 }
 
 func (n *Node) setEpoch(newEpoch uint64) {
-	n.epochMutex.Lock()
-	defer n.epochMutex.Unlock()
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
 
-	n.epoch = newEpoch
+	n.recentNote.epoch = newEpoch
 }
 
 func (n *Node) getEpoch() uint64 {
-	n.epochMutex.RLock()
-	defer n.epochMutex.RUnlock()
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
 
-	return n.epoch
+	return n.recentNote.epoch
+}
+
+func (n *Node) deactivateRing(ringNum uint8) {
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
+
+	if ringNum >= uint8(len(n.recentNote.mask)) {
+		n.log.Err.Println("Tried to deactivate non existing ring!")
+		return
+	}
+
+	n.recentNote.mask[ringNum] = 0
+}
+
+func (n *Node) getMask() []byte {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	ret := make([]byte, len(n.recentNote.mask))
+
+	copy(ret, n.recentNote.mask)
+
+	return ret
 }
