@@ -37,6 +37,8 @@ type Ca struct {
 	pubKey  crypto.PublicKey
 
 	groups []*group
+
+	listener net.Listener
 }
 
 type group struct {
@@ -56,16 +58,45 @@ func NewCa() (*Ca, error) {
 		return nil, err
 	}
 
+	hostName := getLocalIP()
+
+	port := startPort
+
+	for {
+		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
+		if err != nil {
+			c.log.Err.Println(err)
+		} else {
+			break
+		}
+		port++
+	}
+
 	c := &Ca{
-		log:     logger.CreateLogger("ca", "caLog"),
-		privKey: privKey,
-		pubKey:  privKey.Public(),
+		log:      logger.CreateLogger("ca", "caLog"),
+		privKey:  privKey,
+		pubKey:   privKey.Public(),
+		listener: l,
+		port:     port,
+		hostName: hostName,
 	}
 
 	return c, nil
 }
 
-func (c *Ca) NewGroup(ringNum uint8) error {
+func (c *Ca) Start(numRings uint) error {
+	err = c.NewGroup(numRings)
+	if err != nil {
+		return err
+	}
+	return c.httpHandler(addrChan)
+}
+
+func (c Ca) GetAddr() string {
+	return fmt.Sprintf("%s:%d", c.hostName, c.port)
+}
+
+func (c *Ca) newGroup(ringNum uint8) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
 		c.log.Err.Println(err)
@@ -119,39 +150,17 @@ func genKeys() (*rsa.PrivateKey, error) {
 	return priv, nil
 }
 
-func (c *Ca) HttpHandler(ch chan string) {
+func (c *Ca) httpHandler() error {
 	var l net.Listener
 	var err error
-
-	/*
-		host, _ := os.Hostname()
-		hostName := strings.Split(host, ".")[0]
-	*/
-	hostName := getLocalIP()
-
-	port := startPort
-
-	for {
-		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
-		if err != nil {
-			c.log.Err.Println(err)
-		} else {
-			break
-		}
-		port += 1
-	}
 
 	http.HandleFunc("/downloadGroupCertificate", c.downloadHandler)
 	http.HandleFunc("/certificateRequest", c.certRequestHandler)
 
-	addr := fmt.Sprintf("http://%s:%d", hostName, port)
-
-	ch <- addr
-
-	err = http.Serve(l, nil)
+	err = http.Serve(c.l, nil)
 	if err != nil {
 		c.log.Err.Println(err)
-		return
+		return err
 	}
 }
 

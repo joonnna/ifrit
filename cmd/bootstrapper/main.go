@@ -49,7 +49,11 @@ func (b *bootStrapper) startClient() {
 	b.clientListMutex.Lock()
 	defer b.clientListMutex.Unlock()
 
-	b.clientList = append(b.clientList, client.StartClient(b.entryAddr))
+	c := client.NewClient(b.entryAddr)
+
+	go c.Start()
+
+	b.clientList = append(b.clientList, c)
 }
 
 func (b *bootStrapper) shutDownClients() {

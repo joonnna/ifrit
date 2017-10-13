@@ -11,7 +11,7 @@ type Client struct {
 	node *node.Node
 }
 
-func StartClient(entryAddr string) *Client {
+func NewClient(entryAddr string) *Client {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	c := rpc.NewClient()
@@ -26,11 +26,13 @@ func StartClient(entryAddr string) *Client {
 		node: n,
 	}
 
-	go client.node.Start(node.NormalProtocol)
-
 	return client
 }
 
 func (c *Client) ShutDown() {
 	c.node.ShutDownNode()
+}
+
+func (c *Client) Start() {
+	client.node.Start(node.NormalProtocol)
 }

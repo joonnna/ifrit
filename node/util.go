@@ -1,12 +1,11 @@
 package node
 
 import (
-	_"bytes"
-	_"encoding/json"
-	_"crypto/sha256"
-	_"math/big"
+	_ "bytes"
+	_ "crypto/sha256"
+	_ "encoding/json"
+	_ "math/big"
 )
-
 
 /*
 func newMsg(code uint8, payload []byte) ([]byte, error) {
