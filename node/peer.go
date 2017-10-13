@@ -172,20 +172,6 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, *gossip.Accusa
 	return c, n, a
 }
 
-/*
-func createNote(id *peerId, epoch uint64, mask string) (*note, error) {
-	if len(id.id) == 0 {
-		return nil, errNoteId
-	}
-
-	return &note{
-		peerId: id,
-		epoch:  epoch,
-		mask:   mask,
-	}, nil
-}
-*/
-
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch
 }

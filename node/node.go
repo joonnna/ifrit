@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -29,21 +28,10 @@ type Node struct {
 	//Local peer representation
 	*peer
 
+	*view
+
 	protocol
 	protocolMutex sync.RWMutex
-
-	viewMap   map[string]*peer
-	viewMutex sync.RWMutex
-
-	liveMap   map[string]*peer
-	liveMutex sync.RWMutex
-
-	timeoutMap   map[string]*timeout
-	timeoutMutex sync.RWMutex
-
-	//Read only, don't need mutex
-	ringMap  map[uint8]*ring
-	numRings uint8
 
 	wg       *sync.WaitGroup
 	exitChan chan bool
@@ -54,10 +42,9 @@ type Node struct {
 	client Client
 	server Server
 
-	gossipTimeout     time.Duration
-	monitorTimeout    time.Duration
-	viewUpdateTimeout time.Duration
-	nodeDeadTimeout   float64
+	gossipTimeout   time.Duration
+	monitorTimeout  time.Duration
+	nodeDeadTimeout float64
 
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
@@ -83,6 +70,7 @@ type protocol interface {
 	Monitor(n *Node)
 	Gossip(n *Node)
 	Rebuttal(n *Node)
+	Timeouts(n *Node)
 }
 
 type timeout struct {
@@ -128,16 +116,7 @@ func (n *Node) checkTimeouts() {
 			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
-			timeouts := n.getAllTimeouts()
-			for key, t := range timeouts {
-				n.log.Debug.Println("Have timeout for: ", t.addr)
-				since := time.Since(t.timeStamp)
-				if since.Seconds() > n.nodeDeadTimeout {
-					n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
-					n.deleteTimeout(key)
-					n.removeLivePeer(key)
-				}
-			}
+			n.getProtocol().Monitor(n)
 		}
 	}
 }
@@ -145,7 +124,7 @@ func (n *Node) checkTimeouts() {
 func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 	msg := &gossip.GossipMsg{}
 
-	view := n.getLivePeers()
+	view := n.getView()
 
 	for _, p := range view {
 		c, n, a := p.createPbInfo()
@@ -196,6 +175,7 @@ func (n *Node) isPrev(p, other *peer, mask []byte) bool {
 
 	for idx, r := range n.ringMap {
 		if mask[idx] == 0 {
+			n.log.Err.Println("Mask have deactivated ring", idx)
 			continue
 		}
 		prev, err := r.isPrev(p, other)
@@ -208,24 +188,6 @@ func (n *Node) isPrev(p, other *peer, mask []byte) bool {
 			return true
 		}
 	}
-	return false
-}
-
-func (n *Node) isHigherRank(p, other *peerId, mask []byte) bool {
-	if len(mask) != len(n.ringMap) {
-		n.log.Err.Printf("Mask is of invalid length, %d != %d ", len(mask), len(n.ringMap))
-		return false
-	}
-
-	for idx, r := range n.ringMap {
-		if mask[idx] == 0 {
-			continue
-		}
-		if r.isHigher(p, other) {
-			return true
-		}
-	}
-
 	return false
 }
 
@@ -291,32 +253,25 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 
 	config := genServerConfig(certs, privKey)
 
-	peerId := newPeerId(certs.ownCert.SubjectKeyId)
-
-	localPeer := &peer{
-		addr:   s.HostInfo(),
-		peerId: peerId,
+	p, err := newPeer(nil, certs.ownCert)
+	if err != nil {
+		return nil, err
 	}
 
 	n := &Node{
-		exitChan:          make(chan bool, 1),
-		wg:                &sync.WaitGroup{},
-		ringMap:           make(map[uint8]*ring),
-		viewMap:           make(map[string]*peer),
-		liveMap:           make(map[string]*peer),
-		timeoutMap:        make(map[string]*timeout),
-		viewUpdateTimeout: time.Second * 2,
-		gossipTimeout:     time.Second * 3,
-		monitorTimeout:    time.Second * 3,
-		nodeDeadTimeout:   5.0,
-		privKey:           privKey,
-		client:            c,
-		server:            s,
-		numRings:          numRings,
-		peer:              localPeer,
-		log:               logger,
-		localCert:         certs.ownCert,
-		trustedBootNode:   certs.trusted,
+		exitChan:        make(chan bool, 1),
+		wg:              &sync.WaitGroup{},
+		gossipTimeout:   time.Second * 3,
+		monitorTimeout:  time.Second * 3,
+		nodeDeadTimeout: 5.0,
+		view:            newView(numRings, logger, p.peerId, p.addr),
+		privKey:         privKey,
+		client:          c,
+		server:          s,
+		peer:            p,
+		log:             logger,
+		localCert:       certs.ownCert,
+		trustedBootNode: certs.trusted,
 	}
 
 	err = n.server.Init(config, n)
@@ -325,10 +280,6 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 	}
 
 	n.client.Init(genClientConfig(certs, privKey))
-
-	for i = 0; i < n.numRings; i++ {
-		n.ringMap[i] = newRing(i, n.id, n.key, n.addr)
-	}
 
 	localNote := &note{
 		epoch:  1,
@@ -339,19 +290,10 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		localNote.mask[i] = 1
 	}
 
-	noteMsg := &gossip.Note{
-		Epoch: localNote.epoch,
-		Mask:  localNote.mask,
-		Id:    localNote.id,
-	}
-
-	b := []byte(fmt.Sprintf("%v", noteMsg))
-	signature, err := signContent(b, n.privKey)
+	err = localNote.sign(n.privKey)
 	if err != nil {
 		return nil, err
 	}
-
-	localNote.signature = signature
 
 	n.recentNote = localNote
 

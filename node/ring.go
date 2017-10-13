@@ -297,3 +297,43 @@ func isBetween(start, end, new *ringId) bool {
 		return true
 	}
 }
+
+func (r *ring) getRingList() []*ringId {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	ret := make([]*ringId, len(r.succList))
+	copy(ret, r.succList)
+	return ret
+}
+
+func (r *ring) getRingSucc() (ringId, error) {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len == 0 {
+		return ringId{}, errNotFound
+	} else {
+		idx := (r.ownIdx + 1) % len
+		return *r.succList[idx], nil
+	}
+}
+
+func (r *ring) getRingPrev() (ringId, error) {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len == 0 {
+		return ringId{}, errNotFound
+	} else {
+		idx := (r.ownIdx - 1) % len
+		if idx < 0 {
+			idx = idx + len
+		}
+		return *r.succList[idx], nil
+	}
+}

@@ -45,12 +45,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 
 	if !n.shouldBeNeighbours(cert.SubjectKeyId) {
 		n.log.Err.Println(errNotMyNeighbour)
-		n.log.Debug.Println(cert.Subject.Locality[0])
-		n.log.Debug.Println("LivePeers: ", len(n.getLivePeers()))
-		n.log.Debug.Println("Neighbours: ", n.getNeighbours())
-		n.log.Debug.Println("Entire view: ", n.getViewAddrs())
-		n.log.Debug.Println("Live view: ", n.getLivePeerAddrs())
-
 		if !n.viewPeerExist(key) {
 			p, err := newPeer(nil, cert)
 			if err != nil {
@@ -62,7 +56,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 		}
 
 		peerKeys := n.findNeighbours(cert.SubjectKeyId)
-		//peers := n.getLivePeers()
 		for _, k := range peerKeys {
 			p := n.getLivePeer(k)
 			if p != nil {
@@ -70,9 +63,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 				reply.Certificates = append(reply.Certificates, c)
 			}
 		}
-
-		n.log.Debug.Println(len(reply.Certificates))
-
 		return reply, nil
 	}
 
@@ -129,6 +119,8 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate, remoteCert *x509.C
 }
 
 func (n *Node) evalAccusation(a *gossip.Accusation) {
+	var accuserPeer *peer
+
 	sign := a.GetSignature()
 	epoch := a.GetEpoch()
 	accuser := a.GetAccuser()
@@ -138,75 +130,76 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	accusedKey := string(accused[:])
 	accuserKey := string(accuser[:])
 
-	p := n.getViewPeer(accusedKey)
-	if p != nil {
-		accuserPeer := n.getViewPeer(accuserKey)
-		if accuserPeer == nil {
+	if n.peerId.equal(&peerId{id: accused}) {
+		n.setEpoch((epoch + 1))
+		n.getProtocol().Rebuttal(n)
+		return
+	}
+
+	p := n.getLivePeer(accusedKey)
+	if p == nil || p.getNote() == nil {
+		return
+	}
+
+	if accuserKey == n.key {
+		accuserPeer = n.peer
+	} else {
+		accuserPeer = n.getLivePeer(accuserKey)
+		if accuserPeer == nil || accuserPeer.getNote() == nil {
+			return
+		}
+	}
+
+	tmp := &gossip.Accusation{
+		Epoch:   epoch,
+		Accuser: accuser,
+		Accused: accused,
+		Mask:    mask,
+	}
+	b := []byte(fmt.Sprintf("%v", tmp))
+
+	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
+	if !valid {
+		n.log.Debug.Println("Accuser: ", accuserPeer.addr)
+		n.log.Debug.Println("Accused: ", p.addr)
+		n.log.Info.Println("Invalid signature on accusation, ignoring")
+		return
+	}
+
+	peerNote := p.getNote()
+	if epoch == peerNote.epoch {
+		if !n.isPrev(accuserPeer, p, mask) {
+			n.log.Err.Println("Accuser is not pre-decessor of accused, invalid accusation")
 			return
 		}
 
-		tmp := &gossip.Accusation{
-			Epoch:   epoch,
-			Accuser: accuser,
-			Accused: accused,
-			Mask:    mask,
+		a := &accusation{
+			peerId:  p.peerId,
+			epoch:   epoch,
+			accuser: accuserPeer.peerId,
+			mask:    mask,
+			signature: &signature{
+				r: sign.GetR(),
+				s: sign.GetS(),
+			},
 		}
-		b := []byte(fmt.Sprintf("%v", tmp))
 
-		valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
+		err = p.setAccusation(a)
 		if err != nil {
 			n.log.Err.Println(err)
 			return
 		}
+		n.log.Debug.Println("Added accusation for: ", p.addr)
 
-		if !valid {
-			n.log.Info.Println("Invalid signature on note, ignoring")
-			return
+		if !n.timerExist(accusedKey) {
+			n.log.Debug.Println("Started timer for: ", p.addr)
+			n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
 		}
-
-		peerNote := p.getNote()
-		if peerNote == nil || epoch > peerNote.epoch {
-			peerAccusation := p.getAccusation()
-
-			if peerAccusation != nil {
-				if !n.isHigherRank(accuserPeer.peerId, peerAccusation.accuser, mask) {
-					n.log.Info.Println("Already have accusation from higher ranked member, discarding")
-					return
-				}
-			}
-
-			if !n.isPrev(accuserPeer, p, mask) {
-				n.log.Err.Println("Accuser is not pre-decessor of accused, invalid accusation")
-				return
-			}
-
-			a := &accusation{
-				peerId:  p.peerId,
-				epoch:   epoch,
-				accuser: accuserPeer.peerId,
-				mask:    mask,
-				signature: &signature{
-					r: sign.GetR(),
-					s: sign.GetS(),
-				},
-			}
-
-			err = p.setAccusation(a)
-			if err != nil {
-				n.log.Err.Println(err)
-				return
-			}
-			n.log.Debug.Println("Added accusation for: ", p.addr)
-
-			if !n.timerExist(accusedKey) {
-				n.log.Debug.Println("Started timer for: ", p.addr)
-				n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
-			}
-		}
-	} else if n.peerId.equal(&peerId{id: accused}) {
-		n.setEpoch((epoch + 1))
-		n.getProtocol().Rebuttal(n)
-		return
 	}
 }
 
@@ -219,71 +212,72 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	peerKey := string(id[:])
 
 	p := n.getViewPeer(peerKey)
+	if p == nil {
+		return
+	}
 
-	if p != nil {
-		tmp := &gossip.Note{
-			Epoch: epoch,
-			Mask:  mask,
-			Id:    id,
-		}
-		b := []byte(fmt.Sprintf("%v", tmp))
+	tmp := &gossip.Note{
+		Epoch: epoch,
+		Mask:  mask,
+		Id:    id,
+	}
+	b := []byte(fmt.Sprintf("%v", tmp))
+	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
 
-		valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
-		if err != nil {
-			n.log.Err.Println(err)
-			return
-		}
+	if !valid {
+		n.log.Info.Println("Invalid signature on note, ignoring")
+		return
+	}
 
-		if !valid {
-			n.log.Info.Println("Invalid signature on note, ignoring")
-			return
-		}
+	peerAccuse := p.getAccusation()
+	//Not accused, only need to check if newnote is more recent
+	if peerAccuse == nil {
+		currNote := p.getNote()
 
-		peerAccuse := p.getAccusation()
-		//Not accused, only need to check if newnote is more recent
-		if peerAccuse == nil {
-			currNote := p.getNote()
-
-			//Want to store the most recent note
-			if currNote == nil || currNote.epoch < epoch {
-				newNote := &note{
-					mask:   mask,
-					peerId: p.peerId,
-					epoch:  epoch,
-					signature: &signature{
-						r: sign.GetR(),
-						s: sign.GetS(),
-					},
-				}
-				p.setNote(newNote)
-				if n.getLivePeer(peerKey) == nil {
-					n.addLivePeer(p)
-				}
+		//Want to store the most recent note
+		if currNote == nil || currNote.epoch < epoch {
+			newNote := &note{
+				mask:   mask,
+				peerId: p.peerId,
+				epoch:  epoch,
+				signature: &signature{
+					r: sign.GetR(),
+					s: sign.GetS(),
+				},
 			}
-		} else {
-			//Peer is accused, need to check if this note invalidates accusation
-			if peerAccuse.epoch < epoch {
-				n.log.Info.Println("Rebuttal received for:", p.addr)
-				n.deleteTimeout(peerKey)
-				p.removeAccusation()
+			p.setNote(newNote)
+			if n.getLivePeer(peerKey) == nil {
 				n.addLivePeer(p)
-				newNote := &note{
-					mask:   mask,
-					peerId: p.peerId,
-					epoch:  epoch,
-					signature: &signature{
-						r: sign.GetR(),
-						s: sign.GetS(),
-					},
-				}
-				p.setNote(newNote)
 			}
+		}
+	} else {
+		//Peer is accused, need to check if this note invalidates accusation
+		if peerAccuse.epoch < epoch {
+			n.log.Info.Println("Rebuttal received for:", p.addr)
+			n.deleteTimeout(peerKey)
+			p.removeAccusation()
+			n.addLivePeer(p)
+			newNote := &note{
+				mask:   mask,
+				peerId: p.peerId,
+				epoch:  epoch,
+				signature: &signature{
+					r: sign.GetR(),
+					s: sign.GetS(),
+				},
+			}
+			p.setNote(newNote)
 		}
 	}
+
 }
 
 func (n *Node) evalCertificate(cert *x509.Certificate) {
-	if len(cert.Subject.Locality) == 0 || cert.Subject.Locality[0] == n.addr {
+	if len(cert.Subject.Locality) == 0 {
 		return
 	}
 

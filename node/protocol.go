@@ -3,6 +3,7 @@ package node
 import (
 	"crypto/x509"
 	"fmt"
+	"time"
 
 	"github.com/joonnna/capstone/protobuf"
 )
@@ -74,7 +75,6 @@ func (c correct) Gossip(n *Node) {
 
 				n.addViewPeer(p)
 				n.addLivePeer(p)
-
 			}
 		}
 	}
@@ -99,42 +99,48 @@ func (c correct) Monitor(n *Node) {
 		if err != nil {
 			n.log.Info.Printf("%s is dead, accusing", succ.addr)
 			p := n.getLivePeer(succ.peerKey)
-			if p != nil {
-				peerNote := p.getNote()
-				if peerNote == nil {
-					continue
-				}
-
-				tmp := &gossip.Accusation{
-					Epoch:   peerNote.epoch,
-					Accuser: n.peerId.id,
-					Accused: p.peerId.id,
-					Mask:    peerNote.mask,
-				}
-
-				b := []byte(fmt.Sprintf("%v", tmp))
-				signature, err := signContent(b, n.privKey)
-				if err != nil {
-					n.log.Err.Println(err)
-					return
-				}
-
-				a := &accusation{
-					peerId:    p.peerId,
-					epoch:     peerNote.epoch,
-					accuser:   n.peerId,
-					signature: signature,
-				}
-
-				err = p.setAccusation(a)
-				if err != nil {
-					n.log.Err.Println(err)
-					return
-				}
-				if !n.timerExist(p.key) {
-					n.startTimer(p.key, peerNote, n.peer, p.addr)
-				}
+			if p == nil {
+				continue
 			}
+			peerNote := p.getNote()
+			if peerNote == nil {
+				continue
+			}
+
+			a := &accusation{
+				peerId:  p.peerId,
+				epoch:   peerNote.epoch,
+				accuser: n.peerId,
+				mask:    peerNote.mask,
+			}
+
+			err = a.sign(n.privKey)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
+
+			err = p.setAccusation(a)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
+			if !n.timerExist(p.key) {
+				n.startTimer(p.key, peerNote, n.peer, p.addr)
+			}
+		}
+	}
+}
+
+func (c correct) Timeouts(n *Node) {
+	timeouts := n.getAllTimeouts()
+	for key, t := range timeouts {
+		n.log.Debug.Println("Have timeout for: ", t.addr)
+		since := time.Since(t.timeStamp)
+		if since.Seconds() > n.nodeDeadTimeout {
+			n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
+			n.deleteTimeout(key)
+			n.removeLivePeer(key)
 		}
 	}
 }
@@ -166,43 +172,38 @@ func (sa spamAccusations) Monitor(n *Node) {
 		}
 
 		p := n.getLivePeer(succ.peerKey)
-		if p != nil {
-			peerNote := p.getNote()
-			if peerNote == nil {
-				return
-			}
-
-			tmp := &gossip.Accusation{
-				Epoch:   peerNote.epoch,
-				Accuser: n.peerId.id,
-				Accused: p.peerId.id,
-				Mask:    peerNote.mask,
-			}
-
-			b := []byte(fmt.Sprintf("%v", tmp))
-			signature, err := signContent(b, n.privKey)
-			if err != nil {
-				n.log.Err.Println(err)
-				return
-			}
-
-			a := &accusation{
-				peerId:    p.peerId,
-				epoch:     peerNote.epoch,
-				accuser:   n.peerId,
-				signature: signature,
-			}
-
-			err = p.setAccusation(a)
-			if err != nil {
-				n.log.Err.Println(err)
-				return
-			}
-
-			if !n.timerExist(p.key) {
-				n.startTimer(p.key, peerNote, n.peer, p.addr)
-			}
+		if p == nil {
+			continue
 		}
+
+		peerNote := p.getNote()
+		if peerNote == nil {
+			continue
+		}
+
+		a := &accusation{
+			peerId:  p.peerId,
+			epoch:   peerNote.epoch,
+			accuser: n.peerId,
+			mask:    peerNote.mask,
+		}
+
+		err = a.sign(n.privKey)
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
+
+		err = p.setAccusation(a)
+		if err != nil {
+			n.log.Err.Println(err)
+			return
+		}
+
+		if !n.timerExist(p.key) {
+			n.startTimer(p.key, peerNote, n.peer, p.addr)
+		}
+
 	}
 }
 
@@ -227,6 +228,9 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 	}
 }
 
+func (sa spamAccusations) Timeouts(n *Node) {
+}
+
 func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 	msg := &gossip.GossipMsg{}
 
@@ -240,7 +244,7 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 
 		a := &gossip.Accusation{
 			Accuser: n.id,
-			Epoch:   (peerNote.epoch + 1),
+			Epoch:   peerNote.epoch,
 			Accused: peerNote.id,
 			Mask:    peerNote.mask,
 		}

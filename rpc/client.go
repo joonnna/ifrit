@@ -20,8 +20,6 @@ type Client struct {
 	connectionMutex sync.RWMutex
 
 	dialOptions []grpc.DialOption
-	//creds credentials.TransportCredentials
-	//config *tls.Config
 }
 
 func NewClient() *Client {
@@ -67,14 +65,6 @@ func (c *Client) Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error) {
 
 func (c *Client) dial(addr string) (gossip.GossipClient, error) {
 	var client gossip.GossipClient
-
-	/*
-		creds := credentials.NewTLS(&tls.Config{
-			Certificates: []tls.Certificate{*c.tlsCert},
-			ServerName:   strings.Split(addr, ":")[0], // NOTE: this is required!
-			RootCAs:      c.caCertPool,
-		})
-	*/
 
 	conn, err := grpc.Dial(addr, c.dialOptions...)
 	if err != nil {

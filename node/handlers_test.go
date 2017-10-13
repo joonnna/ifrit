@@ -218,11 +218,13 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 
 	suite.addViewPeer(accused)
 	suite.addViewPeer(accuser)
+	suite.addLivePeer(accused)
+	suite.addLivePeer(accuser)
 
 	n := accused.getNote()
 
 	acc := &accusation{
-		epoch:   n.epoch + 1,
+		epoch:   n.epoch,
 		mask:    n.mask,
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
@@ -233,4 +235,106 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 	suite.evalAccusation(accMsg)
 
 	assert.True(suite.T(), suite.timerExist(accused.key), "Valid accusation does not start timer")
+}
+
+func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
+	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
+
+	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
+
+	suite.addViewPeer(accused)
+	suite.addViewPeer(accuser)
+	suite.addLivePeer(accused)
+	suite.addLivePeer(accuser)
+
+	n := accused.getNote()
+
+	acc := &accusation{
+		epoch:   n.epoch - 1,
+		mask:    n.mask,
+		peerId:  accused.peerId,
+		accuser: accuser.peerId,
+	}
+
+	accMsg := newPbAcc(acc, priv)
+
+	suite.evalAccusation(accMsg)
+
+	assert.False(suite.T(), suite.timerExist(accused.key), "Invalid accusation starts timer")
+}
+
+func (suite *NodeTestSuite) TestNonExistingMask() {
+	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
+
+	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
+
+	suite.addViewPeer(accused)
+	suite.addViewPeer(accuser)
+	suite.addLivePeer(accused)
+	suite.addLivePeer(accuser)
+
+	n := accused.getNote()
+
+	acc := &accusation{
+		epoch:   n.epoch,
+		mask:    nil,
+		peerId:  accused.peerId,
+		accuser: accuser.peerId,
+	}
+
+	accMsg := newPbAcc(acc, priv)
+
+	suite.evalAccusation(accMsg)
+
+	assert.False(suite.T(), suite.timerExist(accused.key), "Invalid accusation starts timer")
+}
+
+func (suite *NodeTestSuite) TestInvalidMask() {
+	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
+
+	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
+
+	suite.addViewPeer(accused)
+	suite.addViewPeer(accuser)
+	suite.addLivePeer(accused)
+	suite.addLivePeer(accuser)
+
+	n := accused.getNote()
+
+	acc := &accusation{
+		epoch:   n.epoch + 1,
+		mask:    make([]byte, suite.numRings),
+		peerId:  accused.peerId,
+		accuser: accuser.peerId,
+	}
+
+	accMsg := newPbAcc(acc, priv)
+
+	suite.evalAccusation(accMsg)
+
+	assert.False(suite.T(), suite.timerExist(accused.key), "Invalid accusation starts timer")
+}
+
+func (suite *NodeTestSuite) TestRebuttal() {
+	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
+
+	suite.setProtocol(1)
+
+	suite.addViewPeer(accuser)
+
+	n := suite.getNote()
+
+	acc := &accusation{
+		epoch:   n.epoch,
+		mask:    n.mask,
+		peerId:  n.peerId,
+		accuser: accuser.peerId,
+	}
+
+	accMsg := newPbAcc(acc, priv)
+
+	suite.evalAccusation(accMsg)
+
+	assert.False(suite.T(), suite.timerExist(suite.key), "Accusation concerning yourself starts a timer")
+	assert.Equal(suite.T(), suite.getNote().epoch, (acc.epoch + 1), "No rebuttal started when receiving accusation about yourself")
 }
