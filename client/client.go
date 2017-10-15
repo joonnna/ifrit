@@ -3,8 +3,8 @@ package client
 import (
 	"runtime"
 
-	"github.com/joonnna/firechain/node"
-	"github.com/joonnna/firechain/rpc"
+	"github.com/joonnna/firechain/lib/node"
+	"github.com/joonnna/firechain/lib/rpc"
 )
 
 type Client struct {

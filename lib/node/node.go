@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/joonnna/firechain/lib/protobuf"
 	"github.com/joonnna/firechain/logger"
-	"github.com/joonnna/firechain/protobuf"
 )
 
 var (
@@ -51,6 +51,10 @@ type Node struct {
 
 	trustedBootNode bool
 	httpAddr        string
+}
+
+type Pinger interface {
+	Ping(addr string, args *gossip.Ping) (*gossip.Pong, error)
 }
 
 type Client interface {

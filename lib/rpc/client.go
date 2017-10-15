@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/joonnna/firechain/protobuf"
+	"github.com/joonnna/firechain/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

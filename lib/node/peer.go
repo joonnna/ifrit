@@ -7,7 +7,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/joonnna/firechain/protobuf"
+	"github.com/joonnna/firechain/lib/protobuf"
 )
 
 var (

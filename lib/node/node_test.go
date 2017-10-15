@@ -1,11 +1,10 @@
 package node
 
-// Basic imports
 import (
 	"crypto/ecdsa"
 	"testing"
 
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/firechain/lib/logger"
 	"github.com/stretchr/testify/suite"
 )
 

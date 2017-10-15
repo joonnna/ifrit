@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/joonnna/firechain/protobuf"
+	"github.com/joonnna/firechain/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	grpcPeer "google.golang.org/grpc/peer"
@@ -174,7 +174,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	peerNote := p.getNote()
 	if epoch == peerNote.epoch {
 		acc := p.getAccusation()
-		if acc != nil && accuserPeer.peerId.equal(acc.peerId) {
+		if acc != nil && accuserPeer.peerId.equal(acc.peerId) && acc.epoch == epoch {
 			n.log.Info.Println("Already have accusation, discard")
 			return
 		}

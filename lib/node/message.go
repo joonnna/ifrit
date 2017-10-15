@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 
-	"github.com/joonnna/firechain/protobuf"
+	"github.com/joonnna/firechain/lib/protobuf"
 )
 
 func (n *note) sign(privKey *ecdsa.PrivateKey) error {

@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"net"
 
-	"github.com/joonnna/firechain/protobuf"
+	"github.com/joonnna/firechain/lib/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
