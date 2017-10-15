@@ -3,8 +3,8 @@ package client
 import (
 	"runtime"
 
-	"github.com/joonnna/capstone/node"
-	"github.com/joonnna/capstone/rpc"
+	"github.com/joonnna/firechain/node"
+	"github.com/joonnna/firechain/rpc"
 )
 
 type Client struct {
@@ -34,5 +34,5 @@ func (c *Client) ShutDown() {
 }
 
 func (c *Client) Start() {
-	client.node.Start(node.NormalProtocol)
+	c.node.Start(node.NormalProtocol)
 }

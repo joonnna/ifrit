@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -10,8 +11,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/joonnna/capstone/cauth"
-	"github.com/joonnna/capstone/client"
+	"github.com/joonnna/firechain/cauth"
+	"github.com/joonnna/firechain/client"
 )
 
 const (
@@ -23,26 +24,6 @@ type bootStrapper struct {
 	clientListMutex sync.RWMutex
 
 	entryAddr string
-}
-
-func startCa() string {
-	var i uint8
-	i = 3
-	addrChan := make(chan string)
-
-	c, err := cauth.NewCa()
-	if err != nil {
-		panic(err)
-	}
-
-	err = c.NewGroup(i)
-	if err != nil {
-		panic(err)
-	}
-
-	go c.HttpHandler(addrChan)
-
-	return <-addrChan
 }
 
 func (b *bootStrapper) startClient() {
@@ -73,9 +54,22 @@ func (b *bootStrapper) addNodeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var numRings uint
+
+	args := flag.NewFlagSet("args", flag.ExitOnError)
+	args.UintVar(&numRings, "numRings", 3, "Number of gossip rings to be used")
+
+	args.Parse(os.Args[1:])
+
+	c, err := cauth.NewCa()
+	if err != nil {
+		panic(err)
+	}
+	go c.Start(uint8(numRings))
+
 	b := bootStrapper{
 		clientList: make([]*client.Client, 0),
-		entryAddr:  fmt.Sprintf("%s/certificateRequest", startCa()),
+		entryAddr:  fmt.Sprintf("http://%s/certificateRequest", c.GetAddr()),
 	}
 
 	http.HandleFunc("/addNode", b.addNodeHandler)
@@ -86,4 +80,5 @@ func main() {
 	<-channel
 
 	b.shutDownClients()
+	c.Shutdown()
 }

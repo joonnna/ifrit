@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/joonnna/capstone/protobuf"
+	"github.com/joonnna/firechain/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	grpcPeer "google.golang.org/grpc/peer"
@@ -173,6 +173,12 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	peerNote := p.getNote()
 	if epoch == peerNote.epoch {
+		acc := p.getAccusation()
+		if acc != nil && accuserPeer.peerId.equal(acc.peerId) {
+			n.log.Info.Println("Already have accusation, discard")
+			return
+		}
+
 		if !n.isPrev(accuserPeer, p, mask) {
 			n.log.Err.Println("Accuser is not pre-decessor of accused, invalid accusation")
 			return
@@ -273,7 +279,6 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 			p.setNote(newNote)
 		}
 	}
-
 }
 
 func (n *Node) evalCertificate(cert *x509.Certificate) {

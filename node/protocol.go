@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/joonnna/capstone/protobuf"
+	"github.com/joonnna/firechain/protobuf"
 )
 
 type correct struct {

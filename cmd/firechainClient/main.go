@@ -1,10 +1,17 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/joonnna/firechain/client"
+)
+
+var (
+	errNoAddr = errors.New("No certificate authority address provided, can't continue")
 )
 
 func main() {
@@ -15,7 +22,17 @@ func main() {
 
 	args.Parse(os.Args[1:])
 
+	if caAddr == "" {
+		panic(errNoAddr)
+	}
+
 	c := client.NewClient(caAddr)
 
-	c.Start()
+	go c.Start()
+
+	channel := make(chan os.Signal, 2)
+	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
+	<-channel
+
+	c.ShutDown()
 }

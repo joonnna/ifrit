@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/capstone/logger"
+	"github.com/joonnna/firechain/logger"
 )
 
 type view struct {

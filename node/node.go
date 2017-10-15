@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/capstone/logger"
-	"github.com/joonnna/capstone/protobuf"
+	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/firechain/protobuf"
 )
 
 var (
@@ -116,7 +116,7 @@ func (n *Node) checkTimeouts() {
 			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
-			n.getProtocol().Monitor(n)
+			n.getProtocol().Timeouts(n)
 		}
 	}
 }

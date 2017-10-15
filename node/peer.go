@@ -7,7 +7,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/joonnna/capstone/protobuf"
+	"github.com/joonnna/firechain/protobuf"
 )
 
 var (
@@ -106,6 +106,12 @@ func newPeer(recentNote *note, cert *x509.Certificate) (*peer, error) {
 		publicKey:  pb,
 	}, nil
 }
+
+/*
+func (p peer) isSame(other *peer) bool {
+	return bytes.Equal(p.peerId, other.peerId)
+}
+*/
 
 func (p *peer) setAccusation(a *accusation) error {
 	p.accuseMutex.Lock()

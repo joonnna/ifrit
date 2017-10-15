@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/capstone/logger"
+	"github.com/joonnna/firechain/logger"
 	"github.com/satori/go.uuid"
 )
 
@@ -39,6 +39,9 @@ type Ca struct {
 	groups []*group
 
 	listener net.Listener
+
+	port     int
+	hostName string
 }
 
 type group struct {
@@ -53,6 +56,9 @@ type group struct {
 }
 
 func NewCa() (*Ca, error) {
+	var l net.Listener
+	var err error
+
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
@@ -64,9 +70,7 @@ func NewCa() (*Ca, error) {
 
 	for {
 		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
-		if err != nil {
-			c.log.Err.Println(err)
-		} else {
+		if err == nil {
 			break
 		}
 		port++
@@ -84,12 +88,18 @@ func NewCa() (*Ca, error) {
 	return c, nil
 }
 
-func (c *Ca) Start(numRings uint) error {
-	err = c.NewGroup(numRings)
+func (c *Ca) Shutdown() {
+	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
+	c.listener.Close()
+}
+
+func (c *Ca) Start(numRings uint8) error {
+	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
+	err := c.newGroup(numRings)
 	if err != nil {
 		return err
 	}
-	return c.httpHandler(addrChan)
+	return c.httpHandler()
 }
 
 func (c Ca) GetAddr() string {
@@ -151,17 +161,16 @@ func genKeys() (*rsa.PrivateKey, error) {
 }
 
 func (c *Ca) httpHandler() error {
-	var l net.Listener
-	var err error
-
 	http.HandleFunc("/downloadGroupCertificate", c.downloadHandler)
 	http.HandleFunc("/certificateRequest", c.certRequestHandler)
 
-	err = http.Serve(c.l, nil)
+	err := http.Serve(c.listener, nil)
 	if err != nil {
 		c.log.Err.Println(err)
 		return err
 	}
+
+	return nil
 }
 
 func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {

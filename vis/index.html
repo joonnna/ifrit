@@ -103,7 +103,8 @@ function shutdown() {
     var idx = Math.floor((Math.random() * randomNodes.length) + 1);
 
     var randomNode = randomNodes[idx];
-    if (randomNode === null) {
+    if randomNode === null {
+        console.log("No node found")
         return
     }
     console.log(randomNode);
@@ -125,6 +126,10 @@ function crash() {
     var idx = Math.floor((Math.random() * randomNodes.length) + 1);
 
     var randomNode = randomNodes[idx];
+    if randomNode === null {
+        console.log("No node found")
+        return
+    }
     console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/crashNode", true);
@@ -154,6 +159,11 @@ function corrupt() {
     var idx = Math.floor((Math.random() * randomNodes.length) + 1);
 
     var randomNode = randomNodes[idx];
+    if randomNode === null {
+        console.log("No node found")
+        return
+    }
+
     console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/corruptNode", true);

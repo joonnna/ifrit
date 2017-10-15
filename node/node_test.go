@@ -5,7 +5,7 @@ import (
 	"crypto/ecdsa"
 	"testing"
 
-	"github.com/joonnna/capstone/logger"
+	"github.com/joonnna/firechain/logger"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -60,15 +60,13 @@ func (suite *NodeTestSuite) SetupTest() {
 
 	p, priv := newTestPeer("mainPeer1234", numRings, "localhost:1000")
 
+	logger := logger.CreateLogger("test", "testlog")
+
 	n := &Node{
-		viewMap:    make(map[string]*peer),
-		liveMap:    make(map[string]*peer),
-		timeoutMap: make(map[string]*timeout),
-		ringMap:    make(map[uint8]*ring),
-		numRings:   numRings,
-		peer:       p,
-		privKey:    priv,
-		log:        logger.CreateLogger("test", "testlog"),
+		peer:    p,
+		privKey: priv,
+		log:     logger,
+		view:    newView(numRings, logger, p.peerId, p.addr),
 	}
 
 	for i = 0; i < n.numRings; i++ {
