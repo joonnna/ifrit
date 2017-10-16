@@ -23,11 +23,11 @@ func (n *Node) getEpoch() uint64 {
 	return n.recentNote.epoch
 }
 
-func (n *Node) deactivateRing(ringNum uint8) {
+func (n *Node) deactivateRing(ringNum uint32) {
 	n.noteMutex.Lock()
 	defer n.noteMutex.Unlock()
 
-	if ringNum >= uint8(len(n.recentNote.mask)) {
+	if ringNum >= uint32(len(n.recentNote.mask)) {
 		n.log.Err.Println("Tried to deactivate non existing ring!")
 		return
 	}

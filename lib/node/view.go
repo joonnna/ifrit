@@ -1,10 +1,15 @@
 package node
 
 import (
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/joonnna/firechain/logger"
+)
+
+var (
+	errInvalidNeighbours = errors.New("Neighbours are nil ?!")
 )
 
 type view struct {
@@ -18,19 +23,19 @@ type view struct {
 	timeoutMutex sync.RWMutex
 
 	//Read only, don't need mutex
-	ringMap  map[uint8]*ring
-	numRings uint8
+	ringMap  map[uint32]*ring
+	numRings uint32
 
 	viewUpdateTimeout time.Duration
 
 	log *logger.Log
 }
 
-func newView(numRings uint8, log *logger.Log, id *peerId, addr string) *view {
-	var i uint8
+func newView(numRings uint32, log *logger.Log, id *peerId, addr string) *view {
+	var i uint32
 
 	v := &view{
-		ringMap:           make(map[uint8]*ring),
+		ringMap:           make(map[uint32]*ring),
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
 		timeoutMap:        make(map[string]*timeout),
@@ -100,12 +105,14 @@ func (v *view) addViewPeer(p *peer) {
 	v.viewMap[p.key] = p
 }
 
+/*
 func (v *view) removeViewPeer(key string) {
 	v.viewMutex.Lock()
 	defer v.viewMutex.Unlock()
 
 	delete(v.viewMap, key)
 }
+*/
 
 func (v *view) viewPeerExist(key string) bool {
 	v.viewMutex.RLock()
@@ -194,17 +201,45 @@ func (v *view) getLivePeer(key string) *peer {
 
 func (v *view) addLivePeer(p *peer) {
 	v.liveMutex.Lock()
-	defer v.liveMutex.Unlock()
 
 	if _, ok := v.liveMap[p.key]; ok {
 		v.log.Err.Printf("Tried to add peer twice to liveMap: %s", p.addr)
+		v.liveMutex.Unlock()
 		return
 	}
 
 	v.liveMap[p.key] = p
+	v.liveMutex.Unlock()
 
-	for _, ring := range v.ringMap {
-		ring.add(p.id, p.key, p.addr)
+	for num, ring := range v.ringMap {
+		//TODO handle this differently? continue after failed ring add is dodgy
+		//Although no errors "should" occur
+		err := ring.add(p.id, p.key, p.addr)
+		if err != nil {
+			v.log.Err.Println(err)
+			continue
+		}
+
+		succKey, prevKey, err := ring.findNeighbours(p.peerId)
+		if err != nil {
+			v.log.Err.Println(err)
+			continue
+		}
+
+		succ := v.getViewPeer(succKey)
+		prev := v.getViewPeer(prevKey)
+
+		//Occurs when a fresh node starts up and has no nodes in its view
+		//Or if the local node is either the new succ or prev
+		//TODO handle this differently?
+		if succ == nil || prev == nil {
+			continue
+		}
+
+		acc := succ.getRingAccusation(num)
+		if acc != nil && acc.accuser.equal(prev.peerId) {
+			succ.removeAccusation(num)
+		}
 	}
 }
 
@@ -268,6 +303,19 @@ func (v *view) deleteTimeout(key string) {
 	delete(v.timeoutMap, key)
 }
 
+func (v *view) getTimeout(key string) *timeout {
+	v.timeoutMutex.RLock()
+	defer v.timeoutMutex.RUnlock()
+
+	t, ok := v.timeoutMap[key]
+
+	if !ok {
+		return nil
+	}
+
+	return t
+}
+
 func (v *view) getAllTimeouts() map[string]*timeout {
 	v.timeoutMutex.RLock()
 	defer v.timeoutMutex.RUnlock()
@@ -279,4 +327,51 @@ func (v *view) getAllTimeouts() map[string]*timeout {
 	}
 
 	return ret
+}
+
+func (v *view) isPrev(p, other *peer, ringNum uint32) bool {
+	r, ok := v.ringMap[ringNum]
+	if !ok {
+		v.log.Err.Println("accusation on non-existing ring")
+		return false
+	}
+
+	prev, err := r.isPrev(p, other)
+	if err != nil {
+		v.log.Err.Println(err)
+		return false
+	}
+
+	return prev
+}
+
+func (v *view) shouldBeNeighbours(id *peerId) bool {
+	for _, r := range v.ringMap {
+		if r.betweenNeighbours(id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *view) findNeighbours(id *peerId) []string {
+	keys := make([]string, 0)
+	exist := make(map[string]bool)
+
+	for _, r := range v.ringMap {
+		succ, prev, err := r.findNeighbours(id)
+		if err != nil {
+			continue
+		}
+		if _, ok := exist[succ]; !ok {
+			keys = append(keys, succ)
+			exist[succ] = true
+		}
+
+		if _, ok := exist[prev]; !ok {
+			keys = append(keys, prev)
+			exist[prev] = true
+		}
+	}
+	return keys
 }

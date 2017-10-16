@@ -158,7 +158,7 @@ func (n *Node) updateState() {
 }
 
 /* Creates a new state */
-func (n *Node) newState(ringId uint8) *state {
+func (n *Node) newState(ringId uint32) *state {
 	id := fmt.Sprintf("%s|%d", n.addr, ringId)
 
 	var nextId, prevId string
@@ -204,7 +204,7 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 }
 
 /* Sends a post request to the state server add endpoint */
-func (n *Node) add(ringId uint8) {
+func (n *Node) add(ringId uint32) {
 	s := n.newState(ringId)
 	bytes := s.marshal()
 	req, err := http.NewRequest("POST", "http://localhost:8080/add", bytes)
@@ -223,7 +223,7 @@ func (n *Node) add(ringId uint8) {
 	}
 }
 
-func (n *Node) remove(ringId uint8) {
+func (n *Node) remove(ringId uint32) {
 	s := n.newState(ringId)
 	bytes := s.marshal()
 	req, err := http.NewRequest("POST", "http://localhost:8080/remove", bytes)

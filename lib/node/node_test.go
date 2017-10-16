@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 	"testing"
 
-	"github.com/joonnna/firechain/lib/logger"
+	"github.com/joonnna/firechain/logger"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -16,8 +16,8 @@ type NodeTestSuite struct {
 	*Node
 }
 
-func newTestPeer(id string, numRings uint8, addr string) (*peer, *ecdsa.PrivateKey) {
-	var i uint8
+func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.PrivateKey) {
+	var i uint32
 
 	peerPrivKey, err := genKeys()
 	if err != nil {
@@ -25,9 +25,10 @@ func newTestPeer(id string, numRings uint8, addr string) (*peer, *ecdsa.PrivateK
 	}
 
 	p := &peer{
-		publicKey: &peerPrivKey.PublicKey,
-		peerId:    newPeerId([]byte(id)),
-		addr:      addr,
+		publicKey:   &peerPrivKey.PublicKey,
+		peerId:      newPeerId([]byte(id)),
+		addr:        addr,
+		accusations: make([]*accusation, numRings),
 	}
 
 	localNote := &note{
@@ -53,7 +54,7 @@ func newTestPeer(id string, numRings uint8, addr string) (*peer, *ecdsa.PrivateK
 // Make sure that VariableThatShouldStartAtFive is set to five
 // before each test
 func (suite *NodeTestSuite) SetupTest() {
-	var numRings, i uint8
+	var numRings uint32
 
 	numRings = 3
 
@@ -66,10 +67,6 @@ func (suite *NodeTestSuite) SetupTest() {
 		privKey: priv,
 		log:     logger,
 		view:    newView(numRings, logger, p.peerId, p.addr),
-	}
-
-	for i = 0; i < n.numRings; i++ {
-		n.ringMap[i] = newRing(i, n.id, n.key, n.addr)
 	}
 
 	suite.Node = n

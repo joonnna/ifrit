@@ -25,6 +25,7 @@ message Accusation {
     bytes accused = 3;
     Signature signature = 4;
     bytes mask = 5;
+    uint32 ringNum = 6;
 }
 
 message Note {

@@ -67,7 +67,7 @@ func (c correct) Gossip(n *Node) {
 					continue
 				}
 
-				p, err := newPeer(nil, cert)
+				p, err := newPeer(nil, cert, n.numRings)
 				if err != nil {
 					n.log.Err.Println(err)
 					continue
@@ -83,7 +83,7 @@ func (c correct) Gossip(n *Node) {
 func (c correct) Monitor(n *Node) {
 	msg := &gossip.Ping{}
 
-	for _, ring := range n.ringMap {
+	for num, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Err.Println(err)
@@ -112,6 +112,7 @@ func (c correct) Monitor(n *Node) {
 				epoch:   peerNote.epoch,
 				accuser: n.peerId,
 				mask:    peerNote.mask,
+				ringNum: num,
 			}
 
 			err = a.sign(n.privKey)

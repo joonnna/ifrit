@@ -37,6 +37,7 @@ func newPbAcc(a *accusation, priv *ecdsa.PrivateKey) *gossip.Accusation {
 		Accused: a.id,
 		Mask:    a.mask,
 		Accuser: a.accuser.id,
+		RingNum: a.ringNum,
 	}
 
 	b := []byte(fmt.Sprintf("%v", acc))
@@ -73,7 +74,7 @@ func (suite *NodeTestSuite) TestAddValidNote() {
 	suite.evalNote(noteMsg)
 
 	assert.NotNil(suite.T(), p.getNote(), "Valid note not added to peer, eval failed")
-	assert.NotNil(suite.T(), suite.getLivePeer(p.key), "Valid note not added to peer, eval failed")
+	assert.NotNil(suite.T(), suite.getLivePeer(p.key), "Valid not dosen't add peer to live")
 	assert.Equal(suite.T(), p.getNote().epoch, newNote.epoch, "New note with higher epoch does not replace old one")
 }
 
@@ -94,7 +95,7 @@ func (suite *NodeTestSuite) TestAddInvalidNote() {
 
 	suite.evalNote(noteMsg)
 
-	assert.NotEqual(suite.T(), p.getNote().epoch, newNote.epoch, "Invalid note does not replace a valide one")
+	assert.NotEqual(suite.T(), p.getNote().epoch, newNote.epoch, "Invalid note replaces a valid one")
 }
 
 func (suite *NodeTestSuite) TestAddNoteToNonExistingPeer() {
@@ -121,7 +122,8 @@ func (suite *NodeTestSuite) TestInvalidRebuttal() {
 	prevNote := p.getNote()
 
 	a := &accusation{
-		epoch: prevNote.epoch + 2,
+		epoch:   prevNote.epoch,
+		ringNum: 1,
 	}
 
 	err := p.setAccusation(a)
@@ -139,7 +141,7 @@ func (suite *NodeTestSuite) TestInvalidRebuttal() {
 
 	suite.evalNote(noteMsg)
 
-	assert.NotEqual(suite.T(), p.getNote().epoch, newNote.epoch, "Invalid note does replaces a valid one")
+	assert.NotEqual(suite.T(), p.getNote().epoch, newNote.epoch, "Invalid note acts as rebuttal")
 }
 
 func (suite *NodeTestSuite) TestValidRebuttal() {
@@ -148,7 +150,8 @@ func (suite *NodeTestSuite) TestValidRebuttal() {
 	prevNote := p.getNote()
 
 	a := &accusation{
-		epoch: prevNote.epoch + 1,
+		epoch:   prevNote.epoch,
+		ringNum: 1,
 	}
 
 	err := p.setAccusation(a)
@@ -172,20 +175,25 @@ func (suite *NodeTestSuite) TestValidRebuttal() {
 func (suite *NodeTestSuite) TestAccusedNotInView() {
 	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
 
+	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
+
+	suite.addViewPeer(accuser)
+
 	n := accused.getNote()
 
 	acc := &accusation{
-		epoch:   n.epoch + 1,
+		epoch:   n.epoch,
 		mask:    n.mask,
 		peerId:  n.peerId,
-		accuser: suite.peerId,
+		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
-	accMsg := newPbAcc(acc, suite.privKey)
+	accMsg := newPbAcc(acc, priv)
 
 	suite.evalAccusation(accMsg)
 
-	assert.Nil(suite.T(), accused.getAccusation(), "Added accusation for peer not in view")
+	assert.Nil(suite.T(), accused.getAnyAccusation(), "Added accusation for peer not in view")
 }
 
 func (suite *NodeTestSuite) TestAccuserNotInView() {
@@ -198,17 +206,18 @@ func (suite *NodeTestSuite) TestAccuserNotInView() {
 	n := accused.getNote()
 
 	acc := &accusation{
-		epoch:   n.epoch + 1,
+		epoch:   n.epoch,
 		mask:    n.mask,
 		peerId:  n.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)
 
 	suite.evalAccusation(accMsg)
 
-	assert.Nil(suite.T(), accused.getAccusation(), "Added accusation when accuser not in view")
+	assert.Nil(suite.T(), accused.getAnyAccusation(), "Added accusation when accuser not in view")
 }
 
 func (suite *NodeTestSuite) TestValidAccStartsTimer() {
@@ -228,6 +237,7 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 		mask:    n.mask,
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)
@@ -235,6 +245,8 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 	suite.evalAccusation(accMsg)
 
 	assert.True(suite.T(), suite.timerExist(accused.key), "Valid accusation does not start timer")
+
+	suite.log.Debug.Println(len(suite.getView()))
 }
 
 func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
@@ -254,6 +266,7 @@ func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
 		mask:    n.mask,
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)
@@ -280,6 +293,7 @@ func (suite *NodeTestSuite) TestNonExistingMask() {
 		mask:    nil,
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)
@@ -302,10 +316,11 @@ func (suite *NodeTestSuite) TestInvalidMask() {
 	n := accused.getNote()
 
 	acc := &accusation{
-		epoch:   n.epoch + 1,
+		epoch:   n.epoch,
 		mask:    make([]byte, suite.numRings),
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)
@@ -329,6 +344,7 @@ func (suite *NodeTestSuite) TestRebuttal() {
 		mask:    n.mask,
 		peerId:  n.peerId,
 		accuser: accuser.peerId,
+		ringNum: 1,
 	}
 
 	accMsg := newPbAcc(acc, priv)

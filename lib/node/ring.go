@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -16,14 +17,14 @@ var (
 )
 
 type ring struct {
-	ringNum uint8
+	ringNum uint32
 
 	existsMap map[string]bool
 
 	succList  []*ringId
 	ringMutex sync.RWMutex
-	ownIdx    int
 
+	ownIdx      int
 	localRingId *ringId
 }
 
@@ -41,7 +42,7 @@ func (rI *ringId) cmpId(other *ringId) int {
 	return bytes.Compare(rI.id, other.id)
 }
 
-func newRing(ringNum uint8, id []byte, peerKey string, addr string) *ring {
+func newRing(ringNum uint32, id []byte, peerKey string, addr string) *ring {
 	h := hashId(ringNum, id)
 	localRingId := &ringId{
 		id:      h,
@@ -88,7 +89,6 @@ func (r *ring) add(newId []byte, peerKey string, addr string) error {
 	r.existsMap[peerKey] = true
 
 	if !r.succList[r.ownIdx].equal(r.localRingId) {
-		panic(errLostSelf)
 		return errLostSelf
 	}
 
@@ -118,7 +118,6 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 	if idx < r.ownIdx {
 		r.ownIdx -= 1
 	} else if idx == r.ownIdx {
-		panic(errRemoveSelf)
 		return errRemoveSelf
 	}
 
@@ -127,57 +126,10 @@ func (r *ring) remove(removeId []byte, peerKey string) error {
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
 
 	if !r.succList[r.ownIdx].equal(r.localRingId) {
-		panic(errLostSelf)
 		return errLostSelf
 	}
 
 	return nil
-}
-
-func hashId(ringNum uint8, id []byte) []byte {
-	preHashId := append(id, ringNum)
-
-	h := sha256.New()
-	h.Write(preHashId)
-
-	return h.Sum(nil)
-}
-
-func (r *ring) rank(other *peerId) (int, error) {
-	h := hashId(r.ringNum, other.id)
-	id := &ringId{
-		id: h,
-	}
-
-	idx, err := search(r.succList, id)
-	if err != nil {
-		return -1, errNotFound
-	}
-
-	ret := r.ownIdx - idx
-
-	if ret < 0 {
-		ret = -ret
-	}
-
-	return ret, nil
-}
-
-func (r *ring) isHigher(p, other *peerId) bool {
-	r.ringMutex.RLock()
-	defer r.ringMutex.RUnlock()
-
-	r1, err := r.rank(p)
-	if err != nil {
-		return false
-	}
-
-	r2, err := r.rank(other)
-	if err != nil {
-		return true
-	}
-
-	return r1 >= r2
 }
 
 func (r *ring) isPrev(p, other *peer) (bool, error) {
@@ -242,7 +194,40 @@ func (r *ring) betweenNeighbours(other *peerId) bool {
 	}
 }
 
-func (r *ring) findNeighbour(p *peerId) (string, error) {
+func (r *ring) findNeighbours(p *peerId) (string, string, error) {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	len := len(r.succList)
+
+	if len <= 1 {
+		return r.localRingId.peerKey, r.localRingId.peerKey, nil
+	}
+
+	h := hashId(r.ringNum, p.id)
+	id := &ringId{
+		id:      h,
+		peerKey: p.key,
+	}
+
+	idx, err := search(r.succList, id)
+	if err != nil {
+		return "", "", errNotFound
+	}
+
+	prevIdx := (idx - 1) % len
+	if prevIdx < 0 {
+		prevIdx = prevIdx + len
+	}
+	prev := r.succList[prevIdx].peerKey
+
+	succIdx := (idx + 1) % len
+	succ := r.succList[succIdx].peerKey
+
+	return succ, prev, nil
+}
+
+func (r *ring) findPrev(p *peerId) (string, error) {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
 
@@ -258,14 +243,17 @@ func (r *ring) findNeighbour(p *peerId) (string, error) {
 		peerKey: p.key,
 	}
 
-	idx, err := search(r.succList, id)
+	i, err := search(r.succList, id)
 	if err != nil {
 		return "", errNotFound
 	}
 
-	neighbourIdx := (idx + 1) % len
+	idx := (i - 1) % len
+	if idx < 0 {
+		idx = idx + len
+	}
 
-	return r.succList[neighbourIdx].peerKey, nil
+	return r.succList[idx].peerKey, nil
 }
 
 func isBetween(start, end, new *ringId) bool {
@@ -307,33 +295,42 @@ func (r *ring) getRingList() []*ringId {
 	return ret
 }
 
-func (r *ring) getRingSucc() (ringId, error) {
+func (r *ring) getRingSucc() (*ringId, error) {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
 
 	len := len(r.succList)
 
 	if len == 0 {
-		return ringId{}, errNotFound
+		return nil, errNotFound
 	} else {
 		idx := (r.ownIdx + 1) % len
-		return *r.succList[idx], nil
+		return r.succList[idx], nil
 	}
 }
 
-func (r *ring) getRingPrev() (ringId, error) {
+func (r *ring) getRingPrev() (*ringId, error) {
 	r.ringMutex.RLock()
 	defer r.ringMutex.RUnlock()
 
 	len := len(r.succList)
 
 	if len == 0 {
-		return ringId{}, errNotFound
+		return nil, errNotFound
 	} else {
 		idx := (r.ownIdx - 1) % len
 		if idx < 0 {
 			idx = idx + len
 		}
-		return *r.succList[idx], nil
+		return r.succList[idx], nil
 	}
+}
+
+func hashId(ringNum uint32, id []byte) []byte {
+	preHashId := append(id, []byte(fmt.Sprintf("%d", ringNum))...)
+
+	h := sha256.New()
+	h.Write(preHashId)
+
+	return h.Sum(nil)
 }

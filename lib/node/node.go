@@ -30,17 +30,19 @@ type Node struct {
 
 	*view
 
+	//*pinger
+
 	protocol
 	protocolMutex sync.RWMutex
+
+	client Client
+	server Server
 
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
 	exitFlag  bool
 	exitMutex sync.RWMutex
-
-	client Client
-	server Server
 
 	gossipTimeout   time.Duration
 	monitorTimeout  time.Duration
@@ -51,10 +53,6 @@ type Node struct {
 
 	trustedBootNode bool
 	httpAddr        string
-}
-
-type Pinger interface {
-	Ping(addr string, args *gossip.Ping) (*gossip.Pong, error)
 }
 
 type Client interface {
@@ -139,7 +137,11 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 		}
 
 		if a != nil {
-			msg.Accusations = append(msg.Accusations, a)
+			for _, acc := range a {
+				if acc != nil {
+					msg.Accusations = append(msg.Accusations, acc)
+				}
+			}
 		}
 	}
 
@@ -171,41 +173,6 @@ func (n *Node) getProtocol() protocol {
 	return n.protocol
 }
 
-func (n *Node) isPrev(p, other *peer, mask []byte) bool {
-	if len(mask) != len(n.ringMap) {
-		n.log.Err.Printf("Mask is of invalid length, %d != %d ", len(mask), len(n.ringMap))
-		return false
-	}
-
-	for idx, r := range n.ringMap {
-		if mask[idx] == 0 {
-			n.log.Err.Println("Mask have deactivated ring", idx)
-			continue
-		}
-		prev, err := r.isPrev(p, other)
-		if err != nil {
-			n.log.Err.Println(err)
-			continue
-		}
-
-		if prev {
-			return true
-		}
-	}
-	return false
-}
-
-func (n *Node) shouldBeNeighbours(id []byte) bool {
-	pId := newPeerId(id)
-
-	for _, r := range n.ringMap {
-		if r.betweenNeighbours(pId) {
-			return true
-		}
-	}
-	return false
-}
-
 func (n *Node) localNoteToPbMsg() *gossip.Note {
 	n.noteMutex.RLock()
 	defer n.noteMutex.RUnlock()
@@ -213,23 +180,8 @@ func (n *Node) localNoteToPbMsg() *gossip.Note {
 	return n.recentNote.toPbMsg()
 }
 
-func (n *Node) findNeighbours(id []byte) []string {
-	keys := make([]string, 0)
-
-	pId := newPeerId(id)
-
-	for _, r := range n.ringMap {
-		key, err := r.findNeighbour(pId)
-		if err != nil {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	return keys
-}
-
 func NewNode(caAddr string, c Client, s Server) (*Node, error) {
-	var i uint8
+	var i uint32
 
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
 
@@ -253,11 +205,11 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		return nil, errNoId
 	}
 
-	numRings := ext[0].Value[0]
+	numRings := uint32(ext[0].Value[0])
 
 	config := genServerConfig(certs, privKey)
 
-	p, err := newPeer(nil, certs.ownCert)
+	p, err := newPeer(nil, certs.ownCert, numRings)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +254,7 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 	n.recentNote = localNote
 
 	for _, c := range certs.knownCerts {
-		p, err := newPeer(nil, c)
+		p, err := newPeer(nil, c, numRings)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -323,7 +275,7 @@ func (n *Node) ShutDownNode() {
 }
 
 func (n *Node) Start(protocol int) {
-	var i uint8
+	var i uint32
 	n.log.Info.Println("Started Node")
 
 	done := make(chan bool)

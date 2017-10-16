@@ -43,7 +43,7 @@ func genLowerId(id []byte) []byte {
 }
 
 func createRing() *ring {
-	var ringNum uint8
+	var ringNum uint32
 
 	ringNum = 1
 

@@ -19,9 +19,9 @@ var (
 	errAccuserId   = errors.New("accuser id is invalid")
 	errAccuserSign = errors.New("accusation signature is invalid")
 	errPubKeyErr   = errors.New("Public key type is invalid")
-
-	errOldEpoch = errors.New("accusation contains old epoch")
-	errNoNote   = errors.New("no note found for the accused peer")
+	errOldEpoch    = errors.New("accusation contains old epoch")
+	errNoNote      = errors.New("no note found for the accused peer")
+	errInvalidRing = errors.New("Tried to set an accusation on a non-existing ring")
 )
 
 type peer struct {
@@ -31,7 +31,7 @@ type peer struct {
 	recentNote *note
 
 	accuseMutex sync.RWMutex
-	*accusation
+	accusations []*accusation
 
 	*peerId
 	cert      *x509.Certificate
@@ -60,6 +60,7 @@ type note struct {
 }
 
 type accusation struct {
+	ringNum uint32
 	epoch   uint64
 	accuser *peerId
 	mask    []byte
@@ -82,9 +83,8 @@ func (p peerId) equal(other *peerId) bool {
 	return bytes.Equal(p.id, other.id)
 }
 
-func newPeer(recentNote *note, cert *x509.Certificate) (*peer, error) {
+func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, error) {
 	var ok bool
-	pb := new(ecdsa.PublicKey)
 
 	if len(cert.Subject.Locality) == 0 {
 		return nil, errPeerAddr
@@ -94,16 +94,19 @@ func newPeer(recentNote *note, cert *x509.Certificate) (*peer, error) {
 		return nil, errPeerId
 	}
 
+	pb := new(ecdsa.PublicKey)
+
 	if pb, ok = cert.PublicKey.(*ecdsa.PublicKey); !ok {
 		return nil, errPubKeyErr
 	}
 
 	return &peer{
-		addr:       cert.Subject.Locality[0],
-		recentNote: recentNote,
-		cert:       cert,
-		peerId:     newPeerId(cert.SubjectKeyId),
-		publicKey:  pb,
+		addr:        cert.Subject.Locality[0],
+		recentNote:  recentNote,
+		cert:        cert,
+		peerId:      newPeerId(cert.SubjectKeyId),
+		publicKey:   pb,
+		accusations: make([]*accusation, numRings),
 	}, nil
 }
 
@@ -121,23 +124,68 @@ func (p *peer) setAccusation(a *accusation) error {
 		return errOldEpoch
 	}
 
-	p.accusation = a
+	if a.ringNum >= uint32(len(p.accusations)) {
+		return errInvalidRing
+	}
+
+	p.accusations[a.ringNum] = a
 
 	return nil
 }
 
-func (p *peer) removeAccusation() {
-	p.accuseMutex.Lock()
-	defer p.accuseMutex.Unlock()
-
-	p.accusation = nil
-}
-
-func (p *peer) getAccusation() *accusation {
+func (p *peer) removeAccusation(ringNum uint32) {
 	p.accuseMutex.RLock()
 	defer p.accuseMutex.RUnlock()
 
-	return p.accusation
+	if ringNum >= uint32(len(p.accusations)) {
+		return
+	}
+
+	p.accusations[ringNum] = nil
+}
+
+func (p *peer) removeAccusations() {
+	p.accuseMutex.Lock()
+	defer p.accuseMutex.Unlock()
+
+	for idx, _ := range p.accusations {
+		p.accusations[idx] = nil
+	}
+}
+
+func (p *peer) getRingAccusation(ringNum uint32) *accusation {
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
+	if ringNum >= uint32(len(p.accusations)) {
+		return nil
+	}
+
+	return p.accusations[ringNum]
+}
+
+func (p *peer) getAnyAccusation() *accusation {
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
+	for _, acc := range p.accusations {
+		if acc != nil {
+			return acc
+		}
+	}
+
+	return nil
+}
+
+func (p *peer) getAllAccusations() []*accusation {
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
+	ret := make([]*accusation, len(p.accusations))
+
+	copy(ret, p.accusations)
+
+	return ret
 }
 
 func (p *peer) setNote(newNote *note) {
@@ -156,10 +204,10 @@ func (p *peer) getNote() *note {
 	return p.recentNote
 }
 
-func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, *gossip.Accusation) {
+func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
 	var c *gossip.Certificate
 	var n *gossip.Note
-	var a *gossip.Accusation
+	var a []*gossip.Accusation
 
 	c = &gossip.Certificate{
 		Raw: p.cert.Raw,
@@ -170,9 +218,11 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, *gossip.Accusa
 		n = recentNote.toPbMsg()
 	}
 
-	currAcc := p.getAccusation()
-	if currAcc != nil {
-		a = currAcc.toPbMsg()
+	accs := p.getAllAccusations()
+	for _, acc := range accs {
+		if acc != nil {
+			a = append(a, acc.toPbMsg())
+		}
 	}
 
 	return c, n, a
@@ -180,20 +230,4 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, *gossip.Accusa
 
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch
-}
-
-func newAccusation(id *peerId, epoch uint64, accuser *peerId) (*accusation, error) {
-	if len(id.id) == 0 {
-		return nil, errAccusedId
-	}
-
-	if len(accuser.id) == 0 {
-		return nil, errAccuserId
-	}
-
-	return &accusation{
-		peerId:  id,
-		epoch:   epoch,
-		accuser: accuser,
-	}, nil
 }
