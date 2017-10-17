@@ -29,6 +29,9 @@ type view struct {
 	viewUpdateTimeout time.Duration
 
 	log *logger.Log
+
+	//Local id only used for special case in addLivePeer
+	local *peerId
 }
 
 func newView(numRings uint32, log *logger.Log, id *peerId, addr string) *view {
@@ -42,6 +45,7 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) *view {
 		viewUpdateTimeout: time.Second * 2,
 		log:               log,
 		numRings:          numRings,
+		local:             id,
 	}
 
 	for i = 0; i < numRings; i++ {
@@ -211,6 +215,8 @@ func (v *view) addLivePeer(p *peer) {
 	v.liveMap[p.key] = p
 	v.liveMutex.Unlock()
 
+	var prevId *peerId
+
 	for num, ring := range v.ringMap {
 		//TODO handle this differently? continue after failed ring add is dodgy
 		//Although no errors "should" occur
@@ -229,15 +235,23 @@ func (v *view) addLivePeer(p *peer) {
 		succ := v.getViewPeer(succKey)
 		prev := v.getViewPeer(prevKey)
 
+		//Special case when prev is the local peer
+		//do not care if local peer is succ, will not have accusations about myself
+		if prev != nil {
+			prevId = prev.peerId
+		} else if prevKey == v.local.key {
+			prevId = v.local
+		}
+
 		//Occurs when a fresh node starts up and has no nodes in its view
 		//Or if the local node is either the new succ or prev
 		//TODO handle this differently?
-		if succ == nil || prev == nil {
+		if succ == nil || prevId == nil {
 			continue
 		}
 
 		acc := succ.getRingAccusation(num)
-		if acc != nil && acc.accuser.equal(prev.peerId) {
+		if acc != nil && acc.accuser.equal(prevId) {
 			succ.removeAccusation(num)
 		}
 	}

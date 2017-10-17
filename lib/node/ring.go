@@ -326,6 +326,28 @@ func (r *ring) getRingPrev() (*ringId, error) {
 	}
 }
 
+//Used for testing
+func (r *ring) getSucc(id []byte) (string, error) {
+	r.ringMutex.RLock()
+	defer r.ringMutex.RUnlock()
+
+	h := hashId(r.ringNum, id)
+	//Dont need addr, just want ringId struct to perform search
+	rId := &ringId{
+		id: h,
+	}
+
+	i, err := search(r.succList, rId)
+	if err != nil {
+		return "", errNotFound
+	}
+
+	len := len(r.succList)
+
+	idx := (i + 1) % len
+	return r.succList[idx].peerKey, nil
+}
+
 func hashId(ringNum uint32, id []byte) []byte {
 	preHashId := append(id, []byte(fmt.Sprintf("%d", ringNum))...)
 

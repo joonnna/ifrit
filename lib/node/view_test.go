@@ -5,6 +5,7 @@ import (
 
 	"github.com/joonnna/firechain/logger"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -176,9 +177,73 @@ func (suite *ViewTestSuite) TestIsPrevOnInvalidRing() {
 }
 
 func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
-	p, _ := newTestPeer("test1", suite.numRings, "localhost:123")
+	p1, _ := newTestPeer("test1", suite.numRings, "localhost:123")
 	p2, _ := newTestPeer("test12", suite.numRings, "localhost:1234")
+	p3, _ := newTestPeer("test14", suite.numRings, "localhost:1235")
+	p4, _ := newTestPeer("test15", suite.numRings, "localhost:1236")
+	p5, _ := newTestPeer("test16", suite.numRings, "localhost:1237")
+	p6, _ := newTestPeer("test17", suite.numRings, "localhost:1238")
+	p7, _ := newTestPeer("test18", suite.numRings, "localhost:1239")
 
-	suite.addViewPeer(p)
+	suite.addViewPeer(p1)
 	suite.addViewPeer(p2)
+	suite.addViewPeer(p3)
+	suite.addViewPeer(p4)
+	suite.addViewPeer(p5)
+	suite.addViewPeer(p6)
+	suite.addViewPeer(p7)
+
+	suite.addLivePeer(p1)
+	suite.addLivePeer(p2)
+	suite.addLivePeer(p3)
+	suite.addLivePeer(p4)
+	suite.addLivePeer(p5)
+	suite.addLivePeer(p6)
+	suite.addLivePeer(p7)
+
+	view := suite.getView()
+
+	for _, p := range view {
+		for num, r := range suite.ringMap {
+			key, err := r.getSucc(p.id)
+			require.Nil(suite.T(), err, "Should not fail this call")
+			if key == suite.key {
+				continue
+			}
+
+			succ := suite.getViewPeer(key)
+			require.NotNil(suite.T(), succ, "Should not fail this call")
+
+			n := succ.getNote()
+			//signature is not important now
+			a := &accusation{
+				peerId:  succ.peerId,
+				accuser: p.peerId,
+				mask:    n.mask,
+				ringNum: num,
+				epoch:   n.epoch,
+			}
+			err = succ.setAccusation(a)
+			require.Nil(suite.T(), err, "Should not fail this call")
+		}
+	}
+
+	//add new peer and assert that all accusations that should be invalidated are removed
+	p8, _ := newTestPeer("test19", suite.numRings, "localhost:1239")
+	suite.addViewPeer(p8)
+	suite.addLivePeer(p8)
+
+	for num, r := range suite.ringMap {
+		succKey, _, err := r.findNeighbours(p8.peerId)
+		if succKey == suite.key {
+			continue
+		}
+		require.Nil(suite.T(), err, "Should note fail this call")
+
+		succ := suite.getViewPeer(succKey)
+		require.NotNil(suite.T(), succ, "Should note fail this call")
+
+		assert.Nil(suite.T(), succ.getRingAccusation(num), "Accusation should have been invalidated")
+	}
+
 }
