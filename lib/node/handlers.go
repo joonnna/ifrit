@@ -185,7 +185,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			return
 		}
 
-		if !n.isPrev(accuserPeer, p, ringNum) {
+		if !n.isPrev(p, accuserPeer, ringNum) {
 			n.log.Err.Println("Accuser is not pre-decessor of accused on given ring, invalid accusation")
 			return
 		}

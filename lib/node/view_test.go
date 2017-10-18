@@ -17,6 +17,7 @@ type ViewTestSuite struct {
 
 func (suite *ViewTestSuite) SetupTest() {
 	var numRings uint32
+	var err error
 
 	numRings = 3
 
@@ -24,7 +25,8 @@ func (suite *ViewTestSuite) SetupTest() {
 
 	suite.peer, _ = newTestPeer("test1234", numRings, "localhost:3123")
 
-	suite.view = newView(numRings, logger, suite.peerId, suite.addr)
+	suite.view, err = newView(numRings, logger, suite.peerId, suite.addr)
+	require.NoError(suite.T(), err, "Failed to create view")
 }
 
 func TestViewTestSuite(t *testing.T) {
@@ -157,6 +159,8 @@ func (suite *ViewTestSuite) TestFindNeighboursWhenNoteAlone() {
 func (suite *ViewTestSuite) TestIsPrev() {
 	p, _ := newTestPeer("test1", suite.numRings, "localhost:123")
 
+	suite.addLivePeer(p)
+
 	for num, _ := range suite.ringMap {
 		assert.True(suite.T(), suite.isPrev(p, suite.peer, num), "Should be prev when only 2 peers present in rings")
 
@@ -234,7 +238,7 @@ func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
 	suite.addLivePeer(p8)
 
 	for num, r := range suite.ringMap {
-		succKey, _, err := r.findNeighbours(p8.peerId)
+		succKey, _, err := r.findNeighbours(p8.id)
 		if succKey == suite.key {
 			continue
 		}

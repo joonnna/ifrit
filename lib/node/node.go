@@ -220,13 +220,18 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		return nil, err
 	}
 
+	v, err := newView(numRings, logger, p.peerId, p.addr)
+	if err != nil {
+		return nil, err
+	}
+
 	n := &Node{
 		exitChan:        make(chan bool, 1),
 		wg:              &sync.WaitGroup{},
 		gossipTimeout:   time.Second * 3,
 		monitorTimeout:  time.Second * 3,
 		nodeDeadTimeout: 5.0,
-		view:            newView(numRings, logger, p.peerId, p.addr),
+		view:            v,
 		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,
 		client:          c,

@@ -34,8 +34,9 @@ type view struct {
 	local *peerId
 }
 
-func newView(numRings uint32, log *logger.Log, id *peerId, addr string) *view {
+func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, error) {
 	var i uint32
+	var err error
 
 	v := &view{
 		ringMap:           make(map[uint32]*ring),
@@ -49,10 +50,13 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) *view {
 	}
 
 	for i = 0; i < numRings; i++ {
-		v.ringMap[i] = newRing(i, id.id, id.key, addr)
+		v.ringMap[i], err = newRing((i + 1), id.id, addr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return v
+	return v, nil
 }
 
 func (v *view) getViewAddrs() []string {
@@ -220,13 +224,13 @@ func (v *view) addLivePeer(p *peer) {
 	for num, ring := range v.ringMap {
 		//TODO handle this differently? continue after failed ring add is dodgy
 		//Although no errors "should" occur
-		err := ring.add(p.id, p.key, p.addr)
+		err := ring.add(p.id, p.addr)
 		if err != nil {
 			v.log.Err.Println(err)
 			continue
 		}
 
-		succKey, prevKey, err := ring.findNeighbours(p.peerId)
+		succKey, prevKey, err := ring.findNeighbours(p.id)
 		if err != nil {
 			v.log.Err.Println(err)
 			continue
@@ -267,14 +271,13 @@ func (v *view) removeLivePeer(key string) {
 	if p, ok = v.liveMap[key]; !ok {
 		return
 	}
-	peerKey := p.key
 	id := p.id
 
 	v.log.Debug.Printf("Removed livePeer: %s", p.addr)
 	delete(v.liveMap, key)
 
 	for _, ring := range v.ringMap {
-		err := ring.remove(id, peerKey)
+		err := ring.remove(id)
 		if err != nil {
 			v.log.Err.Println(err)
 			continue
@@ -343,14 +346,14 @@ func (v *view) getAllTimeouts() map[string]*timeout {
 	return ret
 }
 
-func (v *view) isPrev(p, other *peer, ringNum uint32) bool {
+func (v *view) isPrev(curr, toCheck *peer, ringNum uint32) bool {
 	r, ok := v.ringMap[ringNum]
 	if !ok {
 		v.log.Err.Println("accusation on non-existing ring")
 		return false
 	}
 
-	prev, err := r.isPrev(p, other)
+	prev, err := r.isPrev(curr.id, toCheck.id)
 	if err != nil {
 		v.log.Err.Println(err)
 		return false
@@ -361,7 +364,7 @@ func (v *view) isPrev(p, other *peer, ringNum uint32) bool {
 
 func (v *view) shouldBeNeighbours(id *peerId) bool {
 	for _, r := range v.ringMap {
-		if r.betweenNeighbours(id) {
+		if r.betweenNeighbours(id.id) {
 			return true
 		}
 	}
@@ -373,7 +376,7 @@ func (v *view) findNeighbours(id *peerId) []string {
 	exist := make(map[string]bool)
 
 	for _, r := range v.ringMap {
-		succ, prev, err := r.findNeighbours(id)
+		succ, prev, err := r.findNeighbours(id.id)
 		if err != nil {
 			continue
 		}

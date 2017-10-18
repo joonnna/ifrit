@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/joonnna/firechain/logger"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -62,11 +63,14 @@ func (suite *NodeTestSuite) SetupTest() {
 
 	logger := logger.CreateLogger("test", "testlog")
 
+	v, err := newView(numRings, logger, p.peerId, p.addr)
+	require.NoError(suite.T(), err, "Failed to create view")
+
 	n := &Node{
 		peer:    p,
 		privKey: priv,
 		log:     logger,
-		view:    newView(numRings, logger, p.peerId, p.addr),
+		view:    v,
 	}
 
 	suite.Node = n

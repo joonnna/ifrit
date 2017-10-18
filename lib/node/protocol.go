@@ -90,7 +90,7 @@ func (c correct) Monitor(n *Node) {
 			continue
 		}
 
-		p := n.getViewPeer(succ.peerKey)
+		p := n.getViewPeer(succ.key)
 		if p == nil {
 			continue
 		}
@@ -172,7 +172,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 			continue
 		}
 
-		p := n.getLivePeer(succ.peerKey)
+		p := n.getLivePeer(succ.key)
 		if p == nil {
 			continue
 		}
