@@ -63,7 +63,9 @@ func (c correct) Gossip(n *Node) {
 					continue
 				}
 
-				if n.viewPeerExist(string(cert.SubjectKeyId[:])) {
+				id := string(cert.SubjectKeyId[:])
+
+				if n.viewPeerExist(id) || n.key == id {
 					continue
 				}
 
@@ -81,8 +83,6 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	msg := &gossip.Ping{}
-
 	for num, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
@@ -90,18 +90,18 @@ func (c correct) Monitor(n *Node) {
 			continue
 		}
 
-		if succ.addr == n.addr {
+		p := n.getViewPeer(succ.peerKey)
+		if p == nil {
 			continue
 		}
 
-		//TODO maybe udp?
-		_, err = n.client.Monitor(succ.addr, msg)
+		err = n.ping(p)
 		if err != nil {
-			n.log.Info.Printf("%s is dead, accusing", succ.addr)
-			p := n.getLivePeer(succ.peerKey)
-			if p == nil {
+			if err != errDead {
 				continue
 			}
+
+			n.log.Info.Printf("%s is dead, accusing", p.addr)
 			peerNote := p.getNote()
 			if peerNote == nil {
 				continue

@@ -2,8 +2,8 @@ package node
 
 import (
 	"crypto/ecdsa"
-	"fmt"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/joonnna/firechain/lib/protobuf"
 )
 
@@ -14,7 +14,11 @@ func (n *note) sign(privKey *ecdsa.PrivateKey) error {
 		Mask:  n.mask,
 	}
 
-	b := []byte(fmt.Sprintf("%v", noteMsg))
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		return err
+	}
+
 	signature, err := signContent(b, privKey)
 	if err != nil {
 		return err
@@ -32,7 +36,11 @@ func (n *note) signAndMarshal(privKey *ecdsa.PrivateKey) (*gossip.Note, error) {
 		Mask:  n.mask,
 	}
 
-	b := []byte(fmt.Sprintf("%v", noteMsg))
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		return nil, err
+	}
+
 	signature, err := signContent(b, privKey)
 	if err != nil {
 		return nil, err
@@ -66,6 +74,7 @@ func (a accusation) toPbMsg() *gossip.Accusation {
 		Accuser: a.accuser.id,
 		Accused: a.id,
 		Mask:    a.mask,
+		RingNum: a.ringNum,
 		Signature: &gossip.Signature{
 			R: a.r,
 			S: a.s,
@@ -79,9 +88,14 @@ func (a accusation) signAndMarshal(privKey *ecdsa.PrivateKey) (*gossip.Accusatio
 		Accuser: a.accuser.id,
 		Accused: a.id,
 		Mask:    a.mask,
+		RingNum: a.ringNum,
 	}
 
-	b := []byte(fmt.Sprintf("%v", acc))
+	b, err := proto.Marshal(acc)
+	if err != nil {
+		return nil, err
+	}
+
 	signature, err := signContent(b, privKey)
 	if err != nil {
 		return nil, err
@@ -101,9 +115,14 @@ func (a *accusation) sign(privKey *ecdsa.PrivateKey) error {
 		Accuser: a.accuser.id,
 		Accused: a.id,
 		Mask:    a.mask,
+		RingNum: a.ringNum,
 	}
 
-	b := []byte(fmt.Sprintf("%v", acc))
+	b, err := proto.Marshal(acc)
+	if err != nil {
+		return err
+	}
+
 	signature, err := signContent(b, privKey)
 	if err != nil {
 		return err
@@ -113,13 +132,3 @@ func (a *accusation) sign(privKey *ecdsa.PrivateKey) error {
 
 	return nil
 }
-
-/*
-func PbToNote(n *gossip.Note) (*note, error) {
-	return createNote(newPeerId(n.GetId()), n.GetEpoch(), n.GetMask())
-}
-
-func PbToAccusation(a *gossip.Accusation) (*accusation, error) {
-	return newAccusation(a.GetAccused(), a.GetEpoch(), a.GetAccuser())
-}
-*/

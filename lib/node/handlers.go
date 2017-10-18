@@ -3,8 +3,8 @@ package node
 import (
 	"crypto/x509"
 	"errors"
-	"fmt"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/joonnna/firechain/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
@@ -56,7 +56,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 				return nil, errInvalidPeerInformation
 			}
 			n.addViewPeer(p)
-			n.addLivePeer(p)
 		}
 
 		peerKeys := n.findNeighbours(pId)
@@ -68,16 +67,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 			}
 		}
 		return reply, nil
-	}
-
-	if !n.viewPeerExist(key) {
-		p, err := newPeer(nil, cert, n.numRings)
-		if err != nil {
-			n.log.Err.Println(err)
-			return nil, errInvalidPeerInformation
-		}
-		n.addViewPeer(p)
-		n.addLivePeer(p)
 	}
 
 	n.mergeCertificates(args.GetCertificates(), cert)
@@ -162,7 +151,13 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 		Mask:    mask,
 		RingNum: ringNum,
 	}
-	b := []byte(fmt.Sprintf("%v", tmp))
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
 	if err != nil {
 		n.log.Err.Println(err)
@@ -212,7 +207,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			n.log.Err.Println(err)
 			return
 		}
-		n.log.Debug.Println("Added accusation for: ", p.addr)
+		n.log.Debug.Printf("Added accusation for: %s on ring %d", p.addr, a.ringNum)
 
 		if !n.timerExist(accusedKey) {
 			n.log.Debug.Println("Started timer for: ", p.addr)
@@ -239,7 +234,13 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 		Mask:  mask,
 		Id:    id,
 	}
-	b := []byte(fmt.Sprintf("%v", tmp))
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
 	if err != nil {
 		n.log.Err.Println(err)

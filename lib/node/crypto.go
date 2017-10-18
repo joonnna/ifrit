@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	mrand "math/rand"
 	"net/http"
 )
 
@@ -62,13 +63,13 @@ func validateSignature(r, s, data []byte, pub *ecdsa.PublicKey) (bool, error) {
 	return ecdsa.Verify(pub, b, &rInt, &sInt), nil
 }
 
-func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, localAddr string) (*certSet, error) {
+func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, serviceAddr string, pingAddr string) (*certSet, error) {
 	var certs certResponse
 
 	set := &certSet{}
 
 	s := pkix.Name{
-		Locality: []string{localAddr},
+		Locality: []string{serviceAddr, pingAddr},
 	}
 
 	template := x509.CertificateRequest{
@@ -153,4 +154,10 @@ func genKeys() (*ecdsa.PrivateKey, error) {
 	}
 
 	return privKey, nil
+}
+
+func genNonce() []byte {
+	nonce := make([]byte, 32)
+	mrand.Read(nonce)
+	return nonce
 }

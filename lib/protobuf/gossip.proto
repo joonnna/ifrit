@@ -43,10 +43,9 @@ message Signature {
 
 message Ping {
     bytes nonce = 1;
-    bytes signature = 2;
 }
 
 message Pong {
     bytes nonce = 1;
-    bytes signature = 2;
+    Signature signature = 2;
 }

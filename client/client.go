@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"runtime"
 
 	"github.com/joonnna/firechain/lib/node"
@@ -19,6 +20,7 @@ func NewClient(entryAddr string) *Client {
 
 	n, err := node.NewNode(entryAddr, c, s)
 	if err != nil {
+		fmt.Println(err)
 		panic(err)
 	}
 

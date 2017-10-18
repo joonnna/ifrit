@@ -2,8 +2,8 @@ package node
 
 import (
 	"crypto/ecdsa"
-	"fmt"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/joonnna/firechain/lib/protobuf"
 	"github.com/stretchr/testify/assert"
 )
@@ -15,7 +15,11 @@ func newPbNote(n *note, priv *ecdsa.PrivateKey) *gossip.Note {
 		Mask:  n.mask,
 	}
 
-	b := []byte(fmt.Sprintf("%v", noteMsg))
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		panic(err)
+	}
+
 	signature, err := signContent(b, priv)
 	if err != nil {
 		panic(err)
@@ -40,7 +44,11 @@ func newPbAcc(a *accusation, priv *ecdsa.PrivateKey) *gossip.Accusation {
 		RingNum: a.ringNum,
 	}
 
-	b := []byte(fmt.Sprintf("%v", acc))
+	b, err := proto.Marshal(acc)
+	if err != nil {
+		panic(err)
+	}
+
 	signature, err := signContent(b, priv)
 	if err != nil {
 		panic(err)

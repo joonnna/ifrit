@@ -197,7 +197,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 			Id: oidExtensionBasicConstraints, Critical: true, Value: []uint8{g.ringNum},
 		},
 	}
-	if len(reqCert.Subject.Locality[0]) < 1 {
+	if len(reqCert.Subject.Locality) < 2 {
 		c.log.Err.Println(errNoAddr)
 		return
 	}

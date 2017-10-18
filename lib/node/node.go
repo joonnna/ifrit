@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/firechain/lib/udp"
 	"github.com/joonnna/firechain/logger"
 )
 
@@ -30,13 +31,13 @@ type Node struct {
 
 	*view
 
-	//*pinger
+	*pinger
 
 	protocol
 	protocolMutex sync.RWMutex
 
-	client Client
-	server Server
+	client client
+	server server
 
 	wg       *sync.WaitGroup
 	exitChan chan bool
@@ -55,13 +56,13 @@ type Node struct {
 	httpAddr        string
 }
 
-type Client interface {
+type client interface {
 	Init(config *tls.Config)
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
 	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
 }
 
-type Server interface {
+type server interface {
 	Init(config *tls.Config, n interface{}) error
 	HostInfo() string
 	Start() error
@@ -180,17 +181,22 @@ func (n *Node) localNoteToPbMsg() *gossip.Note {
 	return n.recentNote.toPbMsg()
 }
 
-func NewNode(caAddr string, c Client, s Server) (*Node, error) {
+func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
 
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
+
+	udpServer, err := udp.NewServer(logger)
+	if err != nil {
+		return nil, err
+	}
 
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	certs, err := sendCertRequest(caAddr, privKey, s.HostInfo())
+	certs, err := sendCertRequest(caAddr, privKey, s.HostInfo(), udpServer.Addr())
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +227,7 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 		monitorTimeout:  time.Second * 3,
 		nodeDeadTimeout: 5.0,
 		view:            newView(numRings, logger, p.peerId, p.addr),
+		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,
 		client:          c,
 		server:          s,
@@ -254,6 +261,9 @@ func NewNode(caAddr string, c Client, s Server) (*Node, error) {
 	n.recentNote = localNote
 
 	for _, c := range certs.knownCerts {
+		if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
+			continue
+		}
 		p, err := newPeer(nil, c, numRings)
 		if err != nil {
 			n.log.Err.Println(err)
@@ -283,6 +293,7 @@ func (n *Node) Start(protocol int) {
 	n.setProtocol(protocol)
 
 	go n.server.Start()
+	go n.pinger.serve()
 
 	n.wg.Add(4)
 	go n.gossipLoop()
@@ -300,5 +311,6 @@ func (n *Node) Start(protocol int) {
 
 	<-n.exitChan
 	n.server.ShutDown()
+	n.pinger.shutdown()
 	n.log.Info.Println("Exiting node")
 }

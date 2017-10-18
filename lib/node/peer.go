@@ -25,7 +25,8 @@ var (
 )
 
 type peer struct {
-	addr string
+	addr     string
+	pingAddr string
 
 	noteMutex  sync.RWMutex
 	recentNote *note
@@ -36,6 +37,12 @@ type peer struct {
 	*peerId
 	cert      *x509.Certificate
 	publicKey *ecdsa.PublicKey
+
+	avgLoss      uint64
+	avgLossMutex sync.RWMutex
+
+	nPing      uint64
+	nPingMutex sync.RWMutex
 }
 
 type peerId struct {
@@ -86,7 +93,7 @@ func (p peerId) equal(other *peerId) bool {
 func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, error) {
 	var ok bool
 
-	if len(cert.Subject.Locality) == 0 {
+	if len(cert.Subject.Locality) < 2 {
 		return nil, errPeerAddr
 	}
 
@@ -102,6 +109,7 @@ func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, 
 
 	return &peer{
 		addr:        cert.Subject.Locality[0],
+		pingAddr:    cert.Subject.Locality[1],
 		recentNote:  recentNote,
 		cert:        cert,
 		peerId:      newPeerId(cert.SubjectKeyId),
@@ -230,4 +238,37 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, []*gossip.Accu
 
 func (n note) isMoreRecent(epoch uint64) bool {
 	return n.epoch < epoch
+}
+
+func (p *peer) incrementPing() {
+	p.nPingMutex.Lock()
+	defer p.nPingMutex.Unlock()
+
+	p.nPing++
+}
+
+func (p *peer) resetPing() {
+	p.nPingMutex.Lock()
+	defer p.nPingMutex.Unlock()
+
+	p.nPing = 0
+}
+
+func (p *peer) setAvgLoss() {
+	p.avgLossMutex.Lock()
+	defer p.avgLossMutex.Unlock()
+}
+
+func (p *peer) getAvgLoss() uint64 {
+	p.avgLossMutex.RLock()
+	defer p.avgLossMutex.RUnlock()
+
+	return p.avgLoss
+}
+
+func (p *peer) getNPing() uint64 {
+	p.nPingMutex.RLock()
+	defer p.nPingMutex.RUnlock()
+
+	return p.nPing
 }
