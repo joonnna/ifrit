@@ -1,6 +1,7 @@
 package netutils
 
 import (
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -21,27 +22,15 @@ func GetOpenPort() int {
 	return 0
 }
 
+//Hacky AF
 func GetLocalIP() string {
-	ifaces, err := net.Interfaces()
+	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		return ""
+		log.Fatal(err)
 	}
+	defer conn.Close()
 
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return ""
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			return ip.String()
-		}
-	}
-	return ""
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP.String()
 }

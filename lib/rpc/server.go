@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 
+	"github.com/joonnna/firechain/lib/netutils"
 	"github.com/joonnna/firechain/lib/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -29,7 +30,7 @@ type Server struct {
 }
 
 func NewServer() *Server {
-	hostName := getLocalIP()
+	hostName := netutils.GetLocalIP()
 	l, addr := getOpenPort(hostName)
 
 	return &Server{
@@ -64,31 +65,6 @@ func (s *Server) ShutDown() {
 
 func (s *Server) HostInfo() string {
 	return s.addr
-}
-
-func getLocalIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return ""
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			return ip.String()
-		}
-	}
-	return ""
 }
 
 func getOpenPort(hostName string) (net.Listener, string) {
