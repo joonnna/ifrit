@@ -1,10 +1,16 @@
 package netutils
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"strconv"
 	"strings"
+)
+
+var (
+	errFoundNoPort = errors.New("Couldnt find any available port")
 )
 
 func GetOpenPort() int {
@@ -20,6 +26,21 @@ func GetOpenPort() int {
 	}
 
 	return 0
+}
+
+func GetListener(hostName string) (net.Listener, error) {
+	var l net.Listener
+	var err error
+
+	for {
+		l, err = net.Listen("tcp", fmt.Sprintf("%s:0", hostName))
+		if err == nil {
+			return l, nil
+		}
+
+	}
+
+	return l, errFoundNoPort
 }
 
 //Hacky AF

@@ -3,18 +3,12 @@ package rpc
 import (
 	"crypto/tls"
 	"errors"
-	"fmt"
-	"math/rand"
 	"net"
 
 	"github.com/joonnna/firechain/lib/netutils"
 	"github.com/joonnna/firechain/lib/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-)
-
-const (
-	startPort = 7235
 )
 
 var (
@@ -25,17 +19,17 @@ type Server struct {
 	rpcServer *grpc.Server
 
 	listener net.Listener
-	addr     string
-	//options []grpc.ServerOption
 }
 
 func NewServer() *Server {
 	hostName := netutils.GetLocalIP()
-	l, addr := getOpenPort(hostName)
+	l, err := netutils.GetListener(hostName)
+	if err != nil {
+		panic(err)
+	}
 
 	return &Server{
 		listener: l,
-		addr:     addr,
 	}
 }
 
@@ -64,22 +58,5 @@ func (s *Server) ShutDown() {
 }
 
 func (s *Server) HostInfo() string {
-	return s.addr
-}
-
-func getOpenPort(hostName string) (net.Listener, string) {
-	var l net.Listener
-	var err error
-	port := startPort
-
-	for {
-		addr := fmt.Sprintf("%s:%d", hostName, (1000 + (rand.Int() % port)))
-		l, err = net.Listen("tcp", addr)
-		if err == nil {
-			return l, addr
-		}
-		port += 1
-	}
-
-	return nil, ""
+	return s.listener.Addr().String()
 }
