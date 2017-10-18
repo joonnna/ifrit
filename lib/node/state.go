@@ -141,8 +141,10 @@ func (n *Node) updateState() {
 			return
 
 		case <-time.After(time.Second * 5):
-			for idx, r := range n.ringMap {
+			for num, r := range n.ringMap {
 				s := n.newState(r.ringNum)
+
+				idx := num - 1
 
 				if prevStates[idx].equal(s) {
 					continue

@@ -282,15 +282,14 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 }
 
 func (n *Node) ShutDownNode() {
-	for i, _ := range n.ringMap {
-		n.remove(i)
+	for _, r := range n.ringMap {
+		n.remove(r.ringNum)
 	}
 	close(n.exitChan)
 	n.wg.Wait()
 }
 
 func (n *Node) Start(protocol int) {
-	var i uint32
 	n.log.Info.Println("Started Node")
 
 	done := make(chan bool)
@@ -310,8 +309,8 @@ func (n *Node) Start(protocol int) {
 
 	<-done
 
-	for i = 0; i < n.numRings; i++ {
-		n.add(i)
+	for _, r := range n.ringMap {
+		n.add(r.ringNum)
 	}
 
 	<-n.exitChan

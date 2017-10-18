@@ -49,8 +49,8 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 		local:             id,
 	}
 
-	for i = 0; i < numRings; i++ {
-		v.ringMap[i], err = newRing((i + 1), id.id, addr)
+	for i = 1; i <= numRings; i++ {
+		v.ringMap[i], err = newRing(i, id.id, addr)
 		if err != nil {
 			return nil, err
 		}
