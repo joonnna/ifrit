@@ -185,13 +185,12 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			return
 		}
 
-		/*
-			err := validMask(mask, ringNum)
-			if err != nil {
-				n.log.Err.Println(err)
-				return
-			}
-		*/
+		err := validMask(mask, ringNum)
+		if err != nil {
+			n.log.Err.Println(err)
+			return
+		}
+
 		if !n.isPrev(p, accuserPeer, ringNum) {
 			n.log.Err.Println("Accuser is not pre-decessor of accused on given ring, invalid accusation")
 			return
@@ -333,7 +332,9 @@ func validMask(mask []byte, idx uint32) error {
 
 	//Ringnumbers start on 1
 	maskIdx := idx - 1
-	if maskIdx >= (uint32(len(mask))-1) || maskIdx < 0 {
+	maxIdx := uint32(len(mask) - 1)
+
+	if maskIdx > maxIdx || maskIdx < 0 {
 		return errNonExistingRing
 	}
 

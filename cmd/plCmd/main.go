@@ -33,7 +33,7 @@ func transferCmd(addrs []string, path string, conf *ssh.ClientConfig, c chan *cm
 
 func deployCmd(addrs []string, conf *ssh.ClientConfig, c chan *cmdStatus) {
 	for _, a := range addrs {
-		go doCmd(a, "./firechainClient -addr=http://ple2.cesnet.cz:39717/certificateRequest", conf, c)
+		go doCmd(a, "./firechainClient -addr=http://ple2.cesnet.cz:38249/certificateRequest", conf, c)
 	}
 }
 
@@ -85,8 +85,8 @@ func main() {
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.StringVar(&cmd, "cmd", "", "Command to execute")
-	args.StringVar(&fp, "filepath", addrPath, "Path to file containing node addresses")
-	args.StringVar(&caAddr, "caAddr", "ple2.cesnet.cz", "Address to deploy ca")
+	args.StringVar(&fp, "fp", addrPath, "Path to file containing node addresses")
+	args.StringVar(&caAddr, "caAddr", "ple2.cesnet.cz", "Address to transfer ca binary")
 
 	args.Parse(os.Args[1:])
 	b, err := ioutil.ReadFile(fp)

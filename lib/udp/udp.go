@@ -53,7 +53,7 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 		s.log.Err.Println(err)
 		return nil, err
 	}
-	c.SetDeadline(time.Now().Add(time.Second * 5))
+	c.SetDeadline(time.Now().Add(time.Second * 3))
 	defer c.Close()
 
 	_, err = c.Write(data)
@@ -106,16 +106,6 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 }
 
 func (s Server) Addr() string {
-	/*
-		host, _ := os.Hostname()
-		port := strings.Split(s.addr, ":")[1]
-		addrs, err := net.LookupHost(host)
-		if err != nil {
-			return ""
-		}
-
-		return fmt.Sprintf("%s:%s", addrs[0], port)
-	*/
 	return s.addr
 }
 

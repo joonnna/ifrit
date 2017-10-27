@@ -227,9 +227,9 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 	n := &Node{
 		exitChan:        make(chan bool, 1),
 		wg:              &sync.WaitGroup{},
-		gossipTimeout:   time.Second * 20,
-		monitorTimeout:  time.Second * 20,
-		nodeDeadTimeout: 40,
+		gossipTimeout:   time.Second * 5,
+		monitorTimeout:  time.Second * 5,
+		nodeDeadTimeout: 10,
 		view:            v,
 		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,

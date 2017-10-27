@@ -34,7 +34,15 @@ def getAllNodes(auth):
     return_fields = ['hostname']
     res = api_server.GetNodes(auth, boot_state_filter, return_fields)
 
-    return [x['hostname'] for x in res]
+    hostNames = [x['hostname'] for x in res]
+    ret = []
+    for h in hostNames:
+        try:
+            ip = socket.gethostbyname(h)
+            ret.append((h, ip))
+        except socket.gaierror:
+            continue
+    return ret
 
 
 def getSliceBootedNodes(auth, slice_name):
@@ -77,14 +85,14 @@ if authorized:
     print 'We are authorized!'
 
 
-"""
+nodes = getAllNodes(auth)
 print len(nodes)
 
 f = open("node_addrs", "w")
 for a in nodes:
     f.write("%s,%s\n" % (a[1], a[0]))
 f.close()
-"""
+
 """
 nodes = getBootedNodes(auth)
 hostNames = []
