@@ -49,13 +49,18 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 
 	if !n.shouldBeNeighbours(pId) {
 		n.log.Err.Println(errNotMyNeighbour)
-		if !n.viewPeerExist(key) {
+		n.log.Debug.Println(p.Addr)
+
+		if existingPeer := n.getViewPeer(key); existingPeer == nil {
 			p, err := newPeer(nil, cert, n.numRings)
 			if err != nil {
 				n.log.Err.Println(err)
 				return nil, errInvalidPeerInformation
 			}
 			n.addViewPeer(p)
+			n.addLivePeer(p)
+		} else if !n.livePeerExist(key) {
+			n.addLivePeer(existingPeer)
 		}
 
 		peerKeys := n.findNeighbours(pId)
@@ -66,6 +71,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 				reply.Certificates = append(reply.Certificates, c)
 			}
 		}
+		n.log.Debug.Println(len(reply.Certificates))
 		return reply, nil
 	}
 
@@ -179,12 +185,13 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			return
 		}
 
-		err := validMask(mask, ringNum)
-		if err != nil {
-			n.log.Err.Println(err)
-			return
-		}
-
+		/*
+			err := validMask(mask, ringNum)
+			if err != nil {
+				n.log.Err.Println(err)
+				return
+			}
+		*/
 		if !n.isPrev(p, accuserPeer, ringNum) {
 			n.log.Err.Println("Accuser is not pre-decessor of accused on given ring, invalid accusation")
 			return
@@ -248,7 +255,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	}
 
 	if !valid {
-		n.log.Info.Println("Invalid signature on note, ignoring")
+		n.log.Info.Println("Invalid signature on note, ignoring, ", p.addr)
 		return
 	}
 
@@ -289,7 +296,10 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 			}
 			p.setNote(newNote)
 			p.removeAccusations()
-			n.addLivePeer(p)
+
+			if n.getLivePeer(peerKey) == nil {
+				n.addLivePeer(p)
+			}
 		}
 	}
 }
@@ -321,11 +331,13 @@ func validMask(mask []byte, idx uint32) error {
 		return errNoMask
 	}
 
-	if idx >= uint32(len(mask)) {
+	//Ringnumbers start on 1
+	maskIdx := idx - 1
+	if maskIdx >= (uint32(len(mask))-1) || maskIdx < 0 {
 		return errNonExistingRing
 	}
 
-	if mask[idx] == 0 {
+	if mask[maskIdx] == 0 {
 		return errDeactivatedRing
 	}
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -49,12 +50,14 @@ func (b *bootStrapper) shutDownClients() {
 func (b *bootStrapper) addNodeHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	defer r.Body.Close()
-
+	fmt.Println("got req")
 	b.startClient()
 }
 
 func main() {
 	var numRings uint
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.UintVar(&numRings, "numRings", 3, "Number of gossip rings to be used")
@@ -73,7 +76,7 @@ func main() {
 	}
 
 	http.HandleFunc("/addNode", b.addNodeHandler)
-	go http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
+	go http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil)
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

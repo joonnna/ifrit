@@ -3,6 +3,7 @@ package udp
 import (
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/joonnna/firechain/lib/netutils"
@@ -17,8 +18,8 @@ type Server struct {
 
 func NewServer(log *logger.Log) (*Server, error) {
 	port := netutils.GetOpenPort()
-	hostName := netutils.GetLocalIP()
-
+	//hostName := netutils.GetLocalIP()
+	hostName, _ := os.Hostname()
 	addr := fmt.Sprintf("%s:%d", hostName, port)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -30,7 +31,14 @@ func NewServer(log *logger.Log) (*Server, error) {
 		return nil, err
 	}
 
-	return &Server{log: log, conn: conn, addr: addr}, nil
+	addrs, err := net.LookupHost(hostName)
+	if err != nil {
+		return nil, err
+	}
+
+	externalAddr := fmt.Sprintf("%s:%d", addrs[0], udpAddr.Port)
+
+	return &Server{log: log, conn: conn, addr: externalAddr}, nil
 }
 
 func (s Server) Send(addr string, data []byte) ([]byte, error) {
@@ -45,7 +53,7 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 		s.log.Err.Println(err)
 		return nil, err
 	}
-	c.SetDeadline(time.Now().Add(time.Second * 3))
+	c.SetDeadline(time.Now().Add(time.Second * 5))
 	defer c.Close()
 
 	_, err = c.Write(data)
@@ -98,6 +106,16 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 }
 
 func (s Server) Addr() string {
+	/*
+		host, _ := os.Hostname()
+		port := strings.Split(s.addr, ":")[1]
+		addrs, err := net.LookupHost(host)
+		if err != nil {
+			return ""
+		}
+
+		return fmt.Sprintf("%s:%s", addrs[0], port)
+	*/
 	return s.addr
 }
 

@@ -56,6 +56,7 @@ func (c correct) Gossip(n *Node) {
 		if certs == nil {
 			continue
 		} else {
+			n.log.Debug.Println(len(certs))
 			for _, c := range certs {
 				cert, err := x509.ParseCertificate(c.GetRaw())
 				if err != nil {
@@ -65,7 +66,18 @@ func (c correct) Gossip(n *Node) {
 
 				id := string(cert.SubjectKeyId[:])
 
-				if n.viewPeerExist(id) || n.key == id {
+				//Don't want to add myself
+				if n.key == id {
+					continue
+				}
+
+				//Special case where the peer exists in our view, but not in our liveView
+				//To change gossip partners they need to be in live view so that their
+				//added to all rings
+				if existingPeer := n.getViewPeer(id); existingPeer != nil {
+					if !n.livePeerExist(id) {
+						n.addLivePeer(existingPeer)
+					}
 					continue
 				}
 

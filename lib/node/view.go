@@ -49,6 +49,7 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 		local:             id,
 	}
 
+	//Start from one since we dont want to hash peerId|0
 	for i = 1; i <= numRings; i++ {
 		v.ringMap[i], err = newRing(i, id.id, addr)
 		if err != nil {
@@ -113,15 +114,6 @@ func (v *view) addViewPeer(p *peer) {
 	v.viewMap[p.key] = p
 }
 
-/*
-func (v *view) removeViewPeer(key string) {
-	v.viewMutex.Lock()
-	defer v.viewMutex.Unlock()
-
-	delete(v.viewMap, key)
-}
-*/
-
 func (v *view) viewPeerExist(key string) bool {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
@@ -163,6 +155,15 @@ func (v *view) getNeighbours() []string {
 		}
 	}
 	return neighbours
+}
+
+func (v *view) livePeerExist(key string) bool {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	_, ok := v.liveMap[key]
+
+	return ok
 }
 
 func (v *view) getLivePeers() []*peer {

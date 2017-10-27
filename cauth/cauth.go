@@ -9,25 +9,22 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/joonnna/firechain/lib/netutils"
 	"github.com/joonnna/firechain/logger"
 	"github.com/satori/go.uuid"
 )
 
 var (
 	errNoAddr = errors.New("No network address provided in cert request!")
-)
-
-const (
-	startPort = 7234
 )
 
 type Ca struct {
@@ -39,9 +36,6 @@ type Ca struct {
 	groups []*group
 
 	listener net.Listener
-
-	port     int
-	hostName string
 }
 
 type group struct {
@@ -56,24 +50,15 @@ type group struct {
 }
 
 func NewCa() (*Ca, error) {
-	var l net.Listener
-	var err error
-
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	hostName := getLocalIP()
-
-	port := startPort
-
-	for {
-		l, err = net.Listen("tcp", fmt.Sprintf("%s:%d", hostName, port))
-		if err == nil {
-			break
-		}
-		port++
+	hostName, _ := os.Hostname()
+	l, err := netutils.GetListener(hostName)
+	if err != nil {
+		return nil, err
 	}
 
 	c := &Ca{
@@ -81,8 +66,6 @@ func NewCa() (*Ca, error) {
 		privKey:  privKey,
 		pubKey:   privKey.Public(),
 		listener: l,
-		port:     port,
-		hostName: hostName,
 	}
 
 	return c, nil
@@ -103,7 +86,7 @@ func (c *Ca) Start(numRings uint8) error {
 }
 
 func (c Ca) GetAddr() string {
-	return fmt.Sprintf("%s:%d", c.hostName, c.port)
+	return c.listener.Addr().String()
 }
 
 func (c *Ca) newGroup(ringNum uint8) error {
@@ -118,7 +101,7 @@ func (c *Ca) newGroup(ringNum uint8) error {
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
 		IsCA:        true,
-		NotBefore:   time.Now(),
+		NotBefore:   time.Now().AddDate(-10, 0, 0),
 		NotAfter:    time.Now().AddDate(10, 0, 0),
 		PublicKey:   c.pubKey,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
@@ -141,7 +124,7 @@ func (c *Ca) newGroup(ringNum uint8) error {
 		groupCert:  cert,
 		ringNum:    ringNum,
 		knownCerts: make([]*x509.Certificate, 0),
-		bootNodes:  3,
+		bootNodes:  10,
 	}
 
 	c.groups = append(c.groups, g)
@@ -216,7 +199,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		SubjectKeyId:          id,
 		Subject:               reqCert.Subject,
 		BasicConstraintsValid: true,
-		NotBefore:             time.Now(),
+		NotBefore:             time.Now().AddDate(-10, 0, 0),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		Extensions:            extensions,
 		PublicKey:             reqCert.PublicKey,
@@ -318,31 +301,6 @@ func genId() []byte {
 
 	//return append(uuid.NewV1().Bytes(), uuid.NewV1().Bytes()...)
 	return uuid.NewV1().Bytes()
-}
-
-func getLocalIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return ""
-	}
-
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return ""
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			return ip.String()
-		}
-	}
-	return ""
 }
 
 func genSerialNumber() (*big.Int, error) {

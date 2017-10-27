@@ -32,7 +32,7 @@ type peer struct {
 	recentNote *note
 
 	accuseMutex sync.RWMutex
-	accusations []*accusation
+	accusations map[uint32]*accusation
 
 	*peerId
 	cert      *x509.Certificate
@@ -92,6 +92,7 @@ func (p peerId) equal(other *peerId) bool {
 
 func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, error) {
 	var ok bool
+	var i uint32
 
 	if len(cert.Subject.Locality) < 2 {
 		return nil, errPeerAddr
@@ -107,6 +108,12 @@ func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, 
 		return nil, errPubKeyErr
 	}
 
+	accMap := make(map[uint32]*accusation)
+
+	for i = 1; i <= numRings; i++ {
+		accMap[i] = nil
+	}
+
 	return &peer{
 		addr:        cert.Subject.Locality[0],
 		pingAddr:    cert.Subject.Locality[1],
@@ -114,15 +121,10 @@ func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, 
 		cert:        cert,
 		peerId:      newPeerId(cert.SubjectKeyId),
 		publicKey:   pb,
-		accusations: make([]*accusation, numRings),
+		accusations: accMap,
 	}, nil
-}
 
-/*
-func (p peer) isSame(other *peer) bool {
-	return bytes.Equal(p.peerId, other.peerId)
 }
-*/
 
 func (p *peer) setAccusation(a *accusation) error {
 	p.accuseMutex.Lock()
@@ -132,7 +134,7 @@ func (p *peer) setAccusation(a *accusation) error {
 		return errOldEpoch
 	}
 
-	if a.ringNum >= uint32(len(p.accusations)) {
+	if _, ok := p.accusations[a.ringNum]; !ok {
 		return errInvalidRing
 	}
 
@@ -145,7 +147,7 @@ func (p *peer) removeAccusation(ringNum uint32) {
 	p.accuseMutex.RLock()
 	defer p.accuseMutex.RUnlock()
 
-	if ringNum >= uint32(len(p.accusations)) {
+	if _, ok := p.accusations[ringNum]; !ok {
 		return
 	}
 
@@ -156,8 +158,8 @@ func (p *peer) removeAccusations() {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	for idx, _ := range p.accusations {
-		p.accusations[idx] = nil
+	for k, _ := range p.accusations {
+		p.accusations[k] = nil
 	}
 }
 
@@ -165,7 +167,7 @@ func (p *peer) getRingAccusation(ringNum uint32) *accusation {
 	p.accuseMutex.RLock()
 	defer p.accuseMutex.RUnlock()
 
-	if ringNum >= uint32(len(p.accusations)) {
+	if _, ok := p.accusations[ringNum]; !ok {
 		return nil
 	}
 
@@ -191,7 +193,9 @@ func (p *peer) getAllAccusations() []*accusation {
 
 	ret := make([]*accusation, len(p.accusations))
 
-	copy(ret, p.accusations)
+	for _, v := range p.accusations {
+		ret = append(ret, v)
+	}
 
 	return ret
 }

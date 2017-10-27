@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	mrand "math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -14,7 +13,13 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/joonnna/firechain/lib/netutils"
 	"github.com/rs/cors"
+)
+
+var (
+	stateAddr = "http://129.242.19.146:8090"
+	//stateAddr = "http://localhost:8080"
 )
 
 type state struct {
@@ -39,25 +44,10 @@ func (s *state) marshal() io.Reader {
 }
 
 func (n *Node) httpHandler(c chan bool) {
-	var l net.Listener
-	var err error
-	var addr string
-
-	host, _ := os.Hostname()
-	hostName := strings.Split(host, ".")[0]
-
-	port := 5000
-
-	for {
-		addr = fmt.Sprintf("%s:%d", hostName, (1000 + (mrand.Int() % port)))
-		l, err = net.Listen("tcp", addr)
-
-		if err != nil {
-			n.log.Err.Println(err)
-		} else {
-			break
-		}
-		port += 1
+	hostName, _ := os.Hostname()
+	l, err := netutils.GetListener(hostName)
+	if err != nil {
+		panic(err)
 	}
 
 	r := mux.NewRouter()
@@ -65,8 +55,14 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/crashNode", n.crashHandler)
 	r.HandleFunc("/corruptNode", n.corruptHandler)
 
-	n.httpAddr = fmt.Sprintf("http://%s", addr)
+	port := strings.Split(l.Addr().String(), ":")[1]
 
+	addrs, err := net.LookupHost(hostName)
+	if err != nil {
+		panic(err)
+	}
+
+	n.httpAddr = fmt.Sprintf("http://%s:%s", addrs[0], port)
 	go func() {
 		<-n.exitChan
 		l.Close()
@@ -191,7 +187,8 @@ func (n *Node) newState(ringId uint32) *state {
 
 /* Sends the node state to the state server*/
 func (n *Node) updateReq(r io.Reader, c *http.Client) {
-	req, err := http.NewRequest("POST", "http://localhost:8080/update", r)
+	addr := fmt.Sprintf("%s/update", stateAddr)
+	req, err := http.NewRequest("POST", addr, r)
 	if err != nil {
 		n.log.Err.Println(err)
 	}
@@ -209,7 +206,8 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 func (n *Node) add(ringId uint32) {
 	s := n.newState(ringId)
 	bytes := s.marshal()
-	req, err := http.NewRequest("POST", "http://localhost:8080/add", bytes)
+	addr := fmt.Sprintf("%s/add", stateAddr)
+	req, err := http.NewRequest("POST", addr, bytes)
 	if err != nil {
 		n.log.Err.Println(err)
 	}
@@ -228,7 +226,8 @@ func (n *Node) add(ringId uint32) {
 func (n *Node) remove(ringId uint32) {
 	s := n.newState(ringId)
 	bytes := s.marshal()
-	req, err := http.NewRequest("POST", "http://localhost:8080/remove", bytes)
+	addr := fmt.Sprintf("%s/remove", stateAddr)
+	req, err := http.NewRequest("POST", addr, bytes)
 	if err != nil {
 		n.log.Err.Println(err)
 	}

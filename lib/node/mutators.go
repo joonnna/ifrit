@@ -14,6 +14,11 @@ func (n *Node) setEpoch(newEpoch uint64) {
 	defer n.noteMutex.Unlock()
 
 	n.recentNote.epoch = newEpoch
+
+	err := n.recentNote.sign(n.privKey)
+	if err != nil {
+		n.log.Err.Println(err)
+	}
 }
 
 func (n *Node) getEpoch() uint64 {

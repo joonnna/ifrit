@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/joonnna/firechain/client"
@@ -16,6 +17,8 @@ var (
 
 func main() {
 	var caAddr string
+
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.StringVar(&caAddr, "addr", "", "address(ip:port) of certificate authority")

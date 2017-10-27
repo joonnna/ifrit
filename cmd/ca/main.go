@@ -4,12 +4,14 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/joonnna/firechain/cauth"
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	var numRings uint
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)

@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"runtime"
 
 	"github.com/joonnna/firechain/lib/node"
 	"github.com/joonnna/firechain/lib/rpc"
@@ -13,8 +12,6 @@ type Client struct {
 }
 
 func NewClient(entryAddr string) *Client {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
 	c := rpc.NewClient()
 	s := rpc.NewServer()
 

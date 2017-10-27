@@ -37,7 +37,7 @@ func newPinger(t transport, priv *ecdsa.PrivateKey, log *logger.Log) *pinger {
 }
 
 func (p *pinger) ping(dest *peer) error {
-	if dest.getNPing() >= 1 {
+	if dest.getNPing() >= 3 {
 		return errDead
 	}
 
