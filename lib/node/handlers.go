@@ -12,15 +12,16 @@ import (
 )
 
 var (
-	errNoPeerInCtx            = errors.New("No peer information found in provided context")
-	errNoTLSInfo              = errors.New("No TLS info provided in peer context")
-	errNoCert                 = errors.New("No local certificate present in request")
-	errNeighbourPeerNotFound  = errors.New("Neighbour peer was  not found")
-	errNotMyNeighbour         = errors.New("Invalid gossip partner, not my neighbour")
-	errInvalidPeerInformation = errors.New("Could not create local peer representation")
-	errNonExistingRing        = errors.New("Accusation specifies non exisiting ring")
-	errDeactivatedRing        = errors.New("Accusation on deactivated ring")
-	errNoMask                 = errors.New("No mask provided")
+	errNoPeerInCtx             = errors.New("No peer information found in provided context")
+	errNoTLSInfo               = errors.New("No TLS info provided in peer context")
+	errNoCert                  = errors.New("No local certificate present in request")
+	errNeighbourPeerNotFound   = errors.New("Neighbour peer was  not found")
+	errNotMyNeighbour          = errors.New("Invalid gossip partner, not my neighbour")
+	errInvalidPeerInformation  = errors.New("Could not create local peer representation")
+	errNonExistingRing         = errors.New("Accusation specifies non exisiting ring")
+	errDeactivatedRing         = errors.New("Accusation on deactivated ring")
+	errNoMask                  = errors.New("No mask provided")
+	errTooManyDeactivatedRings = errors.New("Mask contains too many deactivated rings")
 )
 
 func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Partners, error) {
@@ -47,37 +48,44 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	key := string(cert.SubjectKeyId[:])
 	pId := newPeerId(cert.SubjectKeyId)
 
-	if !n.shouldBeNeighbours(pId) {
+	if !n.shouldBeNeighbours(pId) && !n.viewPeerExist(key) {
 		n.log.Err.Println(errNotMyNeighbour)
 		n.log.Debug.Println(p.Addr)
 
-		if existingPeer := n.getViewPeer(key); existingPeer == nil {
-			p, err := newPeer(nil, cert, n.numRings)
-			if err != nil {
-				n.log.Err.Println(err)
-				return nil, errInvalidPeerInformation
-			}
-			n.addViewPeer(p)
-			n.addLivePeer(p)
-		} else if !n.livePeerExist(key) {
-			n.addLivePeer(existingPeer)
-		}
+		n.evalCertificate(cert)
+		n.evalNote(args.GetOwnNote())
 
 		peerKeys := n.findNeighbours(pId)
 		for _, k := range peerKeys {
+			if k == n.key {
+				c := &gossip.Certificate{Raw: n.localCert.Raw}
+				reply.Certificates = append(reply.Certificates, c)
+				reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
+				continue
+			}
+
 			p := n.getLivePeer(k)
 			if p != nil {
 				c := &gossip.Certificate{Raw: p.cert.Raw}
 				reply.Certificates = append(reply.Certificates, c)
+				if p.getNote() != nil {
+					reply.Notes = append(reply.Notes, p.getNote().toPbMsg())
+				}
 			}
 		}
 		n.log.Debug.Println(len(reply.Certificates))
 		return reply, nil
 	}
 
-	n.mergeCertificates(args.GetCertificates(), cert)
+	n.evalCertificate(cert)
+	n.evalNote(args.GetOwnNote())
+	n.mergeCertificates(args.GetCertificates())
 	n.mergeNotes(args.GetNotes())
 	n.mergeAccusations(args.GetAccusations())
+
+	if record := n.getRecordFlag(); record {
+		n.incrementRequestCounter()
+	}
 
 	return reply, nil
 }
@@ -89,6 +97,9 @@ func (n *Node) Monitor(ctx context.Context, args *gossip.Ping) (*gossip.Pong, er
 }
 
 func (n *Node) mergeNotes(notes []*gossip.Note) {
+	if notes == nil {
+		return
+	}
 	for _, newNote := range notes {
 		//TODO kinda ugly, maybe just pass []byte instead?
 		if n.peerId.equal(&peerId{id: newNote.GetId()}) {
@@ -104,9 +115,10 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 }
 
-func (n *Node) mergeCertificates(certs []*gossip.Certificate, remoteCert *x509.Certificate) {
-	n.evalCertificate(remoteCert)
-
+func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
+	if certs == nil {
+		return
+	}
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
@@ -132,6 +144,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	if n.peerId.equal(&peerId{id: accused}) {
 		n.setEpoch((epoch + 1))
+		n.deactivateRing(ringNum)
 		n.getProtocol().Rebuttal(n)
 		return
 	}
@@ -148,6 +161,29 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 		if accuserPeer == nil || accuserPeer.getNote() == nil {
 			return
 		}
+	}
+
+	acc := p.getRingAccusation(ringNum)
+
+	newAcc := &accusation{
+		peerId:  p.peerId,
+		epoch:   epoch,
+		accuser: accuserPeer.peerId,
+		mask:    mask,
+		signature: &signature{
+			r: sign.GetR(),
+			s: sign.GetS(),
+		},
+		ringNum: ringNum,
+	}
+
+	if newAcc.equal(acc) {
+		n.log.Info.Println("Already have accusation, discard")
+		if !n.timerExist(accusedKey) {
+			n.log.Debug.Println("Started timer for: ", p.addr)
+			n.startTimer(p.key, p.getNote(), accuserPeer, p.addr)
+		}
+		return
 	}
 
 	tmp := &gossip.Accusation{
@@ -179,13 +215,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	peerNote := p.getNote()
 	if epoch == peerNote.epoch {
-		acc := p.getRingAccusation(ringNum)
-		if acc != nil && accuserPeer.peerId.equal(acc.peerId) && acc.epoch == epoch {
-			n.log.Info.Println("Already have accusation, discard")
-			return
-		}
-
-		err := validMask(mask, ringNum)
+		err := validMask(mask, ringNum, n.maxByz)
 		if err != nil {
 			n.log.Err.Println(err)
 			return
@@ -196,24 +226,12 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			return
 		}
 
-		a := &accusation{
-			peerId:  p.peerId,
-			epoch:   epoch,
-			accuser: accuserPeer.peerId,
-			mask:    mask,
-			signature: &signature{
-				r: sign.GetR(),
-				s: sign.GetS(),
-			},
-			ringNum: ringNum,
-		}
-
-		err = p.setAccusation(a)
+		err = p.setAccusation(newAcc)
 		if err != nil {
 			n.log.Err.Println(err)
 			return
 		}
-		n.log.Debug.Printf("Added accusation for: %s on ring %d", p.addr, a.ringNum)
+		n.log.Debug.Printf("Added accusation for: %s on ring %d", p.addr, newAcc.ringNum)
 
 		if !n.timerExist(accusedKey) {
 			n.log.Debug.Println("Started timer for: ", p.addr)
@@ -223,6 +241,11 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 }
 
 func (n *Node) evalNote(gossipNote *gossip.Note) {
+	if gossipNote == nil {
+		n.log.Err.Println("Got nil note")
+		return
+	}
+
 	epoch := gossipNote.GetEpoch()
 	sign := gossipNote.GetSignature()
 	id := gossipNote.GetId()
@@ -232,6 +255,14 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 
 	p := n.getViewPeer(peerKey)
 	if p == nil {
+		return
+	}
+
+	//Skip valdiating signature etc if we already have the note
+	//If we already have a more recent note or the same,
+	//this one won't change anything
+	currNote := p.getNote()
+	if currNote != nil && currNote.epoch >= epoch {
 		return
 	}
 
@@ -261,8 +292,6 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	peerAccuse := p.getAnyAccusation()
 	//Not accused, only need to check if newnote is more recent
 	if peerAccuse == nil {
-		currNote := p.getNote()
-
 		//Want to store the most recent note
 		if currNote == nil || currNote.epoch < epoch {
 			newNote := &note{
@@ -275,7 +304,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 				},
 			}
 			p.setNote(newNote)
-			if n.getLivePeer(peerKey) == nil {
+			if !n.livePeerExist(peerKey) {
 				n.addLivePeer(p)
 			}
 		}
@@ -296,7 +325,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 			p.setNote(newNote)
 			p.removeAccusations()
 
-			if n.getLivePeer(peerKey) == nil {
+			if !n.livePeerExist(peerKey) {
 				n.addLivePeer(p)
 			}
 		}
@@ -304,6 +333,11 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 }
 
 func (n *Node) evalCertificate(cert *x509.Certificate) {
+	if cert == nil {
+		n.log.Err.Println("Got nil cert")
+		return
+	}
+
 	if len(cert.Subject.Locality) == 0 {
 		return
 	}
@@ -312,33 +346,46 @@ func (n *Node) evalCertificate(cert *x509.Certificate) {
 		return
 	}
 
+	err := cert.CheckSignatureFrom(n.caCert)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
 	peerKey := string(cert.SubjectKeyId[:])
 
-	p := n.getViewPeer(peerKey)
-	if p == nil {
-		p, err := newPeer(nil, cert, n.numRings)
-		if err != nil {
-			n.log.Err.Println(err)
-			return
-		}
-		n.addViewPeer(p)
+	if !n.viewPeerExist(peerKey) {
+		n.addViewPeer(peerKey, nil, cert, n.numRings)
 	}
 }
 
-func validMask(mask []byte, idx uint32) error {
+func validMask(mask []byte, ringNum uint32, maxByz uint32) error {
+	var deactivated uint32
+
 	if mask == nil {
 		return errNoMask
 	}
 
-	//Ringnumbers start on 1
-	maskIdx := idx - 1
+	idx := ringNum - 1
+
 	maxIdx := uint32(len(mask) - 1)
 
-	if maskIdx > maxIdx || maskIdx < 0 {
+	if idx > maxIdx || idx < 0 {
 		return errNonExistingRing
 	}
 
-	if mask[maskIdx] == 0 {
+	deactivated = 0
+	for _, b := range mask {
+		if b == 0 {
+			deactivated++
+		}
+	}
+
+	if deactivated > maxByz {
+		return errTooManyDeactivatedRings
+	}
+
+	if mask[idx] == 0 {
 		return errDeactivatedRing
 	}
 

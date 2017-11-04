@@ -74,13 +74,12 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 }
 
 func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool) error {
+	bytes := make([]byte, 256)
 	for {
 		select {
 		case <-exitChan:
 			return nil
 		default:
-			bytes := make([]byte, 256)
-
 			n, addr, err := s.conn.ReadFrom(bytes)
 			if err != nil {
 				s.log.Err.Println(err)
@@ -94,6 +93,7 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 
 			}
 
+			s.conn.SetWriteDeadline(time.Now().Add(time.Second * 3))
 			_, err = s.conn.WriteTo(resp, addr)
 			if err != nil {
 				s.log.Err.Println(err)

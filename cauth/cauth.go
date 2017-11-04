@@ -20,7 +20,6 @@ import (
 
 	"github.com/joonnna/firechain/lib/netutils"
 	"github.com/joonnna/firechain/logger"
-	"github.com/satori/go.uuid"
 )
 
 var (
@@ -46,7 +45,8 @@ type group struct {
 
 	groupCert *x509.Certificate
 
-	bootNodes int
+	bootNodes     int
+	currBootNodes int
 }
 
 func NewCa() (*Ca, error) {
@@ -120,11 +120,14 @@ func (c *Ca) newGroup(ringNum uint8) error {
 		return err
 	}
 
+	bootNodes := 20
+
 	g := &group{
-		groupCert:  cert,
-		ringNum:    ringNum,
-		knownCerts: make([]*x509.Certificate, 0),
-		bootNodes:  10,
+		groupCert:     cert,
+		ringNum:       ringNum,
+		knownCerts:    make([]*x509.Certificate, bootNodes),
+		bootNodes:     bootNodes,
+		currBootNodes: 0,
 	}
 
 	c.groups = append(c.groups, g)
@@ -252,25 +255,32 @@ func (g *group) addKnownCert(new *x509.Certificate) bool {
 	g.knownCertsMutex.Lock()
 	defer g.knownCertsMutex.Unlock()
 
-	g.knownCerts = append(g.knownCerts, new)
+	if g.currBootNodes < g.bootNodes {
+		g.knownCerts[g.currBootNodes] = new
+	}
 
-	return len(g.knownCerts) <= g.bootNodes
+	g.currBootNodes++
+
+	return g.currBootNodes <= g.bootNodes
 }
 
 func (g *group) getTrustedNodes() [][]byte {
 	g.knownCertsMutex.RLock()
 	defer g.knownCertsMutex.RUnlock()
-	var certs []*x509.Certificate
 	var ret [][]byte
 
-	if len(g.knownCerts) < g.bootNodes {
-		certs = g.knownCerts
+	certs := make([]*x509.Certificate, len(g.knownCerts))
+
+	if g.currBootNodes >= g.bootNodes {
+		copy(certs, g.knownCerts)
 	} else {
-		certs = g.knownCerts[:g.bootNodes]
+		copy(certs, g.knownCerts[:g.currBootNodes])
 	}
 
 	for _, c := range certs {
-		ret = append(ret, c.Raw)
+		if c != nil {
+			ret = append(ret, c.Raw)
+		}
 	}
 
 	return ret
@@ -300,7 +310,12 @@ func genId() []byte {
 	*/
 
 	//return append(uuid.NewV1().Bytes(), uuid.NewV1().Bytes()...)
-	return uuid.NewV1().Bytes()
+	//return uuid.NewV1().Bytes()
+
+	nonce := make([]byte, 32)
+	rand.Read(nonce)
+	return nonce
+
 }
 
 func genSerialNumber() (*big.Int, error) {

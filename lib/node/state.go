@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 )
 
 var (
-	stateAddr = "http://129.242.19.146:8090"
+	stateAddr = "http://129.242.19.146:8095"
 	//stateAddr = "http://localhost:8080"
 )
 
@@ -54,6 +55,8 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/shutdownNode", n.shutdownHandler)
 	r.HandleFunc("/crashNode", n.crashHandler)
 	r.HandleFunc("/corruptNode", n.corruptHandler)
+	r.HandleFunc("/startrecording", n.recordHandler)
+	r.HandleFunc("/numrequests", n.numRequestsHandler)
 
 	port := strings.Split(l.Addr().String(), ":")[1]
 
@@ -109,6 +112,7 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	n.log.Info.Println("Received crash request, shutting down local comm")
 
 	n.server.ShutDown()
+	n.pinger.Shutdown()
 }
 
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +122,36 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 	n.log.Info.Println("Received corrupt request, going rogue!")
 
 	n.setProtocol(SpamAccusationsProtocol)
+}
+
+func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
+	bytes, err := ioutil.ReadAll(r.Body)
+	r.Body.Close()
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
+	if len(bytes) != 1 {
+		n.log.Err.Println("Expected body with length 1 with either a 0 or 1 as content got length: ", len(bytes))
+	}
+
+	n.log.Info.Println("Received record signal, starting to record")
+
+	val, err := strconv.ParseBool(string(bytes))
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
+
+	n.setRecordFlag(val)
+}
+
+func (n *Node) numRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	w.Write([]byte(strconv.Itoa(n.getCompletedRequests())))
 }
 
 /* Periodically sends the nodes current state to the state server*/
@@ -137,11 +171,10 @@ func (n *Node) updateState() {
 			return
 
 		case <-time.After(time.Second * 5):
-			for num, r := range n.ringMap {
+			for _, r := range n.ringMap {
 				s := n.newState(r.ringNum)
 
-				idx := num - 1
-
+				idx := r.ringNum - 1
 				if prevStates[idx].equal(s) {
 					continue
 				}
@@ -164,6 +197,7 @@ func (n *Node) newState(ringId uint32) *state {
 	succ, err := n.ringMap[ringId].getRingSucc()
 	if err != nil {
 		nextId = ""
+		n.log.Err.Println(err)
 	} else {
 		nextId = fmt.Sprintf("%s|%d", succ.addr, ringId)
 	}
@@ -171,6 +205,7 @@ func (n *Node) newState(ringId uint32) *state {
 	prev, err := n.ringMap[ringId].getRingPrev()
 	if err != nil {
 		prevId = ""
+		n.log.Err.Println(err)
 	} else {
 		prevId = fmt.Sprintf("%s|%d", prev.addr, ringId)
 	}
@@ -203,13 +238,14 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 }
 
 /* Sends a post request to the state server add endpoint */
-func (n *Node) add(ringId uint32) {
+func (n *Node) add(ringId uint32) error {
 	s := n.newState(ringId)
 	bytes := s.marshal()
 	addr := fmt.Sprintf("%s/add", stateAddr)
 	req, err := http.NewRequest("POST", addr, bytes)
 	if err != nil {
 		n.log.Err.Println(err)
+		return err
 	}
 
 	client := &http.Client{}
@@ -217,10 +253,12 @@ func (n *Node) add(ringId uint32) {
 	resp, err := client.Do(req)
 	if err != nil {
 		n.log.Err.Println(err)
+		return err
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}
+	return nil
 }
 
 func (n *Node) remove(ringId uint32) {

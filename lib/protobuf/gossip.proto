@@ -9,6 +9,7 @@ message GossipMsg {
     repeated Certificate certificates = 1;
     repeated Note notes = 2;
     repeated Accusation accusations = 3;
+    Note ownNote = 4;
 }
 
 message Certificate {
@@ -17,6 +18,7 @@ message Certificate {
 
 message Partners {
     repeated Certificate certificates = 1;
+    repeated Note Notes = 2;
 }
 
 message Accusation {

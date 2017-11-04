@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -51,9 +52,18 @@ type Node struct {
 
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
+	caCert    *x509.Certificate
 
 	trustedBootNode bool
 	httpAddr        string
+
+	recordFlag      bool
+	recordMutex     sync.RWMutex
+	recordTimestamp time.Time
+	recordDuration  float64
+
+	completedRequests      int
+	completedRequestsMutex sync.RWMutex
 }
 
 type client interface {
@@ -146,9 +156,7 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 		}
 	}
 
-	noteMsg := n.localNoteToPbMsg()
-
-	msg.Notes = append(msg.Notes, noteMsg)
+	msg.OwnNote = n.localNoteToPbMsg()
 
 	return msg, nil
 }
@@ -181,6 +189,47 @@ func (n *Node) localNoteToPbMsg() *gossip.Note {
 	return n.recentNote.toPbMsg()
 }
 
+func (n *Node) setRecordFlag(value bool) {
+	n.recordMutex.Lock()
+	defer n.recordMutex.Unlock()
+
+	if !n.recordFlag && value {
+		n.recordTimestamp = time.Now()
+	}
+
+	n.recordFlag = value
+}
+
+func (n *Node) getRecordFlag() bool {
+	n.recordMutex.RLock()
+	defer n.recordMutex.RUnlock()
+
+	if !n.recordFlag {
+		return n.recordFlag
+	}
+
+	since := time.Since(n.recordTimestamp)
+	if since.Minutes() > n.recordDuration {
+		return false
+	}
+
+	return n.recordFlag
+}
+
+func (n *Node) incrementRequestCounter() {
+	n.completedRequestsMutex.Lock()
+	defer n.completedRequestsMutex.Unlock()
+
+	n.completedRequests++
+}
+
+func (n *Node) getCompletedRequests() int {
+	n.completedRequestsMutex.RLock()
+	defer n.completedRequestsMutex.RUnlock()
+
+	return n.completedRequests
+}
+
 func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
 
@@ -196,7 +245,9 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		return nil, err
 	}
 
-	certs, err := sendCertRequest(caAddr, privKey, s.HostInfo(), udpServer.Addr())
+	addr := fmt.Sprintf("http://%s/certificateRequest", caAddr)
+
+	certs, err := sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
 	if err != nil {
 		return nil, err
 	}
@@ -227,9 +278,10 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 	n := &Node{
 		exitChan:        make(chan bool, 1),
 		wg:              &sync.WaitGroup{},
-		gossipTimeout:   time.Second * 5,
-		monitorTimeout:  time.Second * 5,
-		nodeDeadTimeout: 10,
+		gossipTimeout:   time.Second * 10,
+		monitorTimeout:  time.Second * 10,
+		nodeDeadTimeout: 150,
+		recordDuration:  10,
 		view:            v,
 		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,
@@ -238,6 +290,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		peer:            p,
 		log:             logger,
 		localCert:       certs.ownCert,
+		caCert:          certs.caCert,
 		trustedBootNode: certs.trusted,
 	}
 
@@ -268,12 +321,12 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
 			continue
 		}
-		p, err := newPeer(nil, c, numRings)
-		if err != nil {
-			n.log.Err.Println(err)
-			continue
-		}
-		n.addViewPeer(p)
+		n.evalCertificate(c)
+	}
+
+	view := n.getView()
+
+	for _, p := range view {
 		n.addLivePeer(p)
 	}
 
@@ -309,7 +362,12 @@ func (n *Node) Start(protocol int) {
 	<-done
 
 	for _, r := range n.ringMap {
-		n.add(r.ringNum)
+		for {
+			err := n.add(r.ringNum)
+			if err == nil {
+				break
+			}
+		}
 	}
 
 	<-n.exitChan

@@ -29,7 +29,11 @@ func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.Private
 		publicKey:   &peerPrivKey.PublicKey,
 		peerId:      newPeerId([]byte(id)),
 		addr:        addr,
-		accusations: make([]*accusation, numRings),
+		accusations: make(map[uint32]*accusation),
+	}
+
+	for i = 1; i <= numRings; i++ {
+		p.accusations[i] = nil
 	}
 
 	localNote := &note{

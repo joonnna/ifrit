@@ -132,6 +132,7 @@ func (suite *NodeTestSuite) TestInvalidRebuttal() {
 	a := &accusation{
 		epoch:   prevNote.epoch,
 		ringNum: 1,
+		mask:    prevNote.mask,
 	}
 
 	err := p.setAccusation(a)
@@ -361,4 +362,39 @@ func (suite *NodeTestSuite) TestRebuttal() {
 
 	assert.False(suite.T(), suite.timerExist(suite.key), "Accusation concerning yourself starts a timer")
 	assert.Equal(suite.T(), suite.getNote().epoch, (acc.epoch + 1), "No rebuttal started when receiving accusation about yourself")
+}
+
+func (suite *NodeTestSuite) TestDeactivateRing() {
+	var ringNum uint32
+	ringNum = 0
+	suite.deactivateRing(ringNum)
+
+	assert.Equal(suite.T(), suite.deactivatedRings, uint32(1), "Deactivated rings not incremented")
+	assert.Equal(suite.T(), suite.recentNote.mask[ringNum], uint8(0), "Deactivated rings not incremented")
+}
+
+func (suite *NodeTestSuite) TestDeactivateInvalidRing() {
+	var ringNum uint32
+	ringNum = 312312
+	suite.deactivateRing(ringNum)
+
+	assert.Equal(suite.T(), suite.deactivatedRings, uint32(0), "Deactivated rings incremented on invalid deactivation")
+
+	for _, b := range suite.recentNote.mask {
+		assert.Equal(suite.T(), b, uint8(1), "Deactivated ring on invalid deactivation")
+	}
+}
+
+func (suite *NodeTestSuite) TestDeactivateTooManyRings() {
+	var ringNum uint32
+	ringNum = 0
+	prevLen := len(suite.recentNote.mask)
+	suite.deactivateRing(ringNum)
+	suite.deactivateRing(ringNum + 1)
+
+	assert.Equal(suite.T(), prevLen, len(suite.recentNote.mask), "mask changes length after deactivations ?!?!")
+	assert.Equal(suite.T(), suite.deactivatedRings, uint32(1), "Deactivated rings reflects wrong value")
+	assert.Equal(suite.T(), suite.recentNote.mask[ringNum], uint8(1), "Previous ring deactivation not re-activated")
+	assert.Equal(suite.T(), suite.recentNote.mask[ringNum+1], uint8(0), "Ring not deactivated")
+
 }

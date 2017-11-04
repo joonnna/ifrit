@@ -126,11 +126,22 @@ func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, 
 
 }
 
+func (a accusation) equal(other *accusation) bool {
+	if other == nil {
+		return false
+	}
+	if a.peerId.equal(other.peerId) && a.accuser.equal(other.accuser) && a.ringNum == other.ringNum && a.epoch == other.epoch {
+		return true
+	}
+
+	return false
+}
+
 func (p *peer) setAccusation(a *accusation) error {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	if p.recentNote != nil && p.recentNote.epoch > a.epoch {
+	if p.recentNote != nil && p.recentNote.epoch != a.epoch {
 		return errOldEpoch
 	}
 

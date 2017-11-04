@@ -1,6 +1,7 @@
 package node
 
 import (
+	"crypto/x509"
 	"errors"
 	"sync"
 	"time"
@@ -26,6 +27,9 @@ type view struct {
 	ringMap  map[uint32]*ring
 	numRings uint32
 
+	maxByz           uint32
+	deactivatedRings uint32
+
 	viewUpdateTimeout time.Duration
 
 	log *logger.Log
@@ -47,9 +51,10 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 		log:               log,
 		numRings:          numRings,
 		local:             id,
+		maxByz:            1,
+		deactivatedRings:  0,
 	}
 
-	//Start from one since we dont want to hash peerId|0
 	for i = 1; i <= numRings; i++ {
 		v.ringMap[i], err = newRing(i, id.id, addr)
 		if err != nil {
@@ -76,12 +81,13 @@ func (v *view) getViewAddrs() []string {
 func (v *view) getView() []*peer {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
-
-	ret := make([]*peer, 0)
+	idx := 0
+	ret := make([]*peer, len(v.viewMap))
 
 	for _, v := range v.viewMap {
 		if v != nil {
-			ret = append(ret, v)
+			ret[idx] = v
+			idx++
 		}
 	}
 
@@ -102,12 +108,18 @@ func (v *view) getRandomViewPeer() *peer {
 	return ret
 }
 
-func (v *view) addViewPeer(p *peer) {
+func (v *view) addViewPeer(key string, n *note, cert *x509.Certificate, rings uint32) {
 	v.viewMutex.Lock()
 	defer v.viewMutex.Unlock()
 
-	if _, ok := v.viewMap[p.key]; ok {
-		v.log.Err.Printf("Tried to add peer twice to viewMap: %s", p.addr)
+	if _, ok := v.viewMap[key]; ok {
+		v.log.Err.Printf("Tried to add peer twice to viewMap")
+		return
+	}
+
+	p, err := newPeer(n, cert, rings)
+	if err != nil {
+		v.log.Err.Println(err)
 		return
 	}
 
@@ -169,12 +181,13 @@ func (v *view) livePeerExist(key string) bool {
 func (v *view) getLivePeers() []*peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
-
-	ret := make([]*peer, 0)
+	idx := 0
+	ret := make([]*peer, len(v.liveMap))
 
 	for _, p := range v.liveMap {
 		if p != nil {
-			ret = append(ret, p)
+			ret[idx] = p
+			idx++
 		}
 	}
 
@@ -185,10 +198,12 @@ func (v *view) getLivePeerAddrs() []string {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 
-	ret := make([]string, 0)
+	idx := 0
+	ret := make([]string, len(v.liveMap))
 
 	for _, p := range v.liveMap {
-		ret = append(ret, p.addr)
+		ret[idx] = p.addr
+		idx++
 	}
 
 	return ret
@@ -222,7 +237,7 @@ func (v *view) addLivePeer(p *peer) {
 
 	var prevId *peerId
 
-	for num, ring := range v.ringMap {
+	for _, ring := range v.ringMap {
 		//TODO handle this differently? continue after failed ring add is dodgy
 		//Although no errors "should" occur
 		err := ring.add(p.id, p.addr)
@@ -237,8 +252,8 @@ func (v *view) addLivePeer(p *peer) {
 			continue
 		}
 
-		succ := v.getViewPeer(succKey)
-		prev := v.getViewPeer(prevKey)
+		succ := v.getLivePeer(succKey)
+		prev := v.getLivePeer(prevKey)
 
 		//Special case when prev is the local peer
 		//do not care if local peer is succ, will not have accusations about myself
@@ -255,9 +270,9 @@ func (v *view) addLivePeer(p *peer) {
 			continue
 		}
 
-		acc := succ.getRingAccusation(num)
+		acc := succ.getRingAccusation(ring.ringNum)
 		if acc != nil && acc.accuser.equal(prevId) {
-			succ.removeAccusation(num)
+			succ.removeAccusation(ring.ringNum)
 		}
 	}
 }
@@ -350,7 +365,7 @@ func (v *view) getAllTimeouts() map[string]*timeout {
 func (v *view) isPrev(curr, toCheck *peer, ringNum uint32) bool {
 	r, ok := v.ringMap[ringNum]
 	if !ok {
-		v.log.Err.Println("accusation on non-existing ring")
+		v.log.Err.Println("checking prev on non-existing ring")
 		return false
 	}
 

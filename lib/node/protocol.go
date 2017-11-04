@@ -1,8 +1,6 @@
 package node
 
 import (
-	"crypto/x509"
-	"fmt"
 	"time"
 
 	"github.com/joonnna/firechain/lib/protobuf"
@@ -20,7 +18,7 @@ func (c correct) Rebuttal(n *Node) {
 	noteMsg := n.localNoteToPbMsg()
 
 	msg := &gossip.GossipMsg{
-		Notes: []*gossip.Note{noteMsg},
+		OwnNote: noteMsg,
 	}
 
 	for _, addr := range neighbours {
@@ -51,58 +49,23 @@ func (c correct) Gossip(n *Node) {
 			n.log.Err.Println(err, addr)
 			continue
 		}
-
-		certs := reply.GetCertificates()
-		if certs == nil {
-			continue
-		} else {
-			n.log.Debug.Println(len(certs))
-			for _, c := range certs {
-				cert, err := x509.ParseCertificate(c.GetRaw())
-				if err != nil {
-					n.log.Err.Println(err)
-					continue
-				}
-
-				id := string(cert.SubjectKeyId[:])
-
-				//Don't want to add myself
-				if n.key == id {
-					continue
-				}
-
-				//Special case where the peer exists in our view, but not in our liveView
-				//To change gossip partners they need to be in live view so that their
-				//added to all rings
-				if existingPeer := n.getViewPeer(id); existingPeer != nil {
-					if !n.livePeerExist(id) {
-						n.addLivePeer(existingPeer)
-					}
-					continue
-				}
-
-				p, err := newPeer(nil, cert, n.numRings)
-				if err != nil {
-					n.log.Err.Println(err)
-					continue
-				}
-
-				n.addViewPeer(p)
-				n.addLivePeer(p)
-			}
-		}
+		n.mergeCertificates(reply.GetCertificates())
+		n.mergeNotes(reply.GetNotes())
 	}
 }
 
 func (c correct) Monitor(n *Node) {
-	for num, ring := range n.ringMap {
+	n.log.Debug.Println(len(n.getView()))
+	n.log.Debug.Println(len(n.getLivePeers()))
+	n.log.Debug.Println(n.getNeighbours())
+	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
 		}
 
-		p := n.getViewPeer(succ.key)
+		p := n.getLivePeer(succ.key)
 		if p == nil {
 			continue
 		}
@@ -115,7 +78,12 @@ func (c correct) Monitor(n *Node) {
 
 			n.log.Info.Printf("%s is dead, accusing", p.addr)
 			peerNote := p.getNote()
+			//Will always have note for a peer in our liveView, except when the peer stems
+			//from the initial contact list of the CA, if it's dead
+			//we should remove it to ensure it doesn't stay in our liveView.
+			//Not possible to accuse a peer without a note.
 			if peerNote == nil {
+				n.removeLivePeer(p.key)
 				continue
 			}
 
@@ -124,7 +92,16 @@ func (c correct) Monitor(n *Node) {
 				epoch:   peerNote.epoch,
 				accuser: n.peerId,
 				mask:    peerNote.mask,
-				ringNum: num,
+				ringNum: ring.ringNum,
+			}
+
+			acc := p.getRingAccusation(ring.ringNum)
+			if a.equal(acc) {
+				n.log.Info.Println("Already accused peer on this ring")
+				if !n.timerExist(p.key) {
+					n.startTimer(p.key, peerNote, n.peer, p.addr)
+				}
+				continue
 			}
 
 			err = a.sign(n.privKey)
@@ -168,11 +145,13 @@ func (sa spamAccusations) Gossip(n *Node) {
 	allNodes := n.getView()
 
 	for _, p := range allNodes {
-		_, err := n.client.Gossip(p.addr, msg)
+		reply, err := n.client.Gossip(p.addr, msg)
 		if err != nil {
-			n.log.Err.Println(err)
+			n.log.Err.Println(err, p.addr)
 			continue
 		}
+		n.mergeCertificates(reply.GetCertificates())
+		n.mergeNotes(reply.GetNotes())
 	}
 }
 
@@ -199,6 +178,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 			epoch:   peerNote.epoch,
 			accuser: n.peerId,
 			mask:    peerNote.mask,
+			ringNum: ring.ringNum,
 		}
 
 		err = a.sign(n.privKey)
@@ -245,6 +225,7 @@ func (sa spamAccusations) Timeouts(n *Node) {
 }
 
 func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
+	var i uint32
 	msg := &gossip.GossipMsg{}
 
 	view := n.getView()
@@ -255,31 +236,34 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 			continue
 		}
 
-		a := &gossip.Accusation{
-			Accuser: n.id,
-			Epoch:   peerNote.epoch,
-			Accused: peerNote.id,
-			Mask:    peerNote.mask,
-		}
+		for i = 1; i <= n.numRings; i++ {
+			a := &accusation{
+				peerId:  p.peerId,
+				epoch:   peerNote.epoch,
+				accuser: n.peerId,
+				mask:    peerNote.mask,
+				ringNum: i,
+			}
 
-		b := []byte(fmt.Sprintf("%v", a))
-		signature, err := signContent(b, n.privKey)
-		if err != nil {
-			n.log.Err.Println(err)
-			return nil, err
-		}
+			err := a.sign(n.privKey)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
 
-		a.Signature = &gossip.Signature{
-			R: signature.r,
-			S: signature.s,
-		}
+			err = p.setAccusation(a)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
 
-		msg.Accusations = append(msg.Accusations, a)
+			msg.Accusations = append(msg.Accusations, a.toPbMsg())
+		}
 	}
 
 	noteMsg := n.localNoteToPbMsg()
 
-	msg.Notes = append(msg.Notes, noteMsg)
+	msg.OwnNote = noteMsg
 
 	return msg, nil
 }

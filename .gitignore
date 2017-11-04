@@ -9,3 +9,16 @@ deploy_res
 clean_res
 /cmd/firechainClient/firechainClient
 cmd/ca/ca
+transfe-ca_res
+test.sh
+profile001.callgraph.out
+planetlab/alive_res
+out.pdf
+out.png
+memout.pdf
+mem.prof
+cpu.prof
+cpu.pdf
+cmd/firechainClient/cpu.prof
+cmd/firechainClient/mem.prof
+alive_res

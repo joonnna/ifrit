@@ -44,10 +44,6 @@ func (rI *ringId) cmpId(other *ringId) int {
 }
 
 func newRing(ringNum uint32, id []byte, addr string) (*ring, error) {
-	if ringNum == 0 {
-		return nil, errInvalidRingNum
-	}
-
 	h := hashId(ringNum, id)
 	localRingId := &ringId{
 		id:   h,

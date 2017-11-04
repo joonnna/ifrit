@@ -84,17 +84,17 @@ func check(hostname string, remote net.Addr, key ssh.PublicKey) error {
 	return nil
 }
 
-func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig) error {
+func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode string) (string, error) {
 	client, err := ssh.Dial("tcp", addr+":22", conf)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Each ClientConn can support multiple interactive sessions,
 	// represented by a Session.
 	session, err := client.NewSession()
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer session.Close()
 
@@ -102,11 +102,18 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig) error {
 	// the remote side using the Run method.
 	var b bytes.Buffer
 	session.Stdout = &b
-	if err := session.Start(cmd); err != nil {
-		return err
+
+	if mode == "run" {
+		if err := session.Run(cmd); err != nil {
+			return "", err
+		}
+	} else if mode == "start" {
+		if err := session.Start(cmd); err != nil {
+			return "", err
+		}
 	}
 
-	return nil
+	return b.String(), nil
 }
 
 func TransferFile(addr string, fp string, conf *ssh.ClientConfig) error {

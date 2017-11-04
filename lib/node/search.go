@@ -10,6 +10,12 @@ var (
 	errIdNotFound = errors.New("ring id not found")
 )
 
+/*
+type item interface {
+	cmpId(item) int
+}
+*/
+
 func insert(slice []*ringId, newId *ringId) ([]*ringId, int) {
 	length := len(slice)
 	currIdx := 0

@@ -54,12 +54,12 @@ func (s *Server) Init(config *tls.Config, n interface{}) error {
 
 	creds := credentials.NewTLS(config)
 
-	comp := grpc.NewGZIPCompressor()
-	decomp := grpc.NewGZIPDecompressor()
+	//comp := grpc.NewGZIPCompressor()
+	//decomp := grpc.NewGZIPDecompressor()
 
 	serverOpts = append(serverOpts, grpc.Creds(creds))
-	serverOpts = append(serverOpts, grpc.RPCCompressor(comp))
-	serverOpts = append(serverOpts, grpc.RPCDecompressor(decomp))
+	//serverOpts = append(serverOpts, grpc.RPCCompressor(comp))
+	//serverOpts = append(serverOpts, grpc.RPCDecompressor(decomp))
 	serverOpts = append(serverOpts, grpc.KeepaliveParams(keepAlive))
 
 	maxConcurrent = 30
@@ -77,7 +77,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) ShutDown() {
-	s.rpcServer.GracefulStop()
+	s.rpcServer.Stop()
 }
 
 func (s *Server) HostInfo() string {

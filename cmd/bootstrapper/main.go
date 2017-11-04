@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"sync"
 	"syscall"
+
+	_ "net/http/pprof"
 
 	"github.com/joonnna/firechain/cauth"
 	"github.com/joonnna/firechain/client"
@@ -50,19 +54,46 @@ func (b *bootStrapper) shutDownClients() {
 func (b *bootStrapper) addNodeHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	defer r.Body.Close()
-	fmt.Println("got req")
+
 	b.startClient()
 }
 
 func main() {
 	var numRings uint
+	var cpuprofile, memprofile string
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.UintVar(&numRings, "numRings", 3, "Number of gossip rings to be used")
+	args.StringVar(&cpuprofile, "cpuprofile", "", "write cpu profile `file`")
+	args.StringVar(&memprofile, "memprofile", "", "write memory profile to `file`")
 
 	args.Parse(os.Args[1:])
+
+	if cpuprofile != "" {
+		f, err := os.Create(cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	if memprofile != "" {
+		f, err := os.Create(memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+		f.Close()
+	}
 
 	c, err := cauth.NewCa()
 	if err != nil {
@@ -72,7 +103,7 @@ func main() {
 
 	b := bootStrapper{
 		clientList: make([]*client.Client, 0),
-		entryAddr:  fmt.Sprintf("http://%s/certificateRequest", c.GetAddr()),
+		entryAddr:  c.GetAddr(),
 	}
 
 	http.HandleFunc("/addNode", b.addNodeHandler)
@@ -84,4 +115,5 @@ func main() {
 
 	b.shutDownClients()
 	c.Shutdown()
+
 }

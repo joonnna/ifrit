@@ -1,14 +1,14 @@
 package logger
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"os"
 )
 
 type Log struct {
-	Err *log.Logger
-	Info *log.Logger
+	Err   *log.Logger
+	Info  *log.Logger
 	Debug *log.Logger
 }
 
@@ -19,7 +19,11 @@ func CreateLogger(hostName string, logName string) *Log {
 
 	logLocation := fmt.Sprintf("/var/tmp/%s", logName)
 
-	logFile, _ := os.OpenFile(logLocation, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+	logFile, err := os.Create(logLocation)
+	if err != nil {
+		panic(err)
+	}
+	//logFile := ioutil.Discard
 
 	errLog := log.New(logFile, errPrefix, log.Lshortfile)
 	infoLog := log.New(logFile, infoPrefix, log.Lshortfile)

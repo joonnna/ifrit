@@ -18,11 +18,15 @@ const (
 	clientPath = "/home/jon/Documents/Informatikk/golang/src/github.com/joonnna/firechain/cmd/firechainClient/firechainClient"
 	caPath     = "/home/jon/Documents/Informatikk/golang/src/github.com/joonnna/firechain/cmd/ca/ca"
 	addrPath   = "/home/jon/Documents/Informatikk/golang/src/github.com/joonnna/firechain/planetlab/node_addrs"
+	clientCmd  = "./firechainClient -addr=195.113.161.14:35669"
+	cleanCmd   = "pkill -9 firechainClient"
+	aliveCmd   = "ps aux | grep -c firechainClient"
 )
 
 type cmdStatus struct {
 	success bool
 	addr    string
+	result  string
 }
 
 func transferCmd(addrs []string, path string, conf *ssh.ClientConfig, c chan *cmdStatus) {
@@ -31,16 +35,9 @@ func transferCmd(addrs []string, path string, conf *ssh.ClientConfig, c chan *cm
 	}
 }
 
-func deployCmd(addrs []string, conf *ssh.ClientConfig, c chan *cmdStatus) {
+func doCmds(addrs []string, mode string, cmd string, conf *ssh.ClientConfig, c chan *cmdStatus) {
 	for _, a := range addrs {
-		go doCmd(a, "./firechainClient -addr=http://ple2.cesnet.cz:38249/certificateRequest", conf, c)
-	}
-}
-
-func cleanCmd(addrs []string, conf *ssh.ClientConfig, c chan *cmdStatus) {
-	for _, a := range addrs {
-		go doCmd(a, "pkill ca", conf, c)
-		go doCmd(a, "pkill firechainClient", conf, c)
+		go doCmd(a, mode, cmd, conf, c)
 	}
 }
 
@@ -59,17 +56,18 @@ func transferBinary(addr string, path string, conf *ssh.ClientConfig, ch chan *c
 	ch <- status
 }
 
-func doCmd(addr string, cmd string, conf *ssh.ClientConfig, ch chan *cmdStatus) {
+func doCmd(addr string, mode string, cmd string, conf *ssh.ClientConfig, ch chan *cmdStatus) {
 	success := true
-	err := planetlab.ExecuteCmd(addr, cmd, conf)
+	out, err := planetlab.ExecuteCmd(addr, cmd, conf, mode)
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		success = false
 	}
 
 	status := &cmdStatus{
 		addr:    addr,
 		success: success,
+		result:  out,
 	}
 
 	ch <- status
@@ -109,6 +107,11 @@ func main() {
 			} else {
 				addrs = append(addrs, l)
 			}
+			/*
+				if len(addrs) >= 40 {
+					break
+				}
+			*/
 		}
 	}
 	fmt.Println("Nodes affected by cmd: ", len(addrs))
@@ -124,14 +127,22 @@ func main() {
 	switch cmd {
 	case "transfer":
 		transferCmd(addrs, clientPath, conf, c)
-	case "clean":
-		cleanCmd(addrs, conf, c)
-	case "deploy":
-		deployCmd(addrs, conf, c)
 	case "transfer-ca":
 		transferCmd(addrs, caPath, conf, c)
+	case "clean":
+		doCmds(addrs, "run", cleanCmd, conf, c)
+	case "deploy":
+		/*
+			for i := 0; i < 2; i++ {
+				addrs = append(addrs, addrs...)
+			}
+		*/
+		doCmds(addrs, "start", clientCmd, conf, c)
+	case "alive":
+		doCmds(addrs, "run", aliveCmd, conf, c)
 	default:
 		fmt.Println("Command not supported")
+		return
 	}
 
 	res, err := os.Create(cmd + "_res")
@@ -149,6 +160,7 @@ func main() {
 			completed++
 			fmt.Println("Success for : ", status.addr)
 			fmt.Println("Completed: ", completed)
+			fmt.Println(status.result)
 			res.Write([]byte(status.addr + "\n"))
 			res.Sync()
 		} else {

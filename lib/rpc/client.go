@@ -30,13 +30,13 @@ func NewClient() *Client {
 }
 
 func (c *Client) Init(config *tls.Config) {
-	comp := grpc.NewGZIPCompressor()
-	decomp := grpc.NewGZIPDecompressor()
+	//comp := grpc.NewGZIPCompressor()
+	//decomp := grpc.NewGZIPDecompressor()
 	creds := credentials.NewTLS(config)
 
 	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
-	c.dialOptions = append(c.dialOptions, grpc.WithCompressor(comp))
-	c.dialOptions = append(c.dialOptions, grpc.WithDecompressor(decomp))
+	//c.dialOptions = append(c.dialOptions, grpc.WithCompressor(comp))
+	//c.dialOptions = append(c.dialOptions, grpc.WithDecompressor(decomp))
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*5))
 }
 

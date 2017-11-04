@@ -208,7 +208,7 @@ func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
 	view := suite.getView()
 
 	for _, p := range view {
-		for num, r := range suite.ringMap {
+		for _, r := range suite.ringMap {
 			key, err := r.getSucc(p.id)
 			require.Nil(suite.T(), err, "Should not fail this call")
 			if key == suite.key {
@@ -224,7 +224,7 @@ func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
 				peerId:  succ.peerId,
 				accuser: p.peerId,
 				mask:    n.mask,
-				ringNum: num,
+				ringNum: r.ringNum,
 				epoch:   n.epoch,
 			}
 			err = succ.setAccusation(a)
