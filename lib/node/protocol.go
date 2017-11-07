@@ -38,7 +38,11 @@ func (c correct) Gossip(n *Node) {
 	if err != nil {
 		return
 	}
-	neighbours := n.getNeighbours()
+	neighbours, err := n.getGossipPartners()
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
 
 	for _, addr := range neighbours {
 		if addr == n.addr {

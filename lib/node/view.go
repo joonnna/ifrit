@@ -27,6 +27,8 @@ type view struct {
 	ringMap  map[uint32]*ring
 	numRings uint32
 
+	currGossipRing uint32
+
 	maxByz           uint32
 	deactivatedRings uint32
 
@@ -42,6 +44,11 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 	var i uint32
 	var err error
 
+	maxByz := (float64(numRings) / 2.0) - 1
+	if maxByz < 0 {
+		maxByz = 1
+	}
+
 	v := &view{
 		ringMap:           make(map[uint32]*ring),
 		viewMap:           make(map[string]*peer),
@@ -51,8 +58,9 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 		log:               log,
 		numRings:          numRings,
 		local:             id,
-		maxByz:            1,
+		maxByz:            uint32(maxByz),
 		deactivatedRings:  0,
+		currGossipRing:    1,
 	}
 
 	for i = 1; i <= numRings; i++ {
@@ -407,4 +415,33 @@ func (v *view) findNeighbours(id *peerId) []string {
 		}
 	}
 	return keys
+}
+
+func (v *view) incrementGossipRing() {
+	v.currGossipRing = ((v.currGossipRing + 1) % (v.numRings + 1))
+	if v.currGossipRing == 0 {
+		v.currGossipRing = 1
+	}
+}
+
+func (v *view) getGossipPartners() ([]string, error) {
+	var addrs []string
+	defer v.incrementGossipRing()
+
+	r := v.ringMap[v.currGossipRing]
+
+	succ, err := r.getRingSucc()
+	if err != nil {
+		return nil, err
+	}
+	addrs = append(addrs, succ.addr)
+
+	prev, err := r.getRingPrev()
+	if err != nil {
+		return nil, err
+	}
+
+	addrs = append(addrs, prev.addr)
+
+	return addrs, nil
 }

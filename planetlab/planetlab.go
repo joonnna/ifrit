@@ -17,9 +17,28 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const (
+	Run        = 1
+	Start      = 2
+	ClientPath = "cmd/firechainClient/firechainClient"
+	CaPath     = "cmd/ca/ca"
+	AddrPath   = "planetlab/node_addrs"
+	ClientCmd  = "./firechainClient"
+	CaCmd      = "./ca"
+	CleanCmd   = "pkill -9 firechainClient"
+	CaCleanCmd = "pkill -9 ca"
+	AliveCmd   = "ps aux | grep -c firechainClient"
+)
+
 var (
 	errNoKeys = errors.New("No hostkeys found for hosts")
 )
+
+type CmdStatus struct {
+	Success bool
+	Addr    string
+	Result  string
+}
 
 func decrypt(key []byte, password []byte) []byte {
 	block, rest := pem.Decode(key)
@@ -33,7 +52,7 @@ func decrypt(key []byte, password []byte) []byte {
 	return der
 }
 
-func GenSshConfig(addr string) (*ssh.ClientConfig, error) {
+func GenSshConfig() (*ssh.ClientConfig, error) {
 	//var hostKey ssh.PublicKey
 	// A public key may be used to authenticate against the remote
 	// server by using an unencrypted PEM-encoded private key file.
@@ -70,7 +89,6 @@ func GenSshConfig(addr string) (*ssh.ClientConfig, error) {
 		Auth: []ssh.AuthMethod{
 			// Use the PublicKeys method for remote authentication.
 			ssh.PublicKeys(signer),
-			ssh.Password("feeder123"),
 		},
 		//Config: ssh.Config{
 		//	KeyExchanges: hostKeys, //[]string{hostKey.Type()},
@@ -84,7 +102,51 @@ func check(hostname string, remote net.Addr, key ssh.PublicKey) error {
 	return nil
 }
 
-func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode string) (string, error) {
+func TransferToHosts(addrs []string, path string, conf *ssh.ClientConfig, c chan *CmdStatus) {
+	for _, a := range addrs {
+		go transfer(a, path, conf, c)
+	}
+}
+
+func DoCmds(addrs []string, mode int, cmd string, conf *ssh.ClientConfig, c chan *CmdStatus) {
+	for _, a := range addrs {
+		go doCmd(a, mode, cmd, conf, c)
+	}
+}
+
+func doCmd(addr string, mode int, cmd string, conf *ssh.ClientConfig, ch chan *CmdStatus) {
+	success := true
+	out, err := ExecuteCmd(addr, cmd, conf, mode)
+	if err != nil {
+		fmt.Println(err)
+		success = false
+	}
+
+	status := &CmdStatus{
+		Addr:    addr,
+		Success: success,
+		Result:  out,
+	}
+
+	ch <- status
+}
+
+func transfer(addr string, path string, conf *ssh.ClientConfig, ch chan *CmdStatus) {
+	success := true
+	err := transferFile(addr, path, conf)
+	if err != nil {
+		log.Println(err)
+		success = false
+	}
+
+	status := &CmdStatus{
+		Addr:    addr,
+		Success: success,
+	}
+	ch <- status
+}
+
+func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode int) (string, error) {
 	client, err := ssh.Dial("tcp", addr+":22", conf)
 	if err != nil {
 		return "", err
@@ -103,11 +165,11 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode string) (s
 	var b bytes.Buffer
 	session.Stdout = &b
 
-	if mode == "run" {
+	if mode == Run {
 		if err := session.Run(cmd); err != nil {
 			return "", err
 		}
-	} else if mode == "start" {
+	} else if mode == Start {
 		if err := session.Start(cmd); err != nil {
 			return "", err
 		}
@@ -116,7 +178,7 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode string) (s
 	return b.String(), nil
 }
 
-func TransferFile(addr string, fp string, conf *ssh.ClientConfig) error {
+func transferFile(addr string, fp string, conf *ssh.ClientConfig) error {
 	conn, err := ssh.Dial("tcp", addr+":22", conf)
 	if err != nil {
 		return err

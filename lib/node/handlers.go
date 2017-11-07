@@ -52,7 +52,10 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 		n.log.Err.Println(errNotMyNeighbour)
 		n.log.Debug.Println(p.Addr)
 
-		n.evalCertificate(cert)
+		if valid := n.evalCertificate(cert); !valid {
+			return nil, errNoCert
+		}
+
 		n.evalNote(args.GetOwnNote())
 
 		peerKeys := n.findNeighbours(pId)
@@ -74,10 +77,18 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 			}
 		}
 		n.log.Debug.Println(len(reply.Certificates))
+
+		if record := n.getRecordFlag(); record {
+			n.incrementRequestCounter()
+		}
+
 		return reply, nil
 	}
 
-	n.evalCertificate(cert)
+	if valid := n.evalCertificate(cert); !valid {
+		return nil, errNoCert
+	}
+
 	n.evalNote(args.GetOwnNote())
 	n.mergeCertificates(args.GetCertificates())
 	n.mergeNotes(args.GetNotes())
@@ -332,24 +343,24 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	}
 }
 
-func (n *Node) evalCertificate(cert *x509.Certificate) {
+func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	if cert == nil {
 		n.log.Err.Println("Got nil cert")
-		return
+		return false
 	}
 
 	if len(cert.Subject.Locality) == 0 {
-		return
+		return false
 	}
 
 	if len(cert.SubjectKeyId) == 0 || n.peerId.equal(&peerId{id: cert.SubjectKeyId}) {
-		return
+		return false
 	}
 
 	err := cert.CheckSignatureFrom(n.caCert)
 	if err != nil {
 		n.log.Err.Println(err)
-		return
+		return false
 	}
 
 	peerKey := string(cert.SubjectKeyId[:])
@@ -357,6 +368,8 @@ func (n *Node) evalCertificate(cert *x509.Certificate) {
 	if !n.viewPeerExist(peerKey) {
 		n.addViewPeer(peerKey, nil, cert, n.numRings)
 	}
+
+	return true
 }
 
 func validMask(mask []byte, ringNum uint32, maxByz uint32) error {

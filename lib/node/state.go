@@ -18,8 +18,9 @@ import (
 	"github.com/rs/cors"
 )
 
-var (
+const (
 	stateAddr = "http://129.242.19.146:8095"
+	httpPort  = 12300
 	//stateAddr = "http://localhost:8080"
 )
 
@@ -46,9 +47,10 @@ func (s *state) marshal() io.Reader {
 
 func (n *Node) httpHandler(c chan bool) {
 	hostName, _ := os.Hostname()
-	l, err := netutils.GetListener(hostName)
+	l, err := netutils.ListenOnPort(hostName, httpPort)
 	if err != nil {
-		panic(err)
+		n.log.Err.Println(err)
+		return
 	}
 
 	r := mux.NewRouter()
@@ -62,7 +64,8 @@ func (n *Node) httpHandler(c chan bool) {
 
 	addrs, err := net.LookupHost(hostName)
 	if err != nil {
-		panic(err)
+		n.log.Err.Println(err)
+		return
 	}
 
 	n.httpAddr = fmt.Sprintf("http://%s:%s", addrs[0], port)
@@ -126,11 +129,12 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 
 func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
 	bytes, err := ioutil.ReadAll(r.Body)
-	r.Body.Close()
 	if err != nil {
 		n.log.Err.Println(err)
 		return
 	}
+
+	r.Body.Close()
 
 	if len(bytes) != 1 {
 		n.log.Err.Println("Expected body with length 1 with either a 0 or 1 as content got length: ", len(bytes))

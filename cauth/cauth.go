@@ -22,6 +22,10 @@ import (
 	"github.com/joonnna/firechain/logger"
 )
 
+const (
+	caPort = 8090
+)
+
 var (
 	errNoAddr = errors.New("No network address provided in cert request!")
 )
@@ -56,7 +60,7 @@ func NewCa() (*Ca, error) {
 	}
 
 	hostName, _ := os.Hostname()
-	l, err := netutils.GetListener(hostName)
+	l, err := netutils.ListenOnPort(hostName, caPort)
 	if err != nil {
 		return nil, err
 	}

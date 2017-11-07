@@ -38,8 +38,7 @@ func NewServer() *Server {
 	}
 }
 
-func (s *Server) Init(config *tls.Config, n interface{}) error {
-	var maxConcurrent uint32
+func (s *Server) Init(config *tls.Config, n interface{}, maxConcurrent uint32) error {
 	var serverOpts []grpc.ServerOption
 
 	registerInterface, ok := n.(gossip.GossipServer)
@@ -62,7 +61,6 @@ func (s *Server) Init(config *tls.Config, n interface{}) error {
 	//serverOpts = append(serverOpts, grpc.RPCDecompressor(decomp))
 	serverOpts = append(serverOpts, grpc.KeepaliveParams(keepAlive))
 
-	maxConcurrent = 30
 	serverOpts = append(serverOpts, grpc.MaxConcurrentStreams(maxConcurrent))
 
 	s.rpcServer = grpc.NewServer(serverOpts...)

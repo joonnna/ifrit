@@ -73,7 +73,7 @@ type client interface {
 }
 
 type server interface {
-	Init(config *tls.Config, n interface{}) error
+	Init(config *tls.Config, n interface{}, maxConcurrent uint32) error
 	HostInfo() string
 	Start() error
 	ShutDown()
@@ -294,7 +294,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		trustedBootNode: certs.trusted,
 	}
 
-	err = n.server.Init(config, n)
+	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
 	if err != nil {
 		return nil, err
 	}

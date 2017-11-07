@@ -52,6 +52,33 @@ func GetOpenPort() int {
 	return 0
 }
 
+func ListenOnPort(hostName string, port int) (net.Listener, error) {
+	var l net.Listener
+	var err error
+
+	addrs, err := net.LookupHost(hostName)
+	if err != nil {
+		return l, err
+	}
+
+	startPort := port
+
+	for {
+		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addrs[0], startPort))
+		if err == nil {
+			break
+		}
+
+		if startPort > (port + 10) {
+			return l, errFoundNoPort
+		}
+
+		startPort++
+	}
+
+	return l, nil
+}
+
 func GetListener(hostName string) (net.Listener, error) {
 	var l net.Listener
 	var err error
