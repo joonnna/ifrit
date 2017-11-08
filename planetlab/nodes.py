@@ -34,7 +34,8 @@ def getAllNodes(auth):
     return_fields = ['hostname']
     res = api_server.GetNodes(auth, boot_state_filter, return_fields)
 
-    hostNames = [x['hostname'] for x in res]
+    return [x['hostname'] for x in res]
+    """
     ret = []
     for h in hostNames:
         try:
@@ -43,7 +44,7 @@ def getAllNodes(auth):
         except socket.gaierror:
             continue
     return ret
-
+    """
 
 def getSliceBootedNodes(auth, slice_name):
     filter = {'boot_state': 'boot'}
@@ -90,7 +91,7 @@ print len(nodes)
 
 f = open("node_addrs", "w")
 for a in nodes:
-    f.write("%s,%s\n" % (a[1], a[0]))
+    f.write("%s\n" % (a))
 f.close()
 
 """

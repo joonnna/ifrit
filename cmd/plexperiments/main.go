@@ -65,19 +65,18 @@ func getResult(addr string) (int, error) {
 			break
 		}
 
-		if tries > 10 {
+		if tries > 2 {
 			return 0, err
 		}
 		startPort++
 		tries++
 	}
-
+	defer resp.Body.Close()
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Println(err)
 		return 0, err
 	}
-	defer resp.Body.Close()
 
 	val, err := strconv.Atoi(string(bytes))
 	if err != nil {
@@ -116,7 +115,7 @@ func doExperiment(caAddr string, numrings, iteration int, addrs []string, conf *
 	}
 	fmt.Printf("Deployed on %d nodes, waiting 10 mins for network saturation", len(deployed))
 
-	time.Sleep(time.Second * 30)
+	time.Sleep(time.Minute * 3)
 
 	for _, addr := range deployed {
 		err := startMeasurementRequest(addr)
@@ -131,7 +130,7 @@ func doExperiment(caAddr string, numrings, iteration int, addrs []string, conf *
 
 	fmt.Println("Started measurement on nodes, waiting for experiment to complete(10min)")
 
-	time.Sleep(time.Second * 30)
+	time.Sleep(time.Minute * 10)
 
 	fmt.Println("Started result collection")
 
@@ -189,7 +188,7 @@ func main() {
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.StringVar(&cmd, "cmd", "", "Experiment to execute")
-	args.StringVar(&fp, "fp", planetlab.AddrPath, "Path to file containing node addresses")
+	args.StringVar(&fp, "fp", "planetlab/exp_nodes", "Path to file containing node addresses")
 	args.StringVar(&caAddr, "caAddr", "ple2.cesnet.cz", "Address to deploy ca on")
 	args.StringVar(&resFile, "results", "exp_res", "Which file to store results")
 	args.IntVar(&iterations, "iterations", 100, "How many iterations of the experiment to run")
@@ -202,7 +201,9 @@ func main() {
 	lines := strings.Split(string(b[:]), "\n")
 
 	for _, l := range lines {
-		addrs = append(addrs, l)
+		if l != "" {
+			addrs = append(addrs, l)
+		}
 	}
 
 	conf, err := planetlab.GenSshConfig()

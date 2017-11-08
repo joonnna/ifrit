@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -94,7 +95,7 @@ func GenSshConfig() (*ssh.ClientConfig, error) {
 		//	KeyExchanges: hostKeys, //[]string{hostKey.Type()},
 		//},
 		HostKeyCallback: check,
-		//HostKeyAlgorithms: hostKeys, //[]string{hostKey.Type()},
+		Timeout:         time.Second * 20,
 	}, nil
 }
 
@@ -156,6 +157,7 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode int) (stri
 	// represented by a Session.
 	session, err := client.NewSession()
 	if err != nil {
+		client.Close()
 		return "", err
 	}
 	defer session.Close()

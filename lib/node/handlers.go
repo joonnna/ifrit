@@ -22,6 +22,7 @@ var (
 	errDeactivatedRing         = errors.New("Accusation on deactivated ring")
 	errNoMask                  = errors.New("No mask provided")
 	errTooManyDeactivatedRings = errors.New("Mask contains too many deactivated rings")
+	errInvalidMaskLength       = errors.New("Mask is of invalid length")
 )
 
 func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Partners, error) {
@@ -226,7 +227,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	peerNote := p.getNote()
 	if epoch == peerNote.epoch {
-		err := validMask(mask, ringNum, n.maxByz)
+		err := checkDisabledRings(mask, ringNum, n.maxByz, n.numRings)
 		if err != nil {
 			n.log.Err.Println(err)
 			return
@@ -297,6 +298,12 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 
 	if !valid {
 		n.log.Info.Println("Invalid signature on note, ignoring, ", p.addr)
+		return
+	}
+
+	err = validMask(mask, n.maxByz, n.numRings)
+	if err != nil {
+		n.log.Err.Println(err)
 		return
 	}
 
@@ -372,19 +379,15 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	return true
 }
 
-func validMask(mask []byte, ringNum uint32, maxByz uint32) error {
+func validMask(mask []byte, maxByz uint32, numRings uint32) error {
 	var deactivated uint32
 
 	if mask == nil {
 		return errNoMask
 	}
 
-	idx := ringNum - 1
-
-	maxIdx := uint32(len(mask) - 1)
-
-	if idx > maxIdx || idx < 0 {
-		return errNonExistingRing
+	if uint32(len(mask)) != numRings {
+		return errInvalidMaskLength
 	}
 
 	deactivated = 0
@@ -396,6 +399,23 @@ func validMask(mask []byte, ringNum uint32, maxByz uint32) error {
 
 	if deactivated > maxByz {
 		return errTooManyDeactivatedRings
+	}
+
+	return nil
+}
+
+func checkDisabledRings(mask []byte, ringNum uint32, maxByz uint32, numRings uint32) error {
+	err := validMask(mask, maxByz, numRings)
+	if err != nil {
+		return err
+	}
+
+	idx := ringNum - 1
+
+	maxIdx := uint32(len(mask) - 1)
+
+	if idx > maxIdx || idx < 0 {
+		return errNonExistingRing
 	}
 
 	if mask[idx] == 0 {

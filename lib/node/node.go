@@ -351,25 +351,25 @@ func (n *Node) Start(protocol int) {
 	go n.server.Start()
 	go n.pinger.serve()
 
-	n.wg.Add(4)
+	n.wg.Add(3)
 	go n.gossipLoop()
 	go n.monitor()
 	go n.checkTimeouts()
-	go n.updateState()
+	//go n.updateState()
 
 	go n.httpHandler(done)
 
 	<-done
-
-	for _, r := range n.ringMap {
-		for {
-			err := n.add(r.ringNum)
-			if err == nil {
-				break
+	/*
+		for _, r := range n.ringMap {
+			for {
+				err := n.add(r.ringNum)
+				if err == nil {
+					break
+				}
 			}
 		}
-	}
-
+	*/
 	<-n.exitChan
 	n.server.ShutDown()
 	n.pinger.shutdown()
