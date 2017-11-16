@@ -8,13 +8,12 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/joonnna/firechain/lib/netutils"
+	"github.com/joonnna/go-fireflies/lib/netutils"
 	"github.com/rs/cors"
 )
 
@@ -46,7 +45,8 @@ func (s *state) marshal() io.Reader {
 }
 
 func (n *Node) httpHandler(c chan bool) {
-	hostName, _ := os.Hostname()
+	//hostName, _ := os.Hostname()
+	hostName := netutils.GetLocalIP()
 	l, err := netutils.ListenOnPort(hostName, httpPort)
 	if err != nil {
 		n.log.Err.Println(err)
@@ -59,6 +59,9 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/corruptNode", n.corruptHandler)
 	r.HandleFunc("/startrecording", n.recordHandler)
 	r.HandleFunc("/numrequests", n.numRequestsHandler)
+	r.HandleFunc("/numfailedrequests", n.numFailedRequestsHandler)
+	r.HandleFunc("/latencies", n.latenciesHandler)
+	r.HandleFunc("/dos", n.dosHandler)
 
 	port := strings.Split(l.Addr().String(), ":")[1]
 
@@ -124,10 +127,12 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 
 	n.log.Info.Println("Received corrupt request, going rogue!")
 
-	n.setProtocol(SpamAccusationsProtocol)
+	n.setProtocol(spamAccusations{})
 }
 
-func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
+func (n *Node) dosHandler(w http.ResponseWriter, r *http.Request) {
+	n.log.Info.Println("Received dos request, spamming!")
+
 	bytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		n.log.Err.Println(err)
@@ -136,26 +141,52 @@ func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
 
 	r.Body.Close()
 
-	if len(bytes) != 1 {
-		n.log.Err.Println("Expected body with length 1 with either a 0 or 1 as content got length: ", len(bytes))
-	}
-
-	n.log.Info.Println("Received record signal, starting to record")
-
-	val, err := strconv.ParseBool(string(bytes))
+	val, err := strconv.Atoi(string(bytes))
 	if err != nil {
 		n.log.Err.Println(err)
 		return
 	}
+	e := experiment{
+		addr:    "129.242.19.146:8100",
+		maxConc: val,
+	}
+	n.setProtocol(e)
+}
 
-	n.setRecordFlag(val)
+func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	n.stats.setRecordFlag(true)
 }
 
 func (n *Node) numRequestsHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
-	w.Write([]byte(strconv.Itoa(n.getCompletedRequests())))
+	w.Write([]byte(strconv.Itoa(n.stats.getCompletedRequests())))
+}
+
+func (n *Node) numFailedRequestsHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	w.Write([]byte(strconv.Itoa(n.stats.getFailedRequests())))
+}
+
+func (n *Node) latenciesHandler(w http.ResponseWriter, r *http.Request) {
+	var resp bytes.Buffer
+
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	latencies := n.stats.getLatencies()
+
+	for _, lat := range latencies {
+		resp.WriteString(fmt.Sprintf("%f\n", lat))
+	}
+
+	w.Write(resp.Bytes())
 }
 
 /* Periodically sends the nodes current state to the state server*/

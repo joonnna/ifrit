@@ -65,7 +65,6 @@ func validateSignature(r, s, data []byte, pub *ecdsa.PublicKey) (bool, error) {
 
 func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, serviceAddr string, pingAddr string) (*certSet, error) {
 	var certs certResponse
-
 	set := &certSet{}
 
 	s := pkix.Name{

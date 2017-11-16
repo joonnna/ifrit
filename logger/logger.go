@@ -24,6 +24,7 @@ func CreateLogger(hostName string, logName string) *Log {
 			panic(err)
 		}
 	*/
+
 	logFile := ioutil.Discard
 
 	errLog := log.New(logFile, errPrefix, log.Lshortfile)

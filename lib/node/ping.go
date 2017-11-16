@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/firechain/lib/protobuf"
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 var (

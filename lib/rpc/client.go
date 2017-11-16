@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

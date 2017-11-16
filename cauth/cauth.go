@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/firechain/lib/netutils"
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/go-fireflies/lib/netutils"
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 const (
@@ -42,7 +43,7 @@ type Ca struct {
 }
 
 type group struct {
-	ringNum uint8
+	ringNum uint32
 
 	knownCerts      []*x509.Certificate
 	knownCertsMutex sync.RWMutex
@@ -80,7 +81,7 @@ func (c *Ca) Shutdown() {
 	c.listener.Close()
 }
 
-func (c *Ca) Start(numRings uint8) error {
+func (c *Ca) Start(numRings uint32) error {
 	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
 	err := c.newGroup(numRings)
 	if err != nil {
@@ -93,23 +94,33 @@ func (c Ca) GetAddr() string {
 	return c.listener.Addr().String()
 }
 
-func (c *Ca) newGroup(ringNum uint8) error {
+func (c *Ca) newGroup(ringNum uint32) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
 		c.log.Err.Println(err)
 		return err
 	}
 
+	ringBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ringBytes[0:], ringNum)
+
+	ext := pkix.Extension{
+		Id:       []int{2, 5, 13, 37},
+		Critical: false,
+		Value:    ringBytes,
+	}
+
 	caCert := &x509.Certificate{
 		SerialNumber:          serialNumber,
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
-		IsCA:        true,
-		NotBefore:   time.Now().AddDate(-10, 0, 0),
-		NotAfter:    time.Now().AddDate(10, 0, 0),
-		PublicKey:   c.pubKey,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:            true,
+		NotBefore:       time.Now().AddDate(-10, 0, 0),
+		NotAfter:        time.Now().AddDate(10, 0, 0),
+		PublicKey:       c.pubKey,
+		ExtraExtensions: []pkix.Extension{ext},
+		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
@@ -165,7 +176,6 @@ func (c *Ca) httpHandler() error {
 
 func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	var body bytes.Buffer
-
 	io.Copy(&body, r.Body)
 	r.Body.Close()
 
@@ -180,13 +190,19 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	c.log.Info.Println("Got a certificate request from", reqCert.Subject.Locality)
 
 	//No idea what this is
-	var oidExtensionBasicConstraints = []int{2, 5, 29, 19}
+	//var oidExtensionBasicConstraints = []int{2, 5, 29, 19}
+	//var oidExtensionExtendedKeyUsage = []int{2, 5, 29, 37}
+	//var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
-	extensions := []pkix.Extension{
-		pkix.Extension{
-			Id: oidExtensionBasicConstraints, Critical: true, Value: []uint8{g.ringNum},
-		},
+	ringBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ringBytes[0:], g.ringNum)
+
+	ext := pkix.Extension{
+		Id:       []int{2, 5, 13, 37},
+		Critical: false,
+		Value:    ringBytes,
 	}
+
 	if len(reqCert.Subject.Locality) < 2 {
 		c.log.Err.Println(errNoAddr)
 		return
@@ -202,17 +218,16 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	id := genId()
 
 	newCert := &x509.Certificate{
-		SerialNumber:          serialNumber,
-		SubjectKeyId:          id,
-		Subject:               reqCert.Subject,
-		BasicConstraintsValid: true,
-		NotBefore:             time.Now().AddDate(-10, 0, 0),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
-		Extensions:            extensions,
-		PublicKey:             reqCert.PublicKey,
-		IPAddresses:           []net.IP{ip},
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		SerialNumber:    serialNumber,
+		SubjectKeyId:    id,
+		Subject:         reqCert.Subject,
+		NotBefore:       time.Now().AddDate(-10, 0, 0),
+		NotAfter:        time.Now().AddDate(10, 0, 0),
+		ExtraExtensions: []pkix.Extension{ext},
+		PublicKey:       reqCert.PublicKey,
+		IPAddresses:     []net.IP{ip},
+		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 
 	signedCert, err := x509.CreateCertificate(rand.Reader, newCert, g.groupCert, reqCert.PublicKey, c.privKey)
@@ -226,7 +241,6 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		c.log.Err.Println(err)
 		return
 	}
-
 	trusted := g.addKnownCert(knownCert)
 
 	respStruct := struct {

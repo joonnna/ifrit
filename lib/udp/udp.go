@@ -3,11 +3,10 @@ package udp
 import (
 	"fmt"
 	"net"
-	"os"
 	"time"
 
-	"github.com/joonnna/firechain/lib/netutils"
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/go-fireflies/lib/netutils"
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 type Server struct {
@@ -18,8 +17,8 @@ type Server struct {
 
 func NewServer(log *logger.Log) (*Server, error) {
 	port := netutils.GetOpenPort()
-	//hostName := netutils.GetLocalIP()
-	hostName, _ := os.Hostname()
+	hostName := netutils.GetLocalIP()
+	//hostName, _ := os.Hostname()
 	addr := fmt.Sprintf("%s:%d", hostName, port)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -53,7 +52,7 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 		s.log.Err.Println(err)
 		return nil, err
 	}
-	c.SetDeadline(time.Now().Add(time.Second * 3))
+	c.SetDeadline(time.Now().Add(time.Second * 5))
 	defer c.Close()
 
 	_, err = c.Write(data)

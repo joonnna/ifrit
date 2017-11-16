@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 var (

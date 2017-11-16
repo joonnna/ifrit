@@ -16,8 +16,8 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/joonnna/firechain/cauth"
-	"github.com/joonnna/firechain/client"
+	"github.com/joonnna/go-fireflies/cauth"
+	"github.com/joonnna/go-fireflies/client"
 )
 
 const (
@@ -35,7 +35,11 @@ func (b *bootStrapper) startClient() {
 	b.clientListMutex.Lock()
 	defer b.clientListMutex.Unlock()
 
-	c := client.NewClient(b.entryAddr)
+	c, err := client.NewClient(b.entryAddr)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	go c.Start()
 
@@ -99,7 +103,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	go c.Start(uint8(numRings))
+	go c.Start(uint32(numRings))
 
 	b := bootStrapper{
 		clientList: make([]*client.Client, 0),

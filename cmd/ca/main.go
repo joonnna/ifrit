@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/joonnna/firechain/cauth"
+	"github.com/joonnna/go-fireflies/cauth"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 	var numRings uint
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
-	args.UintVar(&numRings, "numRings", 3, "Number of gossip rings to be used")
+	args.UintVar(&numRings, "numRings", 10, "Number of gossip rings to be used")
 
 	args.Parse(os.Args[1:])
 
@@ -24,7 +24,7 @@ func main() {
 		panic(err)
 	}
 
-	go ca.Start(uint8(numRings))
+	go ca.Start(uint32(numRings))
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

@@ -4,11 +4,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
-	"os"
 	"time"
 
-	"github.com/joonnna/firechain/lib/netutils"
-	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/go-fireflies/lib/netutils"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -24,18 +23,19 @@ type Server struct {
 	listener net.Listener
 }
 
-func NewServer() *Server {
-	//hostName := netutils.GetLocalIP()
+func NewServer() (*Server, error) {
+	hostName := netutils.GetLocalIP()
 	//hostName := "0.0.0.0"
-	hostName, _ := os.Hostname()
-	l, err := netutils.GetListener(hostName)
+	//hostName, _ := os.Hostname()
+	l, err := netutils.ListenOnPort(hostName, 8100)
+	//l, err := netutils.GetListener(hostName)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return &Server{
 		listener: l,
-	}
+	}, nil
 }
 
 func (s *Server) Init(config *tls.Config, n interface{}, maxConcurrent uint32) error {

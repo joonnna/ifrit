@@ -21,14 +21,14 @@ import (
 const (
 	Run        = 1
 	Start      = 2
-	ClientPath = "cmd/firechainClient/firechainClient"
+	ClientPath = "cmd/firefliesclient/firefliesclient"
 	CaPath     = "cmd/ca/ca"
 	AddrPath   = "planetlab/node_addrs"
-	ClientCmd  = "./firechainClient"
+	ClientCmd  = "./firefliesclient"
 	CaCmd      = "./ca"
-	CleanCmd   = "pkill -9 firechainClient"
+	CleanCmd   = "pkill -9 firefliesclient"
 	CaCleanCmd = "pkill -9 ca"
-	AliveCmd   = "ps aux | grep -c firechainClient"
+	AliveCmd   = "ps aux | grep -c firefliesclient"
 )
 
 var (
@@ -53,7 +53,7 @@ func decrypt(key []byte, password []byte) []byte {
 	return der
 }
 
-func GenSshConfig() (*ssh.ClientConfig, error) {
+func GenSshConfig(user string) (*ssh.ClientConfig, error) {
 	//var hostKey ssh.PublicKey
 	// A public key may be used to authenticate against the remote
 	// server by using an unencrypted PEM-encoded private key file.
@@ -86,10 +86,11 @@ func GenSshConfig() (*ssh.ClientConfig, error) {
 	}
 
 	return &ssh.ClientConfig{
-		User: "uitple_firechain",
+		User: user,
 		Auth: []ssh.AuthMethod{
 			// Use the PublicKeys method for remote authentication.
 			ssh.PublicKeys(signer),
+			ssh.Password("edufetteidiot123"),
 		},
 		//Config: ssh.Config{
 		//	KeyExchanges: hostKeys, //[]string{hostKey.Type()},
@@ -152,12 +153,12 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode int) (stri
 	if err != nil {
 		return "", err
 	}
+	defer client.Close()
 
 	// Each ClientConn can support multiple interactive sessions,
 	// represented by a Session.
 	session, err := client.NewSession()
 	if err != nil {
-		client.Close()
 		return "", err
 	}
 	defer session.Close()
@@ -175,12 +176,16 @@ func ExecuteCmd(addr string, cmd string, conf *ssh.ClientConfig, mode int) (stri
 		if err := session.Start(cmd); err != nil {
 			return "", err
 		}
+		if conf.User == "jon" {
+			time.Sleep(time.Second * 5)
+		}
 	}
 
 	return b.String(), nil
 }
 
 func transferFile(addr string, fp string, conf *ssh.ClientConfig) error {
+	var dest string
 	conn, err := ssh.Dial("tcp", addr+":22", conf)
 	if err != nil {
 		return err
@@ -211,7 +216,13 @@ func transferFile(addr string, fp string, conf *ssh.ClientConfig) error {
 		fmt.Fprintln(w, "\x00")
 	}()
 
-	session.Run("/usr/bin/scp -t /home/uitple_firechain/")
+	if conf.User == "jon" {
+		dest = "/home/jon/"
+	} else {
+		dest = "/home/uitple_firechain/"
+	}
+
+	session.Run("/usr/bin/scp -t " + dest)
 
 	return nil
 }

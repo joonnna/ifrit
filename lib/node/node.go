@@ -4,14 +4,16 @@ import (
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"github.com/joonnna/firechain/lib/protobuf"
-	"github.com/joonnna/firechain/lib/udp"
-	"github.com/joonnna/firechain/logger"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/go-fireflies/lib/udp"
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 var (
@@ -22,6 +24,7 @@ var (
 const (
 	NormalProtocol          = 1
 	SpamAccusationsProtocol = 2
+	DosProtocol             = 3
 )
 
 type Node struct {
@@ -46,7 +49,9 @@ type Node struct {
 	exitFlag  bool
 	exitMutex sync.RWMutex
 
-	gossipTimeout   time.Duration
+	gossipTimeout      time.Duration
+	gossipTimeoutMutex sync.RWMutex
+
 	monitorTimeout  time.Duration
 	nodeDeadTimeout float64
 
@@ -57,13 +62,7 @@ type Node struct {
 	trustedBootNode bool
 	httpAddr        string
 
-	recordFlag      bool
-	recordMutex     sync.RWMutex
-	recordTimestamp time.Time
-	recordDuration  float64
-
-	completedRequests      int
-	completedRequestsMutex sync.RWMutex
+	stats *recorder
 }
 
 type client interface {
@@ -102,7 +101,7 @@ func (n *Node) gossipLoop() {
 			n.log.Info.Println("Exiting gossiping")
 			n.wg.Done()
 			return
-		case <-time.After(n.gossipTimeout):
+		case <-time.After(n.getGossipTimeout()):
 			n.getProtocol().Gossip(n)
 		}
 	}
@@ -161,18 +160,11 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 	return msg, nil
 }
 
-func (n *Node) setProtocol(protocol int) {
+func (n *Node) setProtocol(p protocol) {
 	n.protocolMutex.Lock()
 	defer n.protocolMutex.Unlock()
 
-	switch protocol {
-	case NormalProtocol:
-		n.protocol = correct{}
-	case SpamAccusationsProtocol:
-		n.protocol = spamAccusations{}
-	default:
-		n.protocol = correct{}
-	}
+	n.protocol = p
 }
 
 func (n *Node) getProtocol() protocol {
@@ -189,59 +181,35 @@ func (n *Node) localNoteToPbMsg() *gossip.Note {
 	return n.recentNote.toPbMsg()
 }
 
-func (n *Node) setRecordFlag(value bool) {
-	n.recordMutex.Lock()
-	defer n.recordMutex.Unlock()
+func (n *Node) setGossipTimeout(timeout int) {
+	n.gossipTimeoutMutex.Lock()
+	defer n.gossipTimeoutMutex.Unlock()
 
-	if !n.recordFlag && value {
-		n.recordTimestamp = time.Now()
-	}
-
-	n.recordFlag = value
+	n.gossipTimeout = (time.Duration(timeout) * time.Second)
 }
 
-func (n *Node) getRecordFlag() bool {
-	n.recordMutex.RLock()
-	defer n.recordMutex.RUnlock()
+func (n *Node) getGossipTimeout() time.Duration {
+	n.gossipTimeoutMutex.RLock()
+	defer n.gossipTimeoutMutex.RUnlock()
 
-	if !n.recordFlag {
-		return n.recordFlag
-	}
-
-	since := time.Since(n.recordTimestamp)
-	if since.Minutes() > n.recordDuration {
-		return false
-	}
-
-	return n.recordFlag
-}
-
-func (n *Node) incrementRequestCounter() {
-	n.completedRequestsMutex.Lock()
-	defer n.completedRequestsMutex.Unlock()
-
-	n.completedRequests++
-}
-
-func (n *Node) getCompletedRequests() int {
-	n.completedRequestsMutex.RLock()
-	defer n.completedRequestsMutex.RUnlock()
-
-	return n.completedRequests
+	return n.gossipTimeout
 }
 
 func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
+	var extValue []byte
 
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
 
 	udpServer, err := udp.NewServer(logger)
 	if err != nil {
+		logger.Err.Println(err)
 		return nil, err
 	}
 
 	privKey, err := genKeys()
 	if err != nil {
+		logger.Err.Println(err)
 		return nil, err
 	}
 
@@ -249,45 +217,56 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 
 	certs, err := sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
 	if err != nil {
+		logger.Err.Println(err)
 		return nil, err
 	}
 
-	ext := certs.ownCert.Extensions
-
-	if len(ext) < 1 || len(ext[0].Value) < 1 {
-		return nil, errNoRingNum
-	}
+	extensions := certs.ownCert.Extensions
 
 	if len(certs.ownCert.SubjectKeyId) < 1 {
+		logger.Err.Println(errNoId)
 		return nil, errNoId
 	}
 
-	numRings := uint32(ext[0].Value[0])
+	for _, e := range extensions {
+		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
+			extValue = e.Value
+		}
+	}
+	if extValue == nil {
+		logger.Err.Println(errNoRingNum)
+		return nil, errNoRingNum
+	}
+
+	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
 	config := genServerConfig(certs, privKey)
 
 	p, err := newPeer(nil, certs.ownCert, numRings)
 	if err != nil {
+		logger.Err.Println(err)
 		return nil, err
 	}
+
 	v, err := newView(numRings, logger, p.peerId, p.addr)
 	if err != nil {
+		logger.Err.Println(err)
 		return nil, err
 	}
 
 	n := &Node{
 		exitChan:        make(chan bool, 1),
 		wg:              &sync.WaitGroup{},
-		gossipTimeout:   time.Second * 10,
-		monitorTimeout:  time.Second * 10,
-		nodeDeadTimeout: 150,
-		recordDuration:  10,
+		gossipTimeout:   time.Second * 15,
+		monitorTimeout:  time.Second * 15,
+		nodeDeadTimeout: 200,
 		view:            v,
 		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,
 		client:          c,
 		server:          s,
 		peer:            p,
+		stats:           &recorder{recordDuration: 5},
 		log:             logger,
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
@@ -296,6 +275,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
 	if err != nil {
+		n.log.Err.Println(err)
 		return nil, err
 	}
 
@@ -312,6 +292,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 
 	err = localNote.sign(n.privKey)
 	if err != nil {
+		n.log.Err.Println(err)
 		return nil, err
 	}
 
@@ -341,12 +322,12 @@ func (n *Node) ShutDownNode() {
 	n.wg.Wait()
 }
 
-func (n *Node) Start(protocol int) {
+func (n *Node) Start() {
 	n.log.Info.Println("Started Node")
 
 	done := make(chan bool)
 
-	n.setProtocol(protocol)
+	n.setProtocol(correct{})
 
 	go n.server.Start()
 	go n.pinger.serve()

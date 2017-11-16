@@ -9,11 +9,12 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/joonnna/firechain/planetlab"
+	"github.com/joonnna/go-fireflies/planetlab"
 )
 
 const (
-	caPort = 8090
+	caPort  = 8090
+	localIp = "129.242.19.146"
 )
 
 func main() {
@@ -37,6 +38,8 @@ func main() {
 
 	if cmd == "transfer-ca" {
 		addrs = append(addrs, caAddr)
+	} else if cmd == "transfer-local" {
+		addrs = append(addrs, localIp)
 	} else {
 		lines := strings.Split(string(b[:]), "\n")
 
@@ -59,7 +62,7 @@ func main() {
 	}
 	fmt.Println("Nodes affected by cmd: ", len(addrs))
 
-	conf, err := planetlab.GenSshConfig()
+	conf, err := planetlab.GenSshConfig("uitple_firechain")
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -79,11 +82,6 @@ func main() {
 		}
 		planetlab.DoCmds(addrs, planetlab.Run, planetlab.CleanCmd, conf, c)
 	case "deploy":
-		/*
-			for i := 0; i < 2; i++ {
-				addrs = append(addrs, addrs...)
-			}
-		*/
 		_, err := planetlab.ExecuteCmd(caAddr, planetlab.CaCmd, conf, planetlab.Start)
 		if err != nil {
 			log.Fatal(err)
@@ -92,6 +90,13 @@ func main() {
 		planetlab.DoCmds(addrs, planetlab.Start, cmd, conf, c)
 	case "alive":
 		planetlab.DoCmds(addrs, planetlab.Run, planetlab.AliveCmd, conf, c)
+	case "transfer-local":
+		local, err := planetlab.GenSshConfig("jon")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		planetlab.TransferToHosts(addrs, planetlab.ClientPath, local, c)
 	default:
 		fmt.Println("Command not supported")
 		return

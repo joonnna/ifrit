@@ -8,6 +8,6 @@ cd cmd/ca
 
 GOARCH=386 go build
 
-cd ../firechainClient
+cd ../firefliesclient
 
 GOARCH=386 go build

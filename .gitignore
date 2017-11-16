@@ -22,3 +22,6 @@ cpu.pdf
 cmd/firechainClient/cpu.prof
 cmd/firechainClient/mem.prof
 alive_res
+transfer-local_res
+exp_res1_backup
+exp_res_backup

@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	grpcPeer "google.golang.org/grpc/peer"
@@ -33,14 +33,23 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 
 	p, ok := grpcPeer.FromContext(ctx)
 	if !ok {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
 		return nil, errNoPeerInCtx
 	}
 
 	if tlsInfo, ok = p.AuthInfo.(credentials.TLSInfo); !ok {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
 		return nil, errNoTLSInfo
 	}
 
 	if len(tlsInfo.State.PeerCertificates) < 1 {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
 		return nil, errNoCert
 	}
 
@@ -49,7 +58,17 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	key := string(cert.SubjectKeyId[:])
 	pId := newPeerId(cert.SubjectKeyId)
 
-	if !n.shouldBeNeighbours(pId) && !n.viewPeerExist(key) {
+	neighbours := n.shouldBeNeighbours(pId)
+	exist := n.viewPeerExist(key)
+
+	if !neighbours && exist {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
+		return nil, errNotMyNeighbour
+	}
+
+	if !neighbours && !exist {
 		n.log.Err.Println(errNotMyNeighbour)
 		n.log.Debug.Println(p.Addr)
 
@@ -79,8 +98,8 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 		}
 		n.log.Debug.Println(len(reply.Certificates))
 
-		if record := n.getRecordFlag(); record {
-			n.incrementRequestCounter()
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementCompleted()
 		}
 
 		return reply, nil
@@ -95,8 +114,8 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	n.mergeNotes(args.GetNotes())
 	n.mergeAccusations(args.GetAccusations())
 
-	if record := n.getRecordFlag(); record {
-		n.incrementRequestCounter()
+	if record := n.stats.getRecordFlag(); record {
+		n.stats.incrementCompleted()
 	}
 
 	return reply, nil

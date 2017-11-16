@@ -3,7 +3,7 @@ package node
 import (
 	"time"
 
-	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/go-fireflies/lib/protobuf"
 )
 
 type correct struct {
@@ -12,8 +12,23 @@ type correct struct {
 type spamAccusations struct {
 }
 
+type experiment struct {
+	addr    string
+	maxConc int
+}
+
 func (c correct) Rebuttal(n *Node) {
-	neighbours := n.getNeighbours()
+	var err error
+	var neighbours []string
+
+	for {
+		neighbours, err = n.getGossipPartners()
+		if err != nil {
+			n.log.Err.Println(err)
+		} else {
+			break
+		}
+	}
 
 	noteMsg := n.localNoteToPbMsg()
 
@@ -25,7 +40,7 @@ func (c correct) Rebuttal(n *Node) {
 		if addr == n.addr {
 			continue
 		}
-		_, err := n.client.Gossip(addr, msg)
+		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -59,9 +74,6 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	n.log.Debug.Println(len(n.getView()))
-	n.log.Debug.Println(len(n.getLivePeers()))
-	n.log.Debug.Println(n.getNeighbours())
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
@@ -205,7 +217,17 @@ func (sa spamAccusations) Monitor(n *Node) {
 }
 
 func (sa spamAccusations) Rebuttal(n *Node) {
-	neighbours := n.getNeighbours()
+	var err error
+	var neighbours []string
+
+	for {
+		neighbours, err = n.getGossipPartners()
+		if err != nil {
+			n.log.Err.Println(err)
+		} else {
+			break
+		}
+	}
 
 	noteMsg := n.localNoteToPbMsg()
 
@@ -217,7 +239,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 		if addr == n.addr {
 			continue
 		}
-		_, err := n.client.Gossip(addr, msg)
+		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
 			n.log.Err.Println(err)
 			continue
@@ -270,4 +292,131 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 	msg.OwnNote = noteMsg
 
 	return msg, nil
+}
+
+func (e experiment) Rebuttal(n *Node) {
+	var err error
+	var neighbours []string
+
+	for {
+		neighbours, err = n.getGossipPartners()
+		if err != nil {
+			n.log.Err.Println(err)
+		} else {
+			break
+		}
+	}
+
+	noteMsg := n.localNoteToPbMsg()
+
+	msg := &gossip.GossipMsg{
+		OwnNote: noteMsg,
+	}
+
+	for _, addr := range neighbours {
+		if addr == n.addr {
+			continue
+		}
+		_, err = n.client.Gossip(addr, msg)
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
+	}
+}
+
+func dos(addr string, msg *gossip.GossipMsg, n *Node) {
+	_, err := n.client.Gossip(addr, msg)
+	if err != nil {
+		n.log.Err.Println(err, addr)
+	}
+}
+
+func (e experiment) Gossip(n *Node) {
+	msg, err := n.collectGossipContent()
+	if err != nil {
+		return
+	}
+
+	for i := 0; i < e.maxConc; i++ {
+		go dos(e.addr, msg, n)
+	}
+}
+
+func (e experiment) Monitor(n *Node) {
+	for _, ring := range n.ringMap {
+		succ, err := ring.getRingSucc()
+		if err != nil {
+			n.log.Err.Println(err)
+			continue
+		}
+
+		p := n.getLivePeer(succ.key)
+		if p == nil {
+			continue
+		}
+
+		err = n.ping(p)
+		if err != nil {
+			if err != errDead {
+				continue
+			}
+
+			n.log.Info.Printf("%s is dead, accusing", p.addr)
+			peerNote := p.getNote()
+			//Will always have note for a peer in our liveView, except when the peer stems
+			//from the initial contact list of the CA, if it's dead
+			//we should remove it to ensure it doesn't stay in our liveView.
+			//Not possible to accuse a peer without a note.
+			if peerNote == nil {
+				n.removeLivePeer(p.key)
+				continue
+			}
+
+			a := &accusation{
+				peerId:  p.peerId,
+				epoch:   peerNote.epoch,
+				accuser: n.peerId,
+				mask:    peerNote.mask,
+				ringNum: ring.ringNum,
+			}
+
+			acc := p.getRingAccusation(ring.ringNum)
+			if a.equal(acc) {
+				n.log.Info.Println("Already accused peer on this ring")
+				if !n.timerExist(p.key) {
+					n.startTimer(p.key, peerNote, n.peer, p.addr)
+				}
+				continue
+			}
+
+			err = a.sign(n.privKey)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
+
+			err = p.setAccusation(a)
+			if err != nil {
+				n.log.Err.Println(err)
+				continue
+			}
+			if !n.timerExist(p.key) {
+				n.startTimer(p.key, peerNote, n.peer, p.addr)
+			}
+		}
+	}
+}
+
+func (e experiment) Timeouts(n *Node) {
+	timeouts := n.getAllTimeouts()
+	for key, t := range timeouts {
+		n.log.Debug.Println("Have timeout for: ", t.addr)
+		since := time.Since(t.timeStamp)
+		if since.Seconds() > n.nodeDeadTimeout {
+			n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
+			n.deleteTimeout(key)
+			n.removeLivePeer(key)
+		}
+	}
 }
