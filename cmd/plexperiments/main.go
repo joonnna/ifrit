@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -31,8 +32,46 @@ type expArgs struct {
 	numRings int
 	byz      float32
 	timeout  int
-	addrs    []string
 	maxConc  int
+	addrs    []string
+}
+
+func isNeighbor(addrs []string, addr string) bool {
+	for _, a := range addrs {
+		if a == addr {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getNeighbors(ip string) ([]string, error) {
+	var ret []string
+	url := fmt.Sprintf("http://%s:%d/neighbors", ip, clientPort)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+	resp.Body.Close()
+
+	addrs := strings.Split(string(bytes), "\n")
+
+	for _, a := range addrs {
+		if a == "" {
+			continue
+		}
+		ret = append(ret, strings.Split(a, ":")[0])
+	}
+
+	return ret, nil
 }
 
 func sliceDiff(s1, s2 []string) []string {
@@ -63,7 +102,7 @@ func cleanLocal() error {
 	return cmd.Run()
 }
 
-func startMeasurementRequest(addr string) error {
+func startMeasurementRequest(addr string, r io.Reader) error {
 	var resp *http.Response
 	var err error
 
@@ -72,7 +111,7 @@ func startMeasurementRequest(addr string) error {
 
 	for {
 		url := fmt.Sprintf("http://%s:%d/startrecording", addr, startPort)
-		resp, err = http.Get(url)
+		resp, err = http.Post(url, "text", r)
 		if err == nil {
 			break
 		}
@@ -89,28 +128,13 @@ func startMeasurementRequest(addr string) error {
 	return nil
 }
 
-func startDosRequest(addr string, maxConc int) error {
-	var resp *http.Response
-	var err error
-
-	r := bytes.NewReader([]byte(strconv.Itoa(maxConc)))
-
-	tries := 0
-	startPort := clientPort
-
-	for {
-		url := fmt.Sprintf("http://%s:%d/dos", addr, startPort)
-		resp, err = http.Post(url, "text", r)
-		if err == nil {
-			break
-		}
-
-		if tries > 2 {
-			return err
-		}
-		startPort++
-		tries++
+func startDosRequest(addr string, body io.Reader) error {
+	url := fmt.Sprintf("http://%s:%d/dos", addr, clientPort)
+	resp, err := http.Post(url, "text", body)
+	if err != nil {
+		return err
 	}
+
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
 
@@ -224,11 +248,11 @@ func getResult(addr string) (int, error) {
 	return val, nil
 }
 
-func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig, res *os.File) {
+func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 	var deployed []string
 	var numByz int
 
-	saturationTimeout := 60
+	saturationTimeout := 30
 	expDuration := 60
 
 	c := make(chan *planetlab.CmdStatus)
@@ -265,7 +289,32 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig, res *os.File)
 
 	time.Sleep(time.Minute * time.Duration(saturationTimeout))
 
-	err = startMeasurementRequest(dosIp)
+	measureArgs := struct {
+		Byz      float32
+		NumRings int
+		MaxConc  int
+		Duration int
+		Timeout  int
+	}{
+		Byz:      args.byz,
+		NumRings: args.numRings,
+		MaxConc:  args.maxConc,
+		Duration: expDuration,
+		Timeout:  args.timeout,
+	}
+
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(measureArgs)
+
+	neighbors, err := getNeighbors(dosIp)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("Neighbors: ", neighbors)
+
+	err = startMeasurementRequest(dosIp, b)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -275,11 +324,25 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig, res *os.File)
 
 	currByz := 0
 
+	dosArgs := struct {
+		Addr    string
+		Conc    int
+		Timeout int
+	}{
+		Addr:    dosAddr,
+		Conc:    args.maxConc,
+		Timeout: args.timeout,
+	}
+
+	dosBytes := new(bytes.Buffer)
+	json.NewEncoder(dosBytes).Encode(dosArgs)
+
 	for _, addr := range deployed {
-		if addr == dosIp {
+		if addr == dosIp || isNeighbor(neighbors, addr) {
 			continue
 		}
-		err := startDosRequest(addr, args.maxConc)
+
+		err := startDosRequest(addr, dosBytes)
 		if err != nil {
 			fmt.Println(err)
 			continue
@@ -294,40 +357,15 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig, res *os.File)
 
 	fmt.Printf("Started measurement on local node, waiting for experiment to complete(%d mins)\n", expDuration)
 
-	time.Sleep(time.Minute * time.Duration(expDuration))
+	time.Sleep(time.Minute * time.Duration(expDuration+10))
 
-	fmt.Println("Cleaning ca and planetlab nodes")
+	fmt.Println("Finished, starting cleaning")
 	_, err = planetlab.ExecuteCmd(caAddr, planetlab.CaCleanCmd, conf, planetlab.Start)
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	planetlab.DoCmds(deployed, planetlab.Start, planetlab.CleanCmd, conf, c)
-
-	fmt.Println("Started result collection")
-
-	completed, err := getDosResult(dosIp, "numrequests")
-	if err != nil {
-		fmt.Println("Failed to get results")
-		fmt.Println(err)
-	}
-
-	failed, err := getDosResult(dosIp, "numfailedrequests")
-	if err != nil {
-		fmt.Println("Failed to get results")
-		fmt.Println(err)
-	}
-
-	res.Write([]byte(fmt.Sprintf("nodeCount: %d\n", len(deployed))))
-	res.Sync()
-
-	res.Write([]byte(fmt.Sprintf("%d\t%d\t%f\t%d\t%d\n", args.numRings, args.maxConc, args.byz, completed, failed)))
-	res.Sync()
-
-	res.Write([]byte("\n"))
-	res.Sync()
-
-	fmt.Println("Finished, starting cleaning")
 
 	_, err = planetlab.ExecuteCmd(dosIp, planetlab.CleanCmd, local, planetlab.Start)
 	if err != nil {
@@ -378,30 +416,34 @@ func doLatencyExperiment(args *expArgs, conf *ssh.ClientConfig, res *os.File) {
 	currByz := 0
 
 	for _, addr := range deployed {
-		err := startDosRequest(addr, args.timeout)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-
-		byzNodes = append(byzNodes, addr)
-		currByz++
 		if currByz >= numByz {
 			break
 		}
+		/*
+			err := startDosRequest(addr, args.timeout)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+		*/
+
+		byzNodes = append(byzNodes, addr)
+		currByz++
 	}
 
 	correctNodes := sliceDiff(byzNodes, deployed)
 
-	for _, addr := range correctNodes {
-		err := startMeasurementRequest(addr)
-		if err != nil {
-			fmt.Println("Failed to start experiment on:", addr)
-			fmt.Println(err)
-			continue
-		}
+	for _, _ = range correctNodes {
+		/*
+			err := startMeasurementRequest(addr)
+			if err != nil {
+				fmt.Println("Failed to start experiment on:", addr)
+				fmt.Println(err)
+				continue
+			}
 
-		experimentNodes = append(experimentNodes, addr)
+			experimentNodes = append(experimentNodes, addr)
+		*/
 	}
 
 	fmt.Printf("Started measurement on nodes, waiting for experiment to complete %d minutes\n", expDuration)
@@ -488,15 +530,17 @@ func doFullExperiment(numrings int, addrs []string, conf *ssh.ClientConfig, res 
 
 	time.Sleep(time.Minute * 60)
 
-	for _, addr := range deployed {
-		err := startMeasurementRequest(addr)
-		if err != nil {
-			fmt.Println("Failed to start experiment on:", addr)
-			fmt.Println(err)
-			continue
-		}
+	for _, _ = range deployed {
+		/*
+			err := startMeasurementRequest(addr)
+			if err != nil {
+				fmt.Println("Failed to start experiment on:", addr)
+				fmt.Println(err)
+				continue
+			}
 
-		experimentNodes = append(experimentNodes, addr)
+			experimentNodes = append(experimentNodes, addr)
+		*/
 	}
 
 	fmt.Println("Started measurement on nodes, waiting for experiment to complete(1 hour)")
@@ -569,24 +613,31 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-
-	res, err := os.Create(resFile)
-	if err != nil {
-		log.Fatal(err)
-	}
+	/*
+		res, err := os.Create(resFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	*/
 
 	//rings := []int{10, 20, 40, 80, 160, 320, 640, 1280}
-	byzPercent := []float32{0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}
+	//byzPercent := []float32{0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}
+	byzPercent := []float32{0.50}
+	//conc := []int{1, 10, 50, 200}
+	conc := []int{1000}
 	//timeouts := []int{5, 4, 3, 2, 1}
 
 	for _, b := range byzPercent {
-		args := &expArgs{
-			maxConc:  10,
-			byz:      b,
-			numRings: 10,
-			addrs:    addrs,
+		for _, c := range conc {
+			args := &expArgs{
+				maxConc:  c,
+				byz:      b,
+				numRings: 1,
+				addrs:    addrs,
+				timeout:  1,
+			}
+			doDosExperiment(args, conf, localConf)
 		}
-		doDosExperiment(args, conf, localConf, res)
 	}
 
 }

@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,19 @@ type state struct {
 	Trusted  bool
 }
 
+type expArgs struct {
+	MaxConc  int
+	Byz      float32
+	NumRings int
+	Duration int
+}
+
+type dosArgs struct {
+	Addr    string
+	Conc    int
+	Timeout int
+}
+
 func (s state) equal(other *state) bool {
 	return (s.Next == other.Next && s.Prev == other.Prev)
 }
@@ -45,8 +59,8 @@ func (s *state) marshal() io.Reader {
 }
 
 func (n *Node) httpHandler(c chan bool) {
-	//hostName, _ := os.Hostname()
-	hostName := netutils.GetLocalIP()
+	hostName, _ := os.Hostname()
+	//hostName := netutils.GetLocalIP()
 	l, err := netutils.ListenOnPort(hostName, httpPort)
 	if err != nil {
 		n.log.Err.Println(err)
@@ -62,6 +76,7 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/numfailedrequests", n.numFailedRequestsHandler)
 	r.HandleFunc("/latencies", n.latenciesHandler)
 	r.HandleFunc("/dos", n.dosHandler)
+	r.HandleFunc("/neighbors", n.neighborsHandler)
 
 	port := strings.Split(l.Addr().String(), ":")[1]
 
@@ -133,29 +148,35 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 func (n *Node) dosHandler(w http.ResponseWriter, r *http.Request) {
 	n.log.Info.Println("Received dos request, spamming!")
 
-	bytes, err := ioutil.ReadAll(r.Body)
+	var args dosArgs
+
+	err := json.NewDecoder(r.Body).Decode(&args)
 	if err != nil {
 		n.log.Err.Println(err)
 		return
 	}
-
 	r.Body.Close()
 
-	val, err := strconv.Atoi(string(bytes))
-	if err != nil {
-		n.log.Err.Println(err)
-		return
-	}
 	e := experiment{
-		addr:    "129.242.19.146:8100",
-		maxConc: val,
+		addr:    args.Addr, // "129.242.19.146:8100",
+		maxConc: args.Conc,
 	}
+
+	n.setGossipTimeout(args.Timeout)
 	n.setProtocol(e)
 }
 
 func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
-	io.Copy(ioutil.Discard, r.Body)
+	var args expArgs
+
+	err := json.NewDecoder(r.Body).Decode(&args)
+	if err != nil {
+		n.log.Err.Println(err)
+		return
+	}
 	r.Body.Close()
+
+	go n.stats.doExp(&args)
 
 	n.stats.setRecordFlag(true)
 }
@@ -172,6 +193,29 @@ func (n *Node) numFailedRequestsHandler(w http.ResponseWriter, r *http.Request) 
 	r.Body.Close()
 
 	w.Write([]byte(strconv.Itoa(n.stats.getFailedRequests())))
+}
+
+func (n *Node) neighborsHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	var ret string
+
+	for _, r := range n.ringMap {
+		succ, err := r.getRingSucc()
+		if err != nil {
+			continue
+		}
+
+		prev, err := r.getRingPrev()
+		if err != nil {
+			continue
+		}
+
+		ret += fmt.Sprintf("%s\n%s\n", succ.addr, prev.addr)
+	}
+
+	w.Write([]byte(ret))
 }
 
 func (n *Node) latenciesHandler(w http.ResponseWriter, r *http.Request) {

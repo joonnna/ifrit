@@ -1,11 +1,17 @@
 package node
 
 import (
+	"fmt"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/joonnna/go-fireflies/logger"
 )
 
 type recorder struct {
+	log *logger.Log
+
 	recordFlag      bool
 	recordMutex     sync.RWMutex
 	recordTimestamp time.Time
@@ -92,4 +98,21 @@ func (r *recorder) getFailedRequests() int {
 	defer r.failedRequestsMutex.RUnlock()
 
 	return r.failedRequests
+}
+
+func (r *recorder) doExp(args *expArgs) {
+	r.log.Info.Printf("Starting experiment, sleeping for %d minutes\n", args.Duration)
+	f, err := os.OpenFile("/home/jon/res", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		r.log.Err.Println(err)
+		return
+	}
+
+	time.Sleep(time.Minute * time.Duration(args.Duration))
+
+	completed := r.getCompletedRequests()
+	failed := r.getFailedRequests()
+
+	f.Write([]byte(fmt.Sprintf("%d\t%d\t%f\t%d\t%d\n", args.NumRings, args.MaxConc, args.Byz, completed, failed)))
+	f.Close()
 }

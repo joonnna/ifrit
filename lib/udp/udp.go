@@ -3,6 +3,7 @@ package udp
 import (
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/joonnna/go-fireflies/lib/netutils"
@@ -17,8 +18,8 @@ type Server struct {
 
 func NewServer(log *logger.Log) (*Server, error) {
 	port := netutils.GetOpenPort()
-	hostName := netutils.GetLocalIP()
-	//hostName, _ := os.Hostname()
+	//hostName := netutils.GetLocalIP()
+	hostName, _ := os.Hostname()
 	addr := fmt.Sprintf("%s:%d", hostName, port)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {

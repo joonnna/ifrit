@@ -266,7 +266,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		client:          c,
 		server:          s,
 		peer:            p,
-		stats:           &recorder{recordDuration: 5},
+		stats:           &recorder{recordDuration: 60, log: logger},
 		log:             logger,
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
