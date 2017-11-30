@@ -40,6 +40,20 @@ func (c *Client) Init(config *tls.Config) {
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*5))
 }
 
+func (c *Client) Dos(addr string, args *gossip.GossipMsg) (*gossip.Partners, error) {
+	client, err := c.dial(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := client.Spread(context.Background(), args)
+	if err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
 func (c *Client) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error) {
 	client, err := c.getClient(addr)
 	if err != nil {

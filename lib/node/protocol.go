@@ -326,7 +326,7 @@ func (e experiment) Rebuttal(n *Node) {
 }
 
 func dos(addr string, msg *gossip.GossipMsg, n *Node) {
-	_, err := n.client.Gossip(addr, msg)
+	_, err := n.client.Dos(addr, msg)
 	if err != nil {
 		n.log.Err.Println(err, addr)
 	}

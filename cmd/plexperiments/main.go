@@ -24,8 +24,8 @@ const (
 	caAddr     = "ple2.cesnet.cz"
 	caPort     = 8090
 	clientPort = 12300
-	dosAddr    = "129.242.19.146:8100"
-	dosIp      = "129.242.19.146"
+	dosAddr    = "129.242.19.134:8100"
+	dosIp      = "129.242.19.134"
 )
 
 type expArgs struct {
@@ -621,10 +621,10 @@ func main() {
 	*/
 
 	//rings := []int{10, 20, 40, 80, 160, 320, 640, 1280}
-	//byzPercent := []float32{0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}
-	byzPercent := []float32{0.50}
-	//conc := []int{1, 10, 50, 200}
-	conc := []int{1000}
+	byzPercent := []float32{0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}
+	//byzPercent := []float32{0.50}
+	conc := []int{100, 200, 400, 800}
+	//conc := []int{100}
 	//timeouts := []int{5, 4, 3, 2, 1}
 
 	for _, b := range byzPercent {

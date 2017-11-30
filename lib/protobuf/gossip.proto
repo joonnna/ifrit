@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 service gossip {
-    rpc Monitor (Ping) returns (Pong) {}
     rpc Spread (GossipMsg) returns (Partners) {}
 }
 
@@ -12,15 +11,18 @@ message GossipMsg {
     Note ownNote = 4;
 }
 
+//Raw certificate
 message Certificate {
     bytes raw = 1;
 }
 
+//Only populated if not a valid neighbor
 message Partners {
     repeated Certificate certificates = 1;
     repeated Note Notes = 2;
 }
 
+//accuser and accused are the respective node ids
 message Accusation {
     uint64 epoch = 1;
     bytes accuser = 2;
@@ -37,17 +39,8 @@ message Note {
     Signature signature = 4;
 }
 
+//Raw elliptic signature
 message Signature {
     bytes r = 1;
     bytes s = 2;
-}
-
-
-message Ping {
-    bytes nonce = 1;
-}
-
-message Pong {
-    bytes nonce = 1;
-    Signature signature = 2;
 }
