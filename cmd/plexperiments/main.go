@@ -24,8 +24,15 @@ const (
 	caAddr     = "ple2.cesnet.cz"
 	caPort     = 8090
 	clientPort = 12300
-	dosAddr    = "129.242.19.134:8100"
-	dosIp      = "129.242.19.134"
+	//dosAddr    = "129.242.19.134:8100"
+	//dosIp      = "129.242.19.134"
+	//dosAddr = "129.242.85.226:8100"
+	//dosIp   = "129.242.85.226"
+	//dosAddr = "129.242.15.67:8100"
+	//dosIp   = "129.242.15.67"
+
+	dosAddr = "195.113.161.83:8100"
+	dosIp   = "195.113.161.83"
 )
 
 type expArgs struct {
@@ -47,12 +54,26 @@ func isNeighbor(addrs []string, addr string) bool {
 }
 
 func getNeighbors(ip string) ([]string, error) {
+	var err error
+	var resp *http.Response
 	var ret []string
-	url := fmt.Sprintf("http://%s:%d/neighbors", ip, clientPort)
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Println(err)
-		return nil, err
+
+	tries := 0
+	startPort := clientPort
+
+	for {
+		if tries > 10 {
+			return nil, err
+		}
+		url := fmt.Sprintf("http://%s:%d/neighbors", ip, startPort)
+		resp, err = http.Get(url)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			break
+		}
+		startPort++
+		tries++
 	}
 
 	bytes, err := ioutil.ReadAll(resp.Body)
@@ -91,7 +112,7 @@ func sliceDiff(s1, s2 []string) []string {
 	return retSlice
 }
 
-func deployLocal(caAddr string) error {
+func deployLocal() error {
 	cmd := exec.Command("/usr/local/go/bin/go", "run", "cmd/firefliesclient/main.go", fmt.Sprintf("-addr=%s:%d", caAddr, caPort))
 
 	return cmd.Start()
@@ -267,11 +288,15 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 	}
 	planetlab.DoCmds(args.addrs, planetlab.Start, cmd, conf, c)
 
-	_, err = planetlab.ExecuteCmd(dosIp, cmd, local, planetlab.Start)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	//deployLocal()
+
+	/*
+		_, err = planetlab.ExecuteCmd(dosIp, cmd, local, planetlab.Start)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	*/
 
 	fmt.Println("Deploying...")
 	for i := 0; i < len(args.addrs); i++ {
@@ -284,6 +309,14 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 			break
 		}
 	}
+
+	neighbors, err := getNeighbors(dosIp)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("NeighborsTest: ", neighbors)
 
 	fmt.Printf("Deployed on %d nodes, waiting %d minutes for network saturation\n", len(deployed), saturationTimeout)
 
@@ -306,7 +339,7 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(measureArgs)
 
-	neighbors, err := getNeighbors(dosIp)
+	neighbors, err = getNeighbors(dosIp)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -338,6 +371,10 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 	json.NewEncoder(dosBytes).Encode(dosArgs)
 
 	for _, addr := range deployed {
+		if currByz >= numByz {
+			break
+		}
+
 		if addr == dosIp || isNeighbor(neighbors, addr) {
 			continue
 		}
@@ -350,9 +387,6 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 
 		fmt.Println("DoS node: ", addr)
 		currByz++
-		if currByz >= numByz {
-			break
-		}
 	}
 
 	fmt.Printf("Started measurement on local node, waiting for experiment to complete(%d mins)\n", expDuration)
@@ -367,11 +401,13 @@ func doDosExperiment(args *expArgs, conf, local *ssh.ClientConfig) {
 
 	planetlab.DoCmds(deployed, planetlab.Start, planetlab.CleanCmd, conf, c)
 
-	_, err = planetlab.ExecuteCmd(dosIp, planetlab.CleanCmd, local, planetlab.Start)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
+	/*
+		_, err = planetlab.ExecuteCmd(dosIp, planetlab.CleanCmd, local, planetlab.Start)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	*/
 
 	time.Sleep(time.Minute * 1)
 }
@@ -621,9 +657,9 @@ func main() {
 	*/
 
 	//rings := []int{10, 20, 40, 80, 160, 320, 640, 1280}
-	byzPercent := []float32{0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40}
+	byzPercent := []float32{0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95}
 	//byzPercent := []float32{0.50}
-	conc := []int{100, 200, 400, 800}
+	conc := []int{10}
 	//conc := []int{100}
 	//timeouts := []int{5, 4, 3, 2, 1}
 

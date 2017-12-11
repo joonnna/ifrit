@@ -28,8 +28,8 @@ func NewServer() (*Server, error) {
 	//hostName := netutils.GetLocalIP()
 	//hostName := "0.0.0.0"
 	hostName, _ := os.Hostname()
-	//l, err := netutils.ListenOnPort(hostName, 8100)
-	l, err := netutils.GetListener(hostName)
+	l, err := netutils.ListenOnPort(hostName, 8100)
+	//l, err := netutils.GetListener(hostName)
 	if err != nil {
 		return nil, err
 	}

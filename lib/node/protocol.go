@@ -326,17 +326,21 @@ func (e experiment) Rebuttal(n *Node) {
 }
 
 func dos(addr string, msg *gossip.GossipMsg, n *Node) {
-	_, err := n.client.Dos(addr, msg)
+	_, err := n.client.Gossip(addr, msg)
 	if err != nil {
 		n.log.Err.Println(err, addr)
 	}
 }
 
 func (e experiment) Gossip(n *Node) {
-	msg, err := n.collectGossipContent()
-	if err != nil {
-		return
-	}
+	/*
+		msg, err := n.collectGossipContent()
+		if err != nil {
+			return
+		}
+	*/
+
+	msg := &gossip.GossipMsg{}
 
 	for i := 0; i < e.maxConc; i++ {
 		go dos(e.addr, msg, n)

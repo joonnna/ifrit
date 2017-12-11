@@ -102,7 +102,7 @@ func (r *recorder) getFailedRequests() int {
 
 func (r *recorder) doExp(args *expArgs) {
 	r.log.Info.Printf("Starting experiment, sleeping for %d minutes\n", args.Duration)
-	f, err := os.OpenFile("/home/jon/res", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("/home/uitple_firechain/res", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		r.log.Err.Println(err)
 		return

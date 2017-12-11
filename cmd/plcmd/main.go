@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	caPort  = 8090
-	localIp = "129.242.19.146"
+	caPort = 8090
+	//localIp = "129.242.19.134"
+	localIp = "129.242.15.67"
 )
 
 func main() {

@@ -90,7 +90,7 @@ func GenSshConfig(user string) (*ssh.ClientConfig, error) {
 		Auth: []ssh.AuthMethod{
 			// Use the PublicKeys method for remote authentication.
 			ssh.PublicKeys(signer),
-			ssh.Password("edufetteidiot123"),
+			ssh.Password("feeder123"),
 		},
 		//Config: ssh.Config{
 		//	KeyExchanges: hostKeys, //[]string{hostKey.Type()},
