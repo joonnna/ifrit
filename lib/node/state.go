@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/joonnna/go-fireflies/lib/netutils"
+	"github.com/joonnna/ifrit/lib/netutils"
 	"github.com/rs/cors"
 )
 

@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/joonnna/go-fireflies/planetlab"
+	"github.com/joonnna/ifrit/planetlab"
 )
 
 const (

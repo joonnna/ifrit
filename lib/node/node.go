@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/go-fireflies/lib/protobuf"
-	"github.com/joonnna/go-fireflies/lib/udp"
-	"github.com/joonnna/go-fireflies/logger"
+	"github.com/joonnna/ifrit/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/udp"
+	"github.com/joonnna/ifrit/logger"
 )
 
 var (

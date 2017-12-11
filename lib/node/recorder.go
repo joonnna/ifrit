@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/go-fireflies/logger"
+	"github.com/joonnna/ifrit/logger"
 )
 
 type recorder struct {

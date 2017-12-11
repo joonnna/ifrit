@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/joonnna/go-fireflies/lib/netutils"
-	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/netutils"
+	"github.com/joonnna/ifrit/lib/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"

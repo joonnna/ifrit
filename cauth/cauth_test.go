@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joonnna/firechain/lib/protobuf/test"
+	"github.com/joonnna/ifrit/lib/protobuf/test"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

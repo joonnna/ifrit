@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joonnna/go-fireflies/planetlab"
+	"github.com/joonnna/ifrit/planetlab"
 	"golang.org/x/crypto/ssh"
 )
 

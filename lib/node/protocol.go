@@ -3,7 +3,7 @@ package node
 import (
 	"time"
 
-	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/protobuf"
 )
 
 type correct struct {

@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/protobuf"
 )
 
 func (n *note) sign(privKey *ecdsa.PrivateKey) error {

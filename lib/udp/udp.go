@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/joonnna/go-fireflies/lib/netutils"
-	"github.com/joonnna/go-fireflies/logger"
+	"github.com/joonnna/ifrit/lib/netutils"
+	"github.com/joonnna/ifrit/logger"
 )
 
 type Server struct {

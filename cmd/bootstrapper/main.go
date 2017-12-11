@@ -16,8 +16,8 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/joonnna/go-fireflies/cauth"
-	"github.com/joonnna/go-fireflies/client"
+	"github.com/joonnna/ifrit/cauth"
+	"github.com/joonnna/ifrit/client"
 )
 
 const (

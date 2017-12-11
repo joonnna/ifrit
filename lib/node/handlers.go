@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/go-fireflies/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	grpcPeer "google.golang.org/grpc/peer"

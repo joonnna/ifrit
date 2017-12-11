@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/joonnna/go-fireflies/cauth"
+	"github.com/joonnna/ifrit/cauth"
 )
 
 func main() {

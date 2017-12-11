@@ -14,7 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/joonnna/go-fireflies/client"
+	"github.com/joonnna/ifrit/client"
 )
 
 var (

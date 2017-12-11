@@ -4,7 +4,7 @@ import (
 	"crypto/ecdsa"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/firechain/lib/protobuf"
+	"github.com/joonnna/ifrit/lib/protobuf"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -3,7 +3,7 @@ package node
 import (
 	"testing"
 
-	"github.com/joonnna/go-fireflies/logger"
+	"github.com/joonnna/ifrit/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"

@@ -1,8 +1,8 @@
 package client
 
 import (
-	"github.com/joonnna/go-fireflies/lib/node"
-	"github.com/joonnna/go-fireflies/lib/rpc"
+	"github.com/joonnna/ifrit/lib/node"
+	"github.com/joonnna/ifrit/lib/rpc"
 )
 
 type Client struct {
