@@ -196,6 +196,10 @@ func (n *Node) getGossipTimeout() time.Duration {
 	return n.gossipTimeout
 }
 
+func (n *Node) LiveMembers() []string {
+	return n.getLivePeerAddrs()
+}
+
 func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
 	var extValue []byte
