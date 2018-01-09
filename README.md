@@ -1,21 +1,13 @@
-#How to use Ifrit
-
 How to install golang: https://golang.org/doc/install
 How to setup golang environment: https://golang.org/doc/code.html
 
-We assume that the user has setup his/her golang environemnt as described in the link above.
-With the following directory structure:
-golang/src/github.com/
-
-Steps:
-1. Create a folder named "joonnna" and place it under the github.com directory.
-2. Copy the Ifrit folder from src/ifrit in the hand-in deliverable to the "joonnna" folder. (Directory structure should now be: golang/src/github.com/joonnna/ifrit)
-3. Now you can include the library in any golang project with the following statement: 
 Client:
 import github.com/joonnna/ifrit/client
 
 Certificate authority: 
 import github.com/joonnna/ifrit/cauth
+
+To download Ifrit simply issue the following command after including it in a src file "get ./..."
 
 An example usage:
 package main
