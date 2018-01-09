@@ -1,15 +1,17 @@
 How to install golang: https://golang.org/doc/install
 How to setup golang environment: https://golang.org/doc/code.html
 
-Client:
+##Client:
 import github.com/joonnna/ifrit/client
 
-Certificate authority: 
+##Certificate authority: 
 import github.com/joonnna/ifrit/cauth
 
 To download Ifrit simply issue the following command after including it in a src file "get ./..."
 
-An example usage:
+##An example usage:
+
+```go
 package main
 
 import (
@@ -29,5 +31,5 @@ func main() {
 		go c.Start()
 	}
 }
-
+'''
 
