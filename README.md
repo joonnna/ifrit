@@ -10,7 +10,7 @@ import github.com/joonnna/ifrit/client
 ## Certificate authority
 import github.com/joonnna/ifrit/cauth
 
-To download Ifrit simply issue the following command after including it in a src file "get ./..."
+To download Ifrit simply issue the following command after including it in a src file "go get ./..."
 
 ## An example usage
 
