@@ -303,25 +303,6 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 
 	n.recentNote = localNote
 
-	a := &accusation{
-		peerId:  n.peerId,
-		epoch:   n.recentNote.epoch,
-		accuser: n.peerId,
-		mask:    n.recentNote.mask,
-		ringNum: n.numRings,
-	}
-
-	err = a.sign(n.privKey)
-	if err != nil {
-		n.log.Err.Println(err)
-		return nil, err
-	}
-
-	n.log.Debug.Println(len(n.localCert.Raw))
-	n.log.Debug.Println(len(a.s))
-
-	n.log.Debug.Println(len(n.recentNote.r))
-	n.log.Debug.Println(len(n.recentNote.s))
 	for _, c := range certs.knownCerts {
 		if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
 			continue
