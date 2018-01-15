@@ -21,6 +21,10 @@ var (
 	errNoAddr = errors.New("No certificate authority address provided, can't continue")
 )
 
+func cmp(this, other []byte) bool {
+	return string(this) == string(other)
+}
+
 func main() {
 	var caAddr string
 	var cpuprofile, memprofile string
@@ -64,7 +68,7 @@ func main() {
 		panic(errNoAddr)
 	}
 
-	c, err := client.NewClient(caAddr)
+	c, err := client.NewClient(caAddr, cmp)
 	if err != nil {
 		fmt.Println(err)
 		panic(err)

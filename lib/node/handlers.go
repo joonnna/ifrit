@@ -61,6 +61,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	neighbours := n.shouldBeNeighbours(pId)
 	exist := n.viewPeerExist(key)
 
+	//Peers that have already been seen should be rejected
 	if !neighbours && exist {
 		if record := n.stats.getRecordFlag(); record {
 			n.stats.incrementFailed()
@@ -68,10 +69,8 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 		return nil, errNotMyNeighbour
 	}
 
+	//Help new peer integrate into the network
 	if !neighbours && !exist {
-		n.log.Err.Println(errNotMyNeighbour)
-		n.log.Debug.Println(p.Addr)
-
 		if valid := n.evalCertificate(cert); !valid {
 			return nil, errNoCert
 		}
@@ -96,7 +95,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 				}
 			}
 		}
-		n.log.Debug.Println(len(reply.Certificates))
 
 		if record := n.stats.getRecordFlag(); record {
 			n.stats.incrementCompleted()
@@ -113,16 +111,11 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	n.mergeCertificates(args.GetCertificates())
 	n.mergeNotes(args.GetNotes())
 	n.mergeAccusations(args.GetAccusations())
+	n.mergeGossip(args.GetData())
 
 	if record := n.stats.getRecordFlag(); record {
 		n.stats.incrementCompleted()
 	}
-
-	return reply, nil
-}
-
-func (n *Node) Monitor(ctx context.Context, args *gossip.Ping) (*gossip.Pong, error) {
-	reply := &gossip.Pong{}
 
 	return reply, nil
 }
@@ -396,6 +389,20 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	}
 
 	return true
+}
+
+func (n *Node) mergeGossip(set []*gossip.Data) {
+	for _, entry := range set {
+		n.evalGossip(entry)
+	}
+}
+
+func (n *Node) evalGossip(item *gossip.Data) {
+	if exists := n.gossipExists(string(item.Id)); exists {
+		return
+	}
+
+	n.addGossip(item.Content, string(item.Id))
 }
 
 func validMask(mask []byte, maxByz uint32, numRings uint32) error {

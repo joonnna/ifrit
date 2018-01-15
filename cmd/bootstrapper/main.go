@@ -24,6 +24,10 @@ const (
 	port = 5632
 )
 
+func cmp(this, other []byte) bool {
+	return string(this) == string(other)
+}
+
 type bootStrapper struct {
 	clientList      []*client.Client
 	clientListMutex sync.RWMutex
@@ -35,7 +39,7 @@ func (b *bootStrapper) startClient() {
 	b.clientListMutex.Lock()
 	defer b.clientListMutex.Unlock()
 
-	c, err := client.NewClient(b.entryAddr)
+	c, err := client.NewClient(b.entryAddr, cmp)
 	if err != nil {
 		fmt.Println(err)
 		return

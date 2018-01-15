@@ -9,6 +9,7 @@ message GossipMsg {
     repeated Note notes = 2;
     repeated Accusation accusations = 3;
     Note ownNote = 4;
+    repeated Data data = 5;
 }
 
 //Raw certificate
@@ -43,4 +44,18 @@ message Note {
 message Signature {
     bytes r = 1;
     bytes s = 2;
+}
+
+message Data {
+    bytes content = 1;
+    bytes id = 2;
+}
+
+message Ping {
+    bytes nonce = 1;
+}
+
+message Pong {
+    bytes nonce = 1;
+    Signature signature = 2;
 }

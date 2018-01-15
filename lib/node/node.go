@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 var (
 	errNoRingNum = errors.New("No ringnumber present in received certificate")
 	errNoId      = errors.New("No id present in received certificate")
+	errNoData    = errors.New("Gossip data has zero length")
 )
 
 const (
@@ -42,6 +44,10 @@ type Node struct {
 
 	client client
 	server server
+
+	gossipDataMap   map[string][]byte
+	gossipDataMutex sync.RWMutex
+	cmpGossip       func(this, other []byte) bool
 
 	wg       *sync.WaitGroup
 	exitChan chan bool
@@ -69,7 +75,6 @@ type client interface {
 	Init(config *tls.Config)
 	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
 	Dos(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
-	Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error)
 }
 
 type server interface {
@@ -158,6 +163,13 @@ func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
 
 	msg.OwnNote = n.localNoteToPbMsg()
 
+	gossipContent := n.getGossipData()
+
+	for _, g := range gossipContent {
+		entry := &gossip.Data{Content: g.Content, Id: g.Id}
+		msg.Data = append(msg.Data, entry)
+	}
+
 	return msg, nil
 }
 
@@ -200,7 +212,62 @@ func (n *Node) LiveMembers() []string {
 	return n.getLivePeerAddrs()
 }
 
-func NewNode(caAddr string, c client, s server) (*Node, error) {
+func (n *Node) getGossipData() []*gossip.Data {
+	n.gossipDataMutex.RLock()
+	defer n.gossipDataMutex.RUnlock()
+
+	var data []*gossip.Data
+
+	for id, val := range n.gossipDataMap {
+		data = append(data, &gossip.Data{Id: []byte(id), Content: val})
+	}
+
+	return data
+}
+
+func (n *Node) gossipExists(id string) bool {
+	n.gossipDataMutex.RLock()
+	defer n.gossipDataMutex.RUnlock()
+
+	_, exists := n.gossipDataMap[id]
+
+	return exists
+}
+
+func (n *Node) addGossip(data []byte, id string) {
+	n.gossipDataMutex.Lock()
+	defer n.gossipDataMutex.Unlock()
+
+	if _, exists := n.gossipDataMap[id]; exists {
+		return
+	}
+
+	n.gossipDataMap[id] = data
+}
+
+func (n *Node) AppendGossipData(id []byte, data io.Reader) error {
+	n.gossipDataMutex.Lock()
+	defer n.gossipDataMutex.Unlock()
+
+	var bytes []byte
+
+	numRead, err := data.Read(bytes)
+	if err != nil {
+		n.log.Err.Println(err)
+		return err
+	}
+
+	if numRead <= 0 {
+		n.log.Err.Println(errNoData)
+		return errNoData
+	}
+
+	n.gossipDataMap[string(id)] = bytes
+
+	return nil
+}
+
+func NewNode(caAddr string, c client, s server, cmp func(this, other []byte) bool) (*Node, error) {
 	var i uint32
 	var extValue []byte
 
@@ -276,6 +343,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
 		trustedBootNode: certs.trusted,
+		cmpGossip:       cmp,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))

@@ -69,21 +69,6 @@ func (c *Client) Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, 
 	return r, nil
 }
 
-func (c *Client) Monitor(addr string, args *gossip.Ping) (*gossip.Pong, error) {
-	client, err := c.getClient(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	r, err := client.Monitor(context.Background(), args)
-	if err != nil {
-		c.removeConnection(addr)
-		return nil, err
-	}
-
-	return r, nil
-}
-
 func (c *Client) dial(addr string) (gossip.GossipClient, error) {
 	var client gossip.GossipClient
 
