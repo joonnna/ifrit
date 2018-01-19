@@ -8,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -45,10 +44,6 @@ type Node struct {
 	client client
 	server server
 
-	gossipDataMap   map[string][]byte
-	gossipDataMutex sync.RWMutex
-	cmpGossip       func(this, other []byte) bool
-
 	wg       *sync.WaitGroup
 	exitChan chan bool
 
@@ -73,8 +68,8 @@ type Node struct {
 
 type client interface {
 	Init(config *tls.Config)
-	Gossip(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
-	Dos(addr string, args *gossip.GossipMsg) (*gossip.Partners, error)
+	Gossip(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error)
+	Dos(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error)
 }
 
 type server interface {
@@ -140,35 +135,25 @@ func (n *Node) checkTimeouts() {
 }
 
 func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
-	msg := &gossip.GossipMsg{}
+	msg := &gossip.GossipMsg{
+		ExistingHosts: make(map[string]uint64),
+	}
 
 	view := n.getView()
 
 	for _, p := range view {
-		c, n, a := p.createPbInfo()
+		peerEpoch := uint64(0)
 
-		msg.Certificates = append(msg.Certificates, c)
-		if n != nil {
-			msg.Notes = append(msg.Notes, n)
+		peerNote := p.getNote()
+		if peerNote != nil {
+			peerEpoch = peerNote.epoch
 		}
 
-		if a != nil {
-			for _, acc := range a {
-				if acc != nil {
-					msg.Accusations = append(msg.Accusations, acc)
-				}
-			}
-		}
+		msg.ExistingHosts[p.key] = peerEpoch
 	}
 
 	msg.OwnNote = n.localNoteToPbMsg()
-
-	gossipContent := n.getGossipData()
-
-	for _, g := range gossipContent {
-		entry := &gossip.Data{Content: g.Content, Id: g.Id}
-		msg.Data = append(msg.Data, entry)
-	}
+	msg.Rebuttal = false
 
 	return msg, nil
 }
@@ -212,65 +197,9 @@ func (n *Node) LiveMembers() []string {
 	return n.getLivePeerAddrs()
 }
 
-func (n *Node) getGossipData() []*gossip.Data {
-	n.gossipDataMutex.RLock()
-	defer n.gossipDataMutex.RUnlock()
-
-	var data []*gossip.Data
-
-	for id, val := range n.gossipDataMap {
-		data = append(data, &gossip.Data{Id: []byte(id), Content: val})
-	}
-
-	return data
-}
-
-func (n *Node) gossipExists(id string) bool {
-	n.gossipDataMutex.RLock()
-	defer n.gossipDataMutex.RUnlock()
-
-	_, exists := n.gossipDataMap[id]
-
-	return exists
-}
-
-func (n *Node) addGossip(data []byte, id string) {
-	n.gossipDataMutex.Lock()
-	defer n.gossipDataMutex.Unlock()
-
-	if _, exists := n.gossipDataMap[id]; exists {
-		return
-	}
-
-	n.gossipDataMap[id] = data
-}
-
-func (n *Node) AppendGossipData(id []byte, data io.Reader) error {
-	n.gossipDataMutex.Lock()
-	defer n.gossipDataMutex.Unlock()
-
-	var bytes []byte
-
-	numRead, err := data.Read(bytes)
-	if err != nil {
-		n.log.Err.Println(err)
-		return err
-	}
-
-	if numRead <= 0 {
-		n.log.Err.Println(errNoData)
-		return errNoData
-	}
-
-	n.gossipDataMap[string(id)] = bytes
-
-	return nil
-}
-
-func NewNode(caAddr string, c client, s server, cmp func(this, other []byte) bool) (*Node, error) {
+func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
 	var extValue []byte
-
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
 
 	udpServer, err := udp.NewServer(logger)
@@ -329,9 +258,9 @@ func NewNode(caAddr string, c client, s server, cmp func(this, other []byte) boo
 	n := &Node{
 		exitChan:        make(chan bool, 1),
 		wg:              &sync.WaitGroup{},
-		gossipTimeout:   time.Second * 15,
-		monitorTimeout:  time.Second * 15,
-		nodeDeadTimeout: 200,
+		gossipTimeout:   time.Second * 5,
+		monitorTimeout:  time.Second * 5,
+		nodeDeadTimeout: 20,
 		view:            v,
 		pinger:          newPinger(udpServer, privKey, logger),
 		privKey:         privKey,
@@ -343,7 +272,6 @@ func NewNode(caAddr string, c client, s server, cmp func(this, other []byte) boo
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
 		trustedBootNode: certs.trusted,
-		cmpGossip:       cmp,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -405,25 +333,25 @@ func (n *Node) Start() {
 	go n.server.Start()
 	go n.pinger.serve()
 
-	n.wg.Add(3)
+	n.wg.Add(4)
 	go n.gossipLoop()
 	go n.monitor()
 	go n.checkTimeouts()
-	//go n.updateState()
+	go n.updateState()
 
 	go n.httpHandler(done)
 
 	<-done
-	/*
-		for _, r := range n.ringMap {
-			for {
-				err := n.add(r.ringNum)
-				if err == nil {
-					break
-				}
+
+	for _, r := range n.ringMap {
+		for {
+			err := n.add(r.ringNum)
+			if err == nil {
+				break
 			}
 		}
-	*/
+	}
+
 	<-n.exitChan
 	n.server.ShutDown()
 	n.pinger.shutdown()

@@ -1,26 +1,32 @@
 syntax = "proto3";
 
 service gossip {
-    rpc Spread (GossipMsg) returns (Partners) {}
+    rpc Spread (GossipMsg) returns (GossipResponse) {}
 }
 
 message GossipMsg {
+    //repeated NodeInfo existingNodes
+    map<string, uint64> existingHosts = 1;
+    Note ownNote = 2;
+    bool rebuttal = 3;
+}
+/*
+message HostState {
+    uint64 epoch = 1;
+    bool accused = 2;
+}
+*/
+
+//Only populated if not a valid neighbor
+message GossipResponse {
     repeated Certificate certificates = 1;
     repeated Note notes = 2;
     repeated Accusation accusations = 3;
-    Note ownNote = 4;
-    repeated Data data = 5;
 }
 
 //Raw certificate
 message Certificate {
     bytes raw = 1;
-}
-
-//Only populated if not a valid neighbor
-message Partners {
-    repeated Certificate certificates = 1;
-    repeated Note Notes = 2;
 }
 
 //accuser and accused are the respective node ids

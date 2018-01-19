@@ -25,11 +25,11 @@ var (
 	errInvalidMaskLength       = errors.New("Mask is of invalid length")
 )
 
-func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Partners, error) {
+func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.GossipResponse, error) {
 	var tlsInfo credentials.TLSInfo
 	var ok bool
 
-	reply := &gossip.Partners{}
+	reply := &gossip.GossipResponse{}
 
 	p, ok := grpcPeer.FromContext(ctx)
 	if !ok {
@@ -108,10 +108,41 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Part
 	}
 
 	n.evalNote(args.GetOwnNote())
-	n.mergeCertificates(args.GetCertificates())
-	n.mergeNotes(args.GetNotes())
-	n.mergeAccusations(args.GetAccusations())
-	n.mergeGossip(args.GetData())
+
+	//Already evaluated the new note, can return an empty reply
+	if isRebuttal := args.GetRebuttal(); isRebuttal {
+		return reply, nil
+	}
+
+	given := args.GetExistingHosts()
+
+	for _, p := range n.getView() {
+		if _, exists := given[p.key]; !exists {
+			reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.cert.Raw})
+			if note := p.getNote(); note != nil {
+				reply.Notes = append(reply.Notes, note.toPbMsg())
+			}
+		} else {
+			if note := p.getNote(); note != nil && note.epoch > given[p.key] {
+				reply.Notes = append(reply.Notes, note.toPbMsg())
+			}
+		}
+
+		//No solution yet to avoid transferring all accusations
+		//Transferring all notes are avoided by checking epoch numbers
+		accs := p.getAllAccusations()
+		for _, a := range accs {
+			if a != nil {
+				reply.Accusations = append(reply.Accusations, a.toPbMsg())
+			}
+		}
+	}
+
+	if _, exists := given[n.key]; exists {
+		if given[n.key] < n.getEpoch() {
+			reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
+		}
+	}
 
 	if record := n.stats.getRecordFlag(); record {
 		n.stats.incrementCompleted()
@@ -391,6 +422,7 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	return true
 }
 
+/*
 func (n *Node) mergeGossip(set []*gossip.Data) {
 	for _, entry := range set {
 		n.evalGossip(entry)
@@ -404,7 +436,7 @@ func (n *Node) evalGossip(item *gossip.Data) {
 
 	n.addGossip(item.Content, string(item.Id))
 }
-
+*/
 func validMask(mask []byte, maxByz uint32, numRings uint32) error {
 	var deactivated uint32
 

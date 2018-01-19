@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	stateAddr = "http://129.242.19.146:8095"
+	stateAddr = "http://129.242.19.134:8095"
 	httpPort  = 12300
 	//stateAddr = "http://localhost:8080"
 )
@@ -290,8 +290,7 @@ func (n *Node) newState(ringId uint32) *state {
 	}
 
 	return &state{
-		ID: id,
-		//Neighbours: n.getNeighbourAddrs(),
+		ID:       id,
 		Next:     nextId,
 		Prev:     prevId,
 		HttpAddr: n.httpAddr,

@@ -69,7 +69,7 @@ func ListenOnPort(hostName string, port int) (net.Listener, error) {
 			break
 		}
 
-		if startPort > (port + 10) {
+		if startPort > (port + 100) {
 			return l, errFoundNoPort
 		}
 

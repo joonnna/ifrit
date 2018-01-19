@@ -24,10 +24,6 @@ const (
 	port = 5632
 )
 
-func cmp(this, other []byte) bool {
-	return string(this) == string(other)
-}
-
 type bootStrapper struct {
 	clientList      []*client.Client
 	clientListMutex sync.RWMutex
@@ -39,7 +35,7 @@ func (b *bootStrapper) startClient() {
 	b.clientListMutex.Lock()
 	defer b.clientListMutex.Unlock()
 
-	c, err := client.NewClient(b.entryAddr, cmp)
+	c, err := client.NewClient(b.entryAddr)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -115,7 +111,7 @@ func main() {
 	}
 
 	http.HandleFunc("/addNode", b.addNodeHandler)
-	go http.ListenAndServe(fmt.Sprintf("localhost:%d", port), nil)
+	go http.ListenAndServe(fmt.Sprintf("129.242.80.135:%d", port), nil)
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

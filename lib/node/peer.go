@@ -211,6 +211,19 @@ func (p *peer) getAllAccusations() []*accusation {
 	return ret
 }
 
+func (p *peer) isAccused() bool {
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
+	for _, acc := range p.accusations {
+		if acc != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (p *peer) setNote(newNote *note) {
 	p.noteMutex.Lock()
 	defer p.noteMutex.Unlock()

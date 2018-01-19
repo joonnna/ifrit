@@ -33,7 +33,8 @@ func (c correct) Rebuttal(n *Node) {
 	noteMsg := n.localNoteToPbMsg()
 
 	msg := &gossip.GossipMsg{
-		OwnNote: noteMsg,
+		OwnNote:  noteMsg,
+		Rebuttal: true,
 	}
 
 	for _, addr := range neighbours {
@@ -68,8 +69,10 @@ func (c correct) Gossip(n *Node) {
 			n.log.Err.Println(err, addr)
 			continue
 		}
+
 		n.mergeCertificates(reply.GetCertificates())
 		n.mergeNotes(reply.GetNotes())
+		n.mergeAccusations(reply.GetAccusations())
 	}
 }
 
@@ -232,7 +235,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 	noteMsg := n.localNoteToPbMsg()
 
 	msg := &gossip.GossipMsg{
-		Notes: []*gossip.Note{noteMsg},
+		OwnNote: noteMsg,
 	}
 
 	for _, addr := range neighbours {
@@ -283,7 +286,7 @@ func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
 				continue
 			}
 
-			msg.Accusations = append(msg.Accusations, a.toPbMsg())
+			//msg.Accusations = append(msg.Accusations, a.toPbMsg())
 		}
 	}
 
