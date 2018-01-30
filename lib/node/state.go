@@ -53,7 +53,7 @@ func (s state) equal(other *state) bool {
 func (s *state) marshal() io.Reader {
 	buff := new(bytes.Buffer)
 
-	_ = json.NewEncoder(buff).Encode(s)
+	json.NewEncoder(buff).Encode(s)
 
 	return bytes.NewReader(buff.Bytes())
 }

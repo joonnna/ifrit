@@ -32,9 +32,8 @@ func (c correct) Rebuttal(n *Node) {
 
 	noteMsg := n.localNoteToPbMsg()
 
-	msg := &gossip.GossipMsg{
-		OwnNote:  noteMsg,
-		Rebuttal: true,
+	msg := &gossip.State{
+		OwnNote: noteMsg,
 	}
 
 	for _, addr := range neighbours {
@@ -234,7 +233,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 
 	noteMsg := n.localNoteToPbMsg()
 
-	msg := &gossip.GossipMsg{
+	msg := &gossip.State{
 		OwnNote: noteMsg,
 	}
 
@@ -253,9 +252,9 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 func (sa spamAccusations) Timeouts(n *Node) {
 }
 
-func createFalseAccusations(n *Node) (*gossip.GossipMsg, error) {
+func createFalseAccusations(n *Node) (*gossip.State, error) {
 	var i uint32
-	msg := &gossip.GossipMsg{}
+	msg := &gossip.State{}
 
 	view := n.getView()
 
@@ -312,7 +311,7 @@ func (e experiment) Rebuttal(n *Node) {
 
 	noteMsg := n.localNoteToPbMsg()
 
-	msg := &gossip.GossipMsg{
+	msg := &gossip.State{
 		OwnNote: noteMsg,
 	}
 
@@ -328,7 +327,7 @@ func (e experiment) Rebuttal(n *Node) {
 	}
 }
 
-func dos(addr string, msg *gossip.GossipMsg, n *Node) {
+func dos(addr string, msg *gossip.State, n *Node) {
 	_, err := n.client.Gossip(addr, msg)
 	if err != nil {
 		n.log.Err.Println(err, addr)
@@ -343,7 +342,7 @@ func (e experiment) Gossip(n *Node) {
 		}
 	*/
 
-	msg := &gossip.GossipMsg{}
+	msg := &gossip.State{}
 
 	for i := 0; i < e.maxConc; i++ {
 		go dos(e.addr, msg, n)

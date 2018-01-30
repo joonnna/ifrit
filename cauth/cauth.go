@@ -135,7 +135,7 @@ func (c *Ca) newGroup(ringNum uint32) error {
 		return err
 	}
 
-	bootNodes := 10
+	bootNodes := 3
 
 	g := &group{
 		groupCert:     cert,

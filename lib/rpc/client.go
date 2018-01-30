@@ -40,7 +40,7 @@ func (c *Client) Init(config *tls.Config) {
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*5))
 }
 
-func (c *Client) Dos(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error) {
+func (c *Client) Dos(addr string, args *gossip.State) (*gossip.StateResponse, error) {
 	client, err := c.dial(addr)
 	if err != nil {
 		return nil, err
@@ -54,13 +54,28 @@ func (c *Client) Dos(addr string, args *gossip.GossipMsg) (*gossip.GossipRespons
 	return r, nil
 }
 
-func (c *Client) Gossip(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error) {
+func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
 	client, err := c.getClient(addr)
 	if err != nil {
 		return nil, err
 	}
 
 	r, err := client.Spread(context.Background(), args)
+	if err != nil {
+		c.removeConnection(addr)
+		return nil, err
+	}
+
+	return r, nil
+}
+
+func (c *Client) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error) {
+	client, err := c.getClient(addr)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := client.Messenger(context.Background(), args)
 	if err != nil {
 		c.removeConnection(addr)
 		return nil, err

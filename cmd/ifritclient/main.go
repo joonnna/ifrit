@@ -14,7 +14,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/joonnna/ifrit/client"
+	"github.com/joonnna/ifrit/ifrit"
 )
 
 var (
@@ -68,7 +68,7 @@ func main() {
 		panic(errNoAddr)
 	}
 
-	c, err := client.NewClient(caAddr)
+	c, err := ifrit.NewClient(caAddr, nil)
 	if err != nil {
 		fmt.Println(err)
 		panic(err)

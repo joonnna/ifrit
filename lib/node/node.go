@@ -1,6 +1,7 @@
 package node
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -8,6 +9,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -22,11 +24,13 @@ var (
 	errNoData    = errors.New("Gossip data has zero length")
 )
 
+/*
 const (
 	NormalProtocol          = 1
 	SpamAccusationsProtocol = 2
 	DosProtocol             = 3
 )
+*/
 
 type Node struct {
 	log *logger.Log
@@ -56,6 +60,11 @@ type Node struct {
 	monitorTimeout  time.Duration
 	nodeDeadTimeout float64
 
+	msgHandler func([]byte) ([]byte, error)
+
+	externalGossip      []byte
+	externalGossipMutex sync.RWMutex
+
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
 	caCert    *x509.Certificate
@@ -68,8 +77,9 @@ type Node struct {
 
 type client interface {
 	Init(config *tls.Config)
-	Gossip(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error)
-	Dos(addr string, args *gossip.GossipMsg) (*gossip.GossipResponse, error)
+	Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error)
+	Dos(addr string, args *gossip.State) (*gossip.StateResponse, error)
+	SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error)
 }
 
 type server interface {
@@ -134,70 +144,7 @@ func (n *Node) checkTimeouts() {
 	}
 }
 
-func (n *Node) collectGossipContent() (*gossip.GossipMsg, error) {
-	msg := &gossip.GossipMsg{
-		ExistingHosts: make(map[string]uint64),
-	}
-
-	view := n.getView()
-
-	for _, p := range view {
-		peerEpoch := uint64(0)
-
-		peerNote := p.getNote()
-		if peerNote != nil {
-			peerEpoch = peerNote.epoch
-		}
-
-		msg.ExistingHosts[p.key] = peerEpoch
-	}
-
-	msg.OwnNote = n.localNoteToPbMsg()
-	msg.Rebuttal = false
-
-	return msg, nil
-}
-
-func (n *Node) setProtocol(p protocol) {
-	n.protocolMutex.Lock()
-	defer n.protocolMutex.Unlock()
-
-	n.protocol = p
-}
-
-func (n *Node) getProtocol() protocol {
-	n.protocolMutex.RLock()
-	defer n.protocolMutex.RUnlock()
-
-	return n.protocol
-}
-
-func (n *Node) localNoteToPbMsg() *gossip.Note {
-	n.noteMutex.RLock()
-	defer n.noteMutex.RUnlock()
-
-	return n.recentNote.toPbMsg()
-}
-
-func (n *Node) setGossipTimeout(timeout int) {
-	n.gossipTimeoutMutex.Lock()
-	defer n.gossipTimeoutMutex.Unlock()
-
-	n.gossipTimeout = (time.Duration(timeout) * time.Second)
-}
-
-func (n *Node) getGossipTimeout() time.Duration {
-	n.gossipTimeoutMutex.RLock()
-	defer n.gossipTimeoutMutex.RUnlock()
-
-	return n.gossipTimeout
-}
-
-func (n *Node) LiveMembers() []string {
-	return n.getLivePeerAddrs()
-}
-
-func NewNode(caAddr string, c client, s server) (*Node, error) {
+func NewNode(caAddr string, c client, s server, msgHandler func([]byte) ([]byte, error)) (*Node, error) {
 	var i uint32
 	var extValue []byte
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
@@ -272,6 +219,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
 		trustedBootNode: certs.trusted,
+		msgHandler:      msgHandler,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -315,12 +263,36 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 	return n, nil
 }
 
+func (n *Node) SendMessages(dest []string, ch chan io.Reader, data []byte) {
+	msg := &gossip.Msg{
+		Content: data,
+	}
+
+	for _, addr := range dest {
+		go n.sendMsg(addr, ch, msg)
+	}
+}
+
+func (n *Node) sendMsg(addr string, ch chan io.Reader, msg *gossip.Msg) {
+	reply, err := n.client.SendMsg(addr, msg)
+	if err != nil {
+		n.log.Err.Println(err)
+		ch <- nil
+	}
+	r := bytes.NewReader(reply.GetContent())
+	ch <- r
+}
+
 func (n *Node) ShutDownNode() {
 	for _, r := range n.ringMap {
 		n.remove(r.ringNum)
 	}
 	close(n.exitChan)
 	n.wg.Wait()
+}
+
+func (n *Node) LiveMembers() []string {
+	return n.getLivePeerAddrs()
 }
 
 func (n *Node) Start() {

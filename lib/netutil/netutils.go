@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func ListenOnPort(hostName string, port int) (net.Listener, error) {
 		return l, err
 	}
 
-	startPort := port
+	startPort := rand.Int() % port
 
 	for {
 		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addrs[0], startPort))

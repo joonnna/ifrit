@@ -25,35 +25,13 @@ var (
 	errInvalidMaskLength       = errors.New("Mask is of invalid length")
 )
 
-func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.GossipResponse, error) {
-	var tlsInfo credentials.TLSInfo
-	var ok bool
+func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateResponse, error) {
+	reply := &gossip.StateResponse{}
 
-	reply := &gossip.GossipResponse{}
-
-	p, ok := grpcPeer.FromContext(ctx)
-	if !ok {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
-		return nil, errNoPeerInCtx
+	cert, err := n.validateCtx(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	if tlsInfo, ok = p.AuthInfo.(credentials.TLSInfo); !ok {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
-		return nil, errNoTLSInfo
-	}
-
-	if len(tlsInfo.State.PeerCertificates) < 1 {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
-		return nil, errNoCert
-	}
-
-	cert := tlsInfo.State.PeerCertificates[0]
 
 	key := string(cert.SubjectKeyId[:])
 	pId := newPeerId(cert.SubjectKeyId)
@@ -66,6 +44,9 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Goss
 		if record := n.stats.getRecordFlag(); record {
 			n.stats.incrementFailed()
 		}
+
+		n.evalNote(args.GetOwnNote())
+
 		return nil, errNotMyNeighbour
 	}
 
@@ -76,22 +57,20 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Goss
 		}
 
 		n.evalNote(args.GetOwnNote())
+		reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: n.localCert.Raw})
+		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
 
 		peerKeys := n.findNeighbours(pId)
 		for _, k := range peerKeys {
 			if k == n.key {
-				c := &gossip.Certificate{Raw: n.localCert.Raw}
-				reply.Certificates = append(reply.Certificates, c)
-				reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
 				continue
 			}
 
 			p := n.getLivePeer(k)
 			if p != nil {
-				c := &gossip.Certificate{Raw: p.cert.Raw}
-				reply.Certificates = append(reply.Certificates, c)
-				if p.getNote() != nil {
-					reply.Notes = append(reply.Notes, p.getNote().toPbMsg())
+				reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.cert.Raw})
+				if note := p.getNote(); note != nil {
+					reply.Notes = append(reply.Notes, note.toPbMsg())
 				}
 			}
 		}
@@ -107,15 +86,40 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Goss
 		return nil, errNoCert
 	}
 
-	n.evalNote(args.GetOwnNote())
-
 	//Already evaluated the new note, can return an empty reply
-	if isRebuttal := args.GetRebuttal(); isRebuttal {
+	if isRebuttal := n.evalNote(args.GetOwnNote()); isRebuttal && args.GetExistingHosts() == nil {
 		return reply, nil
 	}
 
-	given := args.GetExistingHosts()
+	n.mergeViews(args.GetExistingHosts(), reply)
 
+	reply.ExternalGossip, err = n.msgHandler(args.GetExternalGossip())
+	if err != nil {
+		return nil, err
+	}
+
+	if record := n.stats.getRecordFlag(); record {
+		n.stats.incrementCompleted()
+	}
+
+	return reply, nil
+}
+
+func (n *Node) Messenger(ctx context.Context, args *gossip.Msg) (*gossip.MsgResponse, error) {
+	_, err := n.validateCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	replyContent, err := n.msgHandler(args.GetContent())
+	if err != nil {
+		return nil, err
+	}
+
+	return &gossip.MsgResponse{Content: replyContent}, nil
+}
+
+func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) {
 	for _, p := range n.getView() {
 		if _, exists := given[p.key]; !exists {
 			reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.cert.Raw})
@@ -138,17 +142,12 @@ func (n *Node) Spread(ctx context.Context, args *gossip.GossipMsg) (*gossip.Goss
 		}
 	}
 
-	if _, exists := given[n.key]; exists {
-		if given[n.key] < n.getEpoch() {
-			reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
-		}
+	if _, exists := given[n.key]; !exists {
+		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
+	} else if given[n.key] < n.getEpoch() {
+		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
 	}
 
-	if record := n.stats.getRecordFlag(); record {
-		n.stats.incrementCompleted()
-	}
-
-	return reply, nil
 }
 
 func (n *Node) mergeNotes(notes []*gossip.Note) {
@@ -295,10 +294,10 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	}
 }
 
-func (n *Node) evalNote(gossipNote *gossip.Note) {
+func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	if gossipNote == nil {
 		n.log.Err.Println("Got nil note")
-		return
+		return false
 	}
 
 	epoch := gossipNote.GetEpoch()
@@ -310,7 +309,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 
 	p := n.getViewPeer(peerKey)
 	if p == nil {
-		return
+		return false
 	}
 
 	//Skip valdiating signature etc if we already have the note
@@ -318,7 +317,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	//this one won't change anything
 	currNote := p.getNote()
 	if currNote != nil && currNote.epoch >= epoch {
-		return
+		return false
 	}
 
 	tmp := &gossip.Note{
@@ -330,24 +329,24 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 	b, err := proto.Marshal(tmp)
 	if err != nil {
 		n.log.Err.Println(err)
-		return
+		return false
 	}
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
 	if err != nil {
 		n.log.Err.Println(err)
-		return
+		return false
 	}
 
 	if !valid {
 		n.log.Info.Println("Invalid signature on note, ignoring, ", p.addr)
-		return
+		return false
 	}
 
 	err = validMask(mask, n.maxByz, n.numRings)
 	if err != nil {
 		n.log.Err.Println(err)
-		return
+		return false
 	}
 
 	peerAccuse := p.getAnyAccusation()
@@ -389,8 +388,12 @@ func (n *Node) evalNote(gossipNote *gossip.Note) {
 			if !n.livePeerExist(peerKey) {
 				n.addLivePeer(p)
 			}
+
+			return true
 		}
 	}
+
+	return false
 }
 
 func (n *Node) evalCertificate(cert *x509.Certificate) bool {
@@ -420,6 +423,35 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	}
 
 	return true
+}
+
+func (n *Node) validateCtx(ctx context.Context) (*x509.Certificate, error) {
+	var tlsInfo credentials.TLSInfo
+	var ok bool
+
+	p, ok := grpcPeer.FromContext(ctx)
+	if !ok {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
+		return nil, errNoPeerInCtx
+	}
+
+	if tlsInfo, ok = p.AuthInfo.(credentials.TLSInfo); !ok {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
+		return nil, errNoTLSInfo
+	}
+
+	if len(tlsInfo.State.PeerCertificates) < 1 {
+		if record := n.stats.getRecordFlag(); record {
+			n.stats.incrementFailed()
+		}
+		return nil, errNoCert
+	}
+
+	return tlsInfo.State.PeerCertificates[0], nil
 }
 
 /*

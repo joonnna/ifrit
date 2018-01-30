@@ -2,6 +2,9 @@ package node
 
 import (
 	"errors"
+	"time"
+
+	"github.com/joonnna/ifrit/lib/protobuf"
 )
 
 var (
@@ -82,4 +85,76 @@ func (n *Node) getMask() []byte {
 	copy(ret, n.recentNote.mask)
 
 	return ret
+}
+
+func (n *Node) collectGossipContent() (*gossip.State, error) {
+	msg := &gossip.State{
+		ExistingHosts:  make(map[string]uint64),
+		OwnNote:        n.localNoteToPbMsg(),
+		ExternalGossip: n.getExternalGossip(),
+	}
+
+	view := n.getView()
+
+	for _, p := range view {
+		peerEpoch := uint64(0)
+
+		if peerNote := p.getNote(); peerNote != nil {
+			peerEpoch = peerNote.epoch
+		}
+
+		msg.ExistingHosts[p.key] = peerEpoch
+	}
+
+	return msg, nil
+}
+
+func (n *Node) setProtocol(p protocol) {
+	n.protocolMutex.Lock()
+	defer n.protocolMutex.Unlock()
+
+	n.protocol = p
+}
+
+func (n *Node) getProtocol() protocol {
+	n.protocolMutex.RLock()
+	defer n.protocolMutex.RUnlock()
+
+	return n.protocol
+}
+
+func (n *Node) localNoteToPbMsg() *gossip.Note {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	return n.recentNote.toPbMsg()
+}
+
+func (n *Node) setGossipTimeout(timeout int) {
+	n.gossipTimeoutMutex.Lock()
+	defer n.gossipTimeoutMutex.Unlock()
+
+	n.gossipTimeout = (time.Duration(timeout) * time.Second)
+}
+
+func (n *Node) getGossipTimeout() time.Duration {
+	n.gossipTimeoutMutex.RLock()
+	defer n.gossipTimeoutMutex.RUnlock()
+
+	return n.gossipTimeout
+}
+
+//Exposed to let ifrit client set directly
+func (n *Node) SetExternalGossipContent(data []byte) {
+	n.externalGossipMutex.Lock()
+	defer n.externalGossipMutex.Unlock()
+
+	n.externalGossip = data
+}
+
+func (n *Node) getExternalGossip() []byte {
+	n.externalGossipMutex.RLock()
+	defer n.externalGossipMutex.RUnlock()
+
+	return n.externalGossip
 }
