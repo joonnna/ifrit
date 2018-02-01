@@ -297,6 +297,10 @@ func (n *Node) LiveMembers() []string {
 	return n.getLivePeerAddrs()
 }
 
+func (n *Node) Id() string {
+	return n.server.HostInfo()
+}
+
 func (n *Node) Start() {
 	n.log.Info.Println("Started Node")
 

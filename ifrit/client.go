@@ -36,7 +36,7 @@ func NewClient(entryAddr string) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) RegisterCallback(msgHandler func([]byte) ([]byte, error)) {
+func (c *Client) RegisterMsgHandler(msgHandler func([]byte) ([]byte, error)) {
 	c.node.SetMsgHandler(msgHandler)
 }
 
@@ -86,21 +86,26 @@ func (c *Client) SendToAll(data io.Reader) (chan io.Reader, error) {
 	return ch, nil
 }
 
-func (c *Client) SetGossipContent(data io.Reader) error {
-	var bytes []byte
+func (c *Client) SetGossipContent(data []byte) error {
+	/*
+		buf := make([]byte, data.Len())
 
-	n, err := data.Read(bytes)
-	if err != nil {
-		return err
-	}
-
-	if n <= 0 {
+		n, err := data.Read(buf)
+		if err != nil {
+			return err
+		}
+	*/
+	if len(data) <= 0 {
 		return errNoData
 	}
 
-	c.node.SetExternalGossipContent(bytes)
+	c.node.SetExternalGossipContent(data)
 
 	return nil
+}
+
+func (c *Client) Id() string {
+	return c.node.Id()
 }
 
 /*

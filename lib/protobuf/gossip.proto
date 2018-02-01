@@ -78,3 +78,7 @@ message Pong {
     bytes nonce = 1;
     Signature signature = 2;
 }
+
+message Test {
+    repeated int32 nums = 1;
+}
