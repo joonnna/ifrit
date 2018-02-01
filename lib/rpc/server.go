@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/joonnna/ifrit/lib/netutils"
 	"github.com/joonnna/ifrit/lib/protobuf"
+	"github.com/joonnna/ifrit/netutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -25,10 +25,10 @@ type Server struct {
 }
 
 func NewServer() (*Server, error) {
-	//hostName := netutils.GetLocalIP()
+	//hostName := netutil.GetLocalIP()
 	//hostName := "0.0.0.0"
 	hostName, _ := os.Hostname()
-	l, err := netutils.ListenOnPort(hostName, 8100)
+	l, err := netutil.ListenOnPort(hostName, 8100)
 	//l, err := netutils.GetListener(hostName)
 	if err != nil {
 		return nil, err

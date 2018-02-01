@@ -16,7 +16,7 @@ var (
 	errNoData = errors.New("Supplied data is of length 0")
 )
 
-func NewClient(entryAddr string, msgHandler func([]byte) ([]byte, error)) (*Client, error) {
+func NewClient(entryAddr string) (*Client, error) {
 	c := rpc.NewClient()
 
 	s, err := rpc.NewServer()
@@ -24,7 +24,7 @@ func NewClient(entryAddr string, msgHandler func([]byte) ([]byte, error)) (*Clie
 		return nil, err
 	}
 
-	n, err := node.NewNode(entryAddr, c, s, msgHandler)
+	n, err := node.NewNode(entryAddr, c, s)
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +34,10 @@ func NewClient(entryAddr string, msgHandler func([]byte) ([]byte, error)) (*Clie
 	}
 
 	return client, nil
+}
+
+func (c *Client) RegisterCallback(msgHandler func([]byte) ([]byte, error)) {
+	c.node.SetMsgHandler(msgHandler)
 }
 
 func (c *Client) ShutDown() {

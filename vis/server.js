@@ -1,12 +1,10 @@
-
-
 var http = require('http')
 var url = require('url')
 var fs = require('fs')
 var port = process.env.PORT || 3000;
 var querystring = require('querystring')
 var index = fs.readFileSync('index.html')
-const PORT=8080
+const PORT=8095
 var Promise = require('bluebird')
 //var dispatcher = require('httpdispatcher');
 var HttpDispatcher = require('httpdispatcher');
@@ -16,7 +14,6 @@ nodes = [];
 function handleRequest(request, response){
     try {
         //log the request on console
-         console.log(request.url);
         //Disptach
         dispatcher.dispatch(request, response);
     } catch(err) {
@@ -25,9 +22,9 @@ function handleRequest(request, response){
 }
 var server = http.createServer(handleRequest);
 
-server.listen(PORT, function(){
+server.listen(PORT,'127.0.0.1',function(){
     //Callback triggered when server is successfully listening. Hurray!
-        console.log("Server listening on: http://localhost:%s", PORT);
+        console.log("Server listening on: http://127.0.0.1:%s", PORT);
 });
 
 var io = require('socket.io').listen(server);
@@ -45,7 +42,6 @@ dispatcher.onGet("/", function(req, res) {
 dispatcher.onPost("/add", function(req, res) {
     var obj = JSON.parse( req.body );
 
-    console.log(obj)
     io.emit('add', {data: obj})
     res.writeHead(200, {'Content-Type': 'text/plain'});
     res.end('Got Post Data');
@@ -53,7 +49,6 @@ dispatcher.onPost("/add", function(req, res) {
 
 dispatcher.onPost("/remove", function(req, res) {
     var obj = JSON.parse( req.body );
-    console.log(obj)
     io.emit('remove', {data: obj})
     res.writeHead(200, {'Content-Type': 'text/plain'});
     res.end()
@@ -63,7 +58,6 @@ dispatcher.onPost("/remove", function(req, res) {
 dispatcher.onPost("/update", function(req, res) {
     var obj = JSON.parse( req.body );
 
-    console.log(obj)
     io.emit('update', {data: obj})
     res.writeHead(200, {'Content-Type': 'text/plain'});
     res.end()

@@ -32,6 +32,8 @@ const (
 )
 */
 
+type processMsg func([]byte) ([]byte, error)
+
 type Node struct {
 	log *logger.Log
 
@@ -60,7 +62,8 @@ type Node struct {
 	monitorTimeout  time.Duration
 	nodeDeadTimeout float64
 
-	msgHandler func([]byte) ([]byte, error)
+	msgHandler      processMsg
+	msgHandlerMutex sync.RWMutex
 
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
@@ -144,7 +147,7 @@ func (n *Node) checkTimeouts() {
 	}
 }
 
-func NewNode(caAddr string, c client, s server, msgHandler func([]byte) ([]byte, error)) (*Node, error) {
+func NewNode(caAddr string, c client, s server) (*Node, error) {
 	var i uint32
 	var extValue []byte
 	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
@@ -219,7 +222,6 @@ func NewNode(caAddr string, c client, s server, msgHandler func([]byte) ([]byte,
 		localCert:       certs.ownCert,
 		caCert:          certs.caCert,
 		trustedBootNode: certs.trusted,
-		msgHandler:      msgHandler,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))

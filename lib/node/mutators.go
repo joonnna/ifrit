@@ -158,3 +158,18 @@ func (n *Node) getExternalGossip() []byte {
 
 	return n.externalGossip
 }
+
+//Expose so that client can set new handler directly
+func (n *Node) SetMsgHandler(newHandler processMsg) {
+	n.msgHandlerMutex.Lock()
+	defer n.msgHandlerMutex.Unlock()
+
+	n.msgHandler = newHandler
+}
+
+func (n *Node) getMsgHandler() processMsg {
+	n.msgHandlerMutex.RLock()
+	defer n.msgHandlerMutex.RUnlock()
+
+	return n.msgHandler
+}

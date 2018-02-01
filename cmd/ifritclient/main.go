@@ -68,7 +68,7 @@ func main() {
 		panic(errNoAddr)
 	}
 
-	c, err := ifrit.NewClient(caAddr, nil)
+	c, err := ifrit.NewClient(caAddr)
 	if err != nil {
 		fmt.Println(err)
 		panic(err)

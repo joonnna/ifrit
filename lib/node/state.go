@@ -14,14 +14,14 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/joonnna/ifrit/lib/netutils"
+	"github.com/joonnna/ifrit/netutil"
 	"github.com/rs/cors"
 )
 
 const (
-	stateAddr = "http://129.242.19.134:8095"
+	//stateAddr = "http://129.242.19.134:8095"
 	httpPort  = 12300
-	//stateAddr = "http://localhost:8080"
+	stateAddr = "http://localhost:8095"
 )
 
 type state struct {
@@ -60,8 +60,8 @@ func (s *state) marshal() io.Reader {
 
 func (n *Node) httpHandler(c chan bool) {
 	hostName, _ := os.Hostname()
-	//hostName := netutils.GetLocalIP()
-	l, err := netutils.ListenOnPort(hostName, httpPort)
+	//hostName := netutil.GetLocalIP()
+	l, err := netutil.ListenOnPort(hostName, httpPort)
 	if err != nil {
 		n.log.Err.Println(err)
 		return

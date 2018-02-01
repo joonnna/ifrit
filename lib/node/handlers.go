@@ -93,9 +93,11 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 	n.mergeViews(args.GetExistingHosts(), reply)
 
-	reply.ExternalGossip, err = n.msgHandler(args.GetExternalGossip())
-	if err != nil {
-		return nil, err
+	if handler := n.getMsgHandler(); handler != nil {
+		reply.ExternalGossip, err = handler((args.GetExternalGossip()))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if record := n.stats.getRecordFlag(); record {

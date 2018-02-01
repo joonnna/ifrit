@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/joonnna/ifrit/lib/netutils"
 	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/netutil"
 )
 
 type Server struct {
@@ -17,8 +17,8 @@ type Server struct {
 }
 
 func NewServer(log *logger.Log) (*Server, error) {
-	port := netutils.GetOpenPort()
-	//hostName := netutils.GetLocalIP()
+	port := netutil.GetOpenPort()
+	//hostName := netutil.GetLocalIP()
 	hostName, _ := os.Hostname()
 	addr := fmt.Sprintf("%s:%d", hostName, port)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)

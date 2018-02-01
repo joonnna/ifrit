@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/lib/netutils"
 	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/netutil"
 )
 
 const (
@@ -61,7 +61,7 @@ func NewCa() (*Ca, error) {
 	}
 
 	hostName, _ := os.Hostname()
-	l, err := netutils.ListenOnPort(hostName, caPort)
+	l, err := netutil.ListenOnPort(hostName, caPort)
 	if err != nil {
 		return nil, err
 	}

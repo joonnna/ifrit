@@ -18,19 +18,26 @@ const (
 )
 
 type Launcher struct {
-	clientList      []*Client
-	clientListMutex sync.RWMutex
+	applicationList      []application
+	applicationListMutex sync.RWMutex
 
 	ca *cauth.Ca
 
 	listener net.Listener
 
-	entryAddr string
+	EntryAddr string
 	numRings  uint32
+
+	ch chan interface{}
 }
 
-func NewLauncher(numRings uint32) (*Launcher, error) {
-	listener, err := netutil.ListenOnPort(netutil.GetLocalIP(), port)
+type application interface {
+	Start()
+	ShutDown()
+}
+
+func NewLauncher(numRings uint32, ch chan interface{}) (*Launcher, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
 	}
@@ -41,10 +48,12 @@ func NewLauncher(numRings uint32) (*Launcher, error) {
 		return nil, err
 	}
 
-	l := Launcher{
+	l := &Launcher{
 		numRings:  numRings,
-		entryAddr: c.GetAddr(),
+		EntryAddr: c.GetAddr(),
 		ca:        c,
+		ch:        ch,
+		listener:  listener,
 	}
 
 	return l, nil
@@ -53,50 +62,57 @@ func NewLauncher(numRings uint32) (*Launcher, error) {
 func (l *Launcher) Start() {
 	go l.ca.Start(l.numRings)
 
-	http.HandleFunc("/addNode", l.addNodeHandler)
+	http.HandleFunc("/addApplication", l.addApplicationHandler)
 
 	http.Serve(l.listener, nil)
 }
 
 func (l *Launcher) ShutDown() {
-	l.clientListMutex.RLock()
-	defer l.clientListMutex.RUnlock()
-
-	for _, c := range l.clientList {
-		c.ShutDown()
-	}
-
+	l.shutDownApplications()
 	l.listener.Close()
 	l.ca.Shutdown()
 }
 
-func (l *Launcher) shutDownClients() {
-	l.clientListMutex.RLock()
-	defer l.clientListMutex.RUnlock()
+func (l *Launcher) shutDownApplications() {
+	l.applicationListMutex.RLock()
+	defer l.applicationListMutex.RUnlock()
 
-	for _, c := range l.clientList {
-		c.ShutDown()
+	for _, n := range l.applicationList {
+		n.ShutDown()
 	}
 }
 
-func (l *Launcher) startClient() {
-	b.clientListMutex.Lock()
-	defer b.clientListMutex.Unlock()
+func (l *Launcher) startApplication() {
+	l.applicationListMutex.Lock()
+	defer l.applicationListMutex.Unlock()
+	/*
+		c, err := NewApplication(l.entryAddr, nil)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 
-	c, err := NewClient(l.entryAddr, nil)
-	if err != nil {
-		fmt.Println(err)
+		go c.Start()
+	*/
+
+	l.ch <- 0
+
+	instance := <-l.ch
+
+	client, ok := instance.(application)
+	if !ok {
+		fmt.Println("Invalid interface")
 		return
 	}
 
-	go c.Start()
+	go client.Start()
 
-	l.clientList = append(l.clientList, c)
+	l.applicationList = append(l.applicationList, client)
 }
 
-func (l *Launcher) addNodeHandler(w http.ResponseWriter, r *http.Request) {
+func (l *Launcher) addApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	defer r.Body.Close()
 
-	l.startClient()
+	l.startApplication()
 }

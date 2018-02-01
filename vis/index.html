@@ -22,14 +22,17 @@
         <link src="www.visjs.org/dist/vis.css" rel="stylesheet" type="text/css"/>
         <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
         <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-        <script type="text/javascript"  src="http://visjs.org/dist/vis.js"> </script>
+        <script type="text/javascript"  src="http://127.0.0.1:8080"> </script>
     </head>
     </body>
-    <input type="button" value="Add Node" id="addNode">
+    <h1> Visualisering </h1>
+    <input type="button" value="Add node" id="addNode">
     <input type="button" value="Shutdown node" id="shutdownNode">
     <input type="button" value="Crash node" id="crashNode">
     <input type="button" value="Corrupt a node" id="corruptNode">
     <input type="button" value="Stabilize" id="stabilize">
+    <input type="button" value="Enable smooth" id="enableSmooth">
+    <input type="button" value="Disable smooth" id="disableSmooth">
     <div id="mynetwork">
         <div class="vis-network" tabindex="900" style="position: relative; overflow: hidden; touch-action: pan-y; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"><canvas width="800" height="800" style="position: relative; touch-action: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 100%; height: 100%;"></canvas></div>
     </div>
@@ -38,19 +41,23 @@ var network;
 var dataset = new vis.DataSet([])
 var singleEdges = new vis.DataSet([])
 var edges = new vis.DataSet([])
-    var socket = io();
-    var nodata = true
-    socket.on('add', function(message) {
-        var id = message.data.ID
-        var trusted = message.data.Trusted
-        dataset.add([{id: id, label: id, http: message.data.HttpAddr, trusted: trusted}]);
-        if (nodata) {
-            init()
-        }
-    });
+var socket = io();
+var nodata = true
+
+socket.on('add', function(message) {
+    if (nodata) {
+        init()
+    }
+    nodata = false
+
+    var id = message.data.ID
+    var trusted = message.data.Trusted
+
+    dataset.add({id: id, label: id, http: message.data.HttpAddr, trusted: trusted});
+});
+
 socket.on('remove', function(message) {
     dataset.remove({id: message.data.ID});
-
     nextid = message.data.ID + "next"
     previd = message.data.ID + "prev"
     edges.remove({id: nextid})
@@ -71,14 +78,14 @@ function init() {
         };
     var options = {
         layout: {
-            improvedLayout: true,
+            improvedLayout: false,
         },
         physics: {
             stabilization: false,
         },
         nodes: {
             shape: 'dot',
-            size: 15,
+            size: 8,
             font: {
                 size: 12,
                 color: '#ffffff'
@@ -90,13 +97,16 @@ function init() {
         }
     };
     network = new vis.Network(container, data, options)
+    network.on( 'click', function(params) {
+	console.log('click event, getNodeAt returns: ' + this.getNodeAt(params.pointer.DOM));
+    });
+    network.setOptions({edges:{smooth:{type: 'continuous'}}});
 }
 
 function shutdown() {
     var randomNodes = dataset.get().filter(function(node) {
         return node.trusted === false
     });
-    console.log(randomNodes.length);
     if (randomNodes.length === 0) {
         return
     }
@@ -104,10 +114,8 @@ function shutdown() {
 
     var randomNode = randomNodes[idx];
     if (randomNode === null) {
-        console.log("No node found")
         return
     }
-    console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/shutdownNode", true);
     x.send(null);
@@ -130,7 +138,6 @@ function crash() {
         console.log("No node found")
         return
     }
-    console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/crashNode", true);
     x.send(null);
@@ -160,11 +167,9 @@ function corrupt() {
 
     var randomNode = randomNodes[idx];
     if (randomNode === null) {
-        console.log("No node found")
         return
     }
 
-    console.log(randomNode);
     var x = new XMLHttpRequest();
     x.open('GET', randomNode.http + "/corruptNode", true);
     x.send(null);
@@ -184,13 +189,27 @@ function corrupt() {
 
 function add() {
     var x = new XMLHttpRequest();
-    x.open('GET', "http://localhost:5632/addNode", true);
+    x.open('GET', "http://localhost:5632/addApplication", true);
     x.send(null);
 }
 
 function stabilize() {
     network.stabilize();
 }
+
+function disableSmooth() {
+    network.setOptions({edges:{smooth:{type: 'continuous'}}});
+}
+
+function enableSmooth() {
+    network.setOptions({edges:{smooth:{type: 'dynamic'}}});
+}
+
+var enableSmoothButton = document.getElementById('enableSmooth');
+enableSmoothButton.onclick = function() {enableSmooth();};
+
+var disableSmoothButton = document.getElementById('disableSmooth');
+disableSmoothButton.onclick = function() {disableSmooth();};
 
 
 var shutdownButton = document.getElementById('shutdownNode');
@@ -207,22 +226,6 @@ addbutton.onclick = function() {add();};
 
 var stabbutton = document.getElementById('stabilize');
 stabbutton.onclick = function() {stabilize();};
-
-
-function addEdge(id, destination) {
-    var newEdge = id.concat(destination)
-    var revEdge = destination.concat(id)
-    try {
-        singleEdges.add([{id: newEdge, from: id, to: destination}])
-    }
-    catch(err) {
-        return
-    }
-    var edge = singleEdges.get(revEdge)
-    if (edge != null) {
-        edges.add([{id: newEdge, from: id, to: destination}])
-    }
-}
 
 
 
