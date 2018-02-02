@@ -40,6 +40,15 @@ func main() {
 ```
 
 ## Application example of
+In this example we aim to utilize the external gossip content functionality of ifrit.
+Each time our application state is altered, we set the appropriate state in ifrit
+through the SetGossipContent() function.
+Our application state will then be gossiped with our neighbours which will receive it
+through their registered message handlers.
+
+The example is simplified for clarity reasons and is meant to represent an example usage
+of the SetGossipContent() functionality.
+
 ```go
 package main
 
@@ -71,15 +80,6 @@ type user struct {
 	LastName  string
 	Address   string
 }
-
-// In this example we aim to utilize the external gossip content functionality of ifrit.
-// Each time our application state is altered, we set the appropriate state in ifrit
-// through the SetGossipContent() function.
-// Our application state will then be gossiped with our neighbours which will receive it
-// through their registered message handlers.
-
-// The example is simplified for clarity reasons and is meant to represent an example usage
-// of the SetGossipContent() functionality.
 
 // As an example we store the client instance within the application
 // such that we can communicate with it as we see fit
@@ -133,8 +133,10 @@ func (a *application) handleMessages(data []byte) ([]byte, error) {
 		}
 	}
 
+    //Updating state
 	a.ifritClient.SetGossipContent(a.State())
 
+    //No need to send a response, all application state will eventually converge
 	return nil, nil
 }
 
