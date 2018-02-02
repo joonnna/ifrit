@@ -27,13 +27,13 @@ import (
 )
 
 func main() {
-	var numRings uint32 = 5
+    var numRings uint32 = 5
 
-	ca := cauth.NewCa()
-	go ca.Start(numRings)
+    ca := cauth.NewCa()
+    go ca.Start(numRings)
 
-	c := client.NewClient(ca.GetAddr())
-	go c.Start()
+    c := client.NewClient(ca.GetAddr())
+    go c.Start()
 
     doApplicationStuff(c)
 }
