@@ -79,14 +79,17 @@ func (c *Client) SendTo(dest []string, data []byte) chan []byte {
 
 // Sends the given data to all members of the network belivied to be alive.
 // The returned channel functions as described in SendTo().
-func (c *Client) SendToAll(data []byte) chan []byte {
+// The returned integer represents the amount of members the message was sent to.
+func (c *Client) SendToAll(data []byte) (chan []byte, int) {
 	ch := make(chan []byte)
 
+	members := c.node.LiveMembers()
+
 	go func() {
-		c.node.SendMessages(c.node.LiveMembers(), ch, data)
+		c.node.SendMessages(members, ch, data)
 	}()
 
-	return ch, nil
+	return ch, len(members)
 }
 
 // Adds the given data to the gossip set.
