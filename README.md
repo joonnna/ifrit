@@ -53,100 +53,100 @@ of the SetGossipContent() functionality.
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"time"
+    "bytes"
+    "encoding/json"
+    "time"
 
-	"github.com/joonnna/ifrit/ifrit"
+    "github.com/joonnna/ifrit/ifrit"
 )
 
 // Mockup application
 type application struct {
-	ifritClient *ifrit.Client
-	caAddr      string
+    ifritClient *ifrit.Client
+    caAddr      string
 
-	exitChan chan bool
-	data     *appData
+    exitChan chan bool
+    data     *appData
 }
 
 // Mockup data structure
 type appData struct {
-	Users map[int]*user
+    Users map[int]*user
 }
 
 // Mockup users
 type user struct {
-	FirstName string
-	LastName  string
-	Address   string
+    FirstName string
+    LastName  string
+    Address   string
 }
 
 // As an example we store the client instance within the application
 // such that we can communicate with it as we see fit
 func newApp(caAddr string) (*application, error) {
-	c, err := ifrit.NewClient(caAddr)
-	if err != nil {
-		return nil, err
-	}
+    c, err := ifrit.NewClient(caAddr)
+    if err != nil {
+        return nil, err
+    }
 
-	return &application{
-		ifritClient: c,
-		caAddr:      caAddr,
-	}, nil
+    return &application{
+        ifritClient: c,
+        caAddr:      caAddr,
+    }, nil
 }
 
 // Start the mockup application
 func (a *application) Start() {
-	a.ifritClient.RegisterMsgHandler(a.handleMessages)
+    a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
-	for {
-		select {
-		case <-a.exitChan:
-			return
+    for {
+        select {
+        case <-a.exitChan:
+            return
 
-		case <-time.After(time.Second * 20):
-			a.addRandomUser()
-		}
-	}
+        case <-time.After(time.Second * 20):
+            a.addRandomUser()
+        }
+    }
 }
 
 func (a *application) State() []byte {
-	var buf bytes.Buffer
+    var buf bytes.Buffer
 
-	json.NewEncoder(buf).Encode(a.data)
+    json.NewEncoder(buf).Encode(a.data)
 
-	return buf.Bytes()
+    return buf.Bytes()
 }
 
 // This callback will be invoked on each received message.
 func (a *application) handleMessages(data []byte) ([]byte, error) {
-	received := &appData{}
+    received := &appData{}
 
-	err := json.NewDecoder(bytes.NewReader(data)).Decode(received)
-	if err != nil {
-		return nil, err
-	}
+    err := json.NewDecoder(bytes.NewReader(data)).Decode(received)
+    if err != nil {
+        return nil, err
+    }
 
-	for k, v := range received {
-		if _, ok := a.data.Users[k]; !ok {
-			a.data.Users[k] = v
-		}
-	}
+    for k, v := range received {
+        if _, ok := a.data.Users[k]; !ok {
+            a.data.Users[k] = v
+        }
+    }
 
     //Updating state
-	a.ifritClient.SetGossipContent(a.State())
+    a.ifritClient.SetGossipContent(a.State())
 
     //No need to send a response, all application state will eventually converge
-	return nil, nil
+    return nil, nil
 }
 
 //We assume that the CA is deployed on another server
 func main(caAddr string) {
-	a, err := newApp(caAddr)
-	if err != nil {
-		panic(err)
-	}
+    a, err := newApp(caAddr)
+    if err != nil {
+        panic(err)
+    }
 
-	a.Start()
+    a.Start()
 }
 ```
