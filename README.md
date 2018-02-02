@@ -1,14 +1,18 @@
-## How to install golang 
+## How to install golang
 https://golang.org/doc/install
 
-## How to setup golang environment 
+## How to setup golang environment
 https://golang.org/doc/code.html
 
 ## Client
-import github.com/joonnna/ifrit/client
+```go
+import github.com/joonnna/ifrit/ifrit
+```
 
 ## Certificate authority
+```go
 import github.com/joonnna/ifrit/cauth
+```
 
 To download Ifrit simply issue the following command after including it in a src file "go get ./..."
 
@@ -19,20 +23,19 @@ package main
 
 import (
 	"github.com/joonnna/ifrit/cauth"
-	"github.com/joonnna/ifrit/client"	
+	"github.com/joonnna/ifrit/ifrit"
 )
 
 func main() {
-	numClients := 10
-	numRings := 5
+	var numRings uint32 = 5
 
 	ca := cauth.NewCa()
 	go ca.Start(numRings)
 
-	for i := 0; i < numClients; i++ {
-		c := client.NewClient(ca.Addr())
-		go c.Start()
-	}
+	c := client.NewClient(ca.GetAddr())
+	go c.Start()
+
+    doApplicationStuff(c)
 }
 ```
 
