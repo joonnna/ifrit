@@ -8,6 +8,10 @@ import (
 	"github.com/joonnna/ifrit/ifrit"
 )
 
+var (
+	caAddr = "...."
+)
+
 // Mockup application
 type application struct {
 	ifritClient *ifrit.Client
@@ -96,7 +100,7 @@ func (a *application) handleMessages(data []byte) ([]byte, error) {
 }
 
 //We assume that the CA is deployed on another server
-func main(caAddr string) {
+func main() {
 	a, err := newApp(caAddr)
 	if err != nil {
 		panic(err)

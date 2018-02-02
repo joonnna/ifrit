@@ -54,6 +54,8 @@ type group struct {
 	currBootNodes int
 }
 
+// Create and returns  a new certificate authority instance.
+// Generates a private/public keypair for internal use.
 func NewCa() (*Ca, error) {
 	privKey, err := genKeys()
 	if err != nil {
@@ -76,11 +78,14 @@ func NewCa() (*Ca, error) {
 	return c, nil
 }
 
+// Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
 	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
 	c.listener.Close()
 }
 
+// Starts serving certificate signing requests, requires the amount of gossip rings
+// to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
 	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
 	err := c.newGroup(numRings)
@@ -90,6 +95,8 @@ func (c *Ca) Start(numRings uint32) error {
 	return c.httpHandler()
 }
 
+// Returns the address(ip:port) of the certificate authority, this can
+// be directly used as input to the ifrit client entry address.
 func (c Ca) GetAddr() string {
 	return c.listener.Addr().String()
 }

@@ -1,7 +1,6 @@
 package node
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -9,7 +8,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -265,7 +263,7 @@ func NewNode(caAddr string, c client, s server) (*Node, error) {
 	return n, nil
 }
 
-func (n *Node) SendMessages(dest []string, ch chan io.Reader, data []byte) {
+func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 	msg := &gossip.Msg{
 		Content: data,
 	}
@@ -275,14 +273,13 @@ func (n *Node) SendMessages(dest []string, ch chan io.Reader, data []byte) {
 	}
 }
 
-func (n *Node) sendMsg(addr string, ch chan io.Reader, msg *gossip.Msg) {
+func (n *Node) sendMsg(addr string, ch chan []byte, msg *gossip.Msg) {
 	reply, err := n.client.SendMsg(addr, msg)
 	if err != nil {
 		n.log.Err.Println(err)
 		ch <- nil
 	}
-	r := bytes.NewReader(reply.GetContent())
-	ch <- r
+	ch <- reply.GetContent()
 }
 
 func (n *Node) ShutDownNode() {

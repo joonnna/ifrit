@@ -74,7 +74,7 @@ func (c *Client) SendTo(dest []string, data []byte) chan []byte {
 		c.node.SendMessages(dest, ch, data)
 	}()
 
-	return ch, nil
+	return ch
 }
 
 // Sends the given data to all members of the network belivied to be alive.

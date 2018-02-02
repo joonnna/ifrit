@@ -60,10 +60,15 @@ import (
     "github.com/joonnna/ifrit/ifrit"
 )
 
+
+// We assume that the CA is deployed on another server
+var (
+    caAddr "...."
+)
+
 // Mockup application
 type application struct {
     ifritClient *ifrit.Client
-    caAddr      string
 
     exitChan chan bool
     data     *appData
@@ -91,7 +96,6 @@ func newApp(caAddr string) (*application, error) {
 
     return &application{
         ifritClient: c,
-        caAddr:      caAddr,
     }, nil
 }
 
@@ -133,7 +137,7 @@ func (a *application) handleMessages(data []byte) ([]byte, error) {
         }
     }
 
-    //Updating state
+    //Updating to a new state so that its propegated throughout the ifrit network
     a.ifritClient.SetGossipContent(a.State())
 
     //No need to send a response, all application state will eventually converge
@@ -141,8 +145,8 @@ func (a *application) handleMessages(data []byte) ([]byte, error) {
 }
 
 //We assume that the CA is deployed on another server
-func main(caAddr string) {
-    a, err := newApp(caAddr)
+func main() {
+    a, err := newApp()
     if err != nil {
         panic(err)
     }
@@ -170,10 +174,15 @@ import (
     "github.com/joonnna/ifrit/ifrit"
 )
 
+// We assume that the CA is deployed on another server
+var (
+    caAddr = "...."
+)
+
+
 // Mockup application
 type application struct {
     ifritClient *ifrit.Client
-    caAddr      string
 
     exitChan chan bool
     data     *appData
@@ -193,7 +202,7 @@ type user struct {
 
 // We store the client instance within the application
 // such that we can communicate with it as we see fit
-func newApp(caAddr string) (*application, error) {
+func newApp() (*application, error) {
     c, err := ifrit.NewClient(caAddr)
     if err != nil {
         return nil, err
@@ -201,7 +210,6 @@ func newApp(caAddr string) (*application, error) {
 
     return &application{
         ifritClient: c,
-        caAddr:      caAddr,
     }, nil
 }
 
@@ -215,7 +223,7 @@ func (a *application) Start() {
             return
         case <-time.After(time.Sceond * 40):
             a.addRandomUser()
-            ch, num := a.ifritClient.SenToAll(a.State())
+            ch, num := a.ifritClient.SendToAll(a.State())
 
             for i := 0; i < num; i++ {
                 select {
@@ -255,9 +263,8 @@ func (a *application) handleMessages(data []byte) ([]byte, error) {
     return a.generateResponse(), nil
 }
 
-//We assume that the CA is deployed on another server
-func main(caAddr string) {
-    a, err := newApp(caAddr)
+func main() {
+    a, err := newApp()
     if err != nil {
         panic(err)
     }
