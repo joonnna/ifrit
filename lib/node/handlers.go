@@ -86,15 +86,17 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 		return nil, errNoCert
 	}
 
+	extGossip := args.GetExternalGossip()
+
 	//Already evaluated the new note, can return an empty reply
-	if isRebuttal := n.evalNote(args.GetOwnNote()); isRebuttal && args.GetExistingHosts() == nil {
+	if isRebuttal := n.evalNote(args.GetOwnNote()); isRebuttal && extGossip == nil {
 		return reply, nil
 	}
 
 	n.mergeViews(args.GetExistingHosts(), reply)
 
-	if handler := n.getMsgHandler(); handler != nil {
-		reply.ExternalGossip, err = handler((args.GetExternalGossip()))
+	if handler := n.getMsgHandler(); handler != nil && extGossip != nil {
+		reply.ExternalGossip, err = handler(extGossip)
 		if err != nil {
 			return nil, err
 		}
