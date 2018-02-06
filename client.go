@@ -19,7 +19,7 @@ var (
 // Creates and returns a new ifrit client instance
 // entryAddr is expected to be the address of the trusted CA (ip:port)
 // May return an error if the CA is not reachable
-// See config documentation for config description
+// Passing an empty config struct or nil will result in all defaults, see config documentation for config description
 func NewClient(entryAddr string, conf *Config) (*Client, error) {
 	if entryAddr == "" {
 		return nil, errNoCaAddress
