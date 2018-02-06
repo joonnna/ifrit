@@ -35,3 +35,7 @@ planetlab/node_addrs
 planetlab/node_addrs3
 vis/node_modules
 vis_backup
+build.sh
+plot.py
+planetlab/cmd_results
+experiment_results
