@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/joonnna/ifrit/ifrit"
+	"github.com/joonnna/ifrit"
 )
 
 var (
@@ -45,7 +45,7 @@ type user struct {
 // As an example we store the client instance within the application
 // such that we can communicate with it as we see fit
 func newApp(caAddr string) (*application, error) {
-	c, err := ifrit.NewClient(caAddr)
+	c, err := ifrit.NewClient(caAddr, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ https://golang.org/doc/code.html
 
 ## Client
 ```go
-import github.com/joonnna/ifrit/ifrit
+import github.com/joonnna/ifrit
 ```
 
 ## Certificate authority
@@ -23,7 +23,7 @@ package main
 
 import (
 	"github.com/joonnna/ifrit/cauth"
-	"github.com/joonnna/ifrit/ifrit"
+	"github.com/joonnna/ifrit"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
     ca := cauth.NewCa()
     go ca.Start(numRings)
 
-    c := client.NewClient(ca.GetAddr())
+    c := client.NewClient(ca.GetAddr(), nil)
     go c.Start()
 
     doApplicationStuff(c)
@@ -57,7 +57,7 @@ import (
     "encoding/json"
     "time"
 
-    "github.com/joonnna/ifrit/ifrit"
+    "github.com/joonnna/ifrit"
 )
 
 
@@ -89,7 +89,7 @@ type user struct {
 // We store the client instance within the application
 // such that we can communicate with it as we see fit
 func newApp(caAddr string) (*application, error) {
-    c, err := ifrit.NewClient(caAddr)
+    c, err := ifrit.NewClient(caAddr, nil)
     if err != nil {
         return nil, err
     }
@@ -171,7 +171,7 @@ import (
     "encoding/json"
     "time"
 
-    "github.com/joonnna/ifrit/ifrit"
+    "github.com/joonnna/ifrit"
 )
 
 // We assume that the CA is deployed on another server
