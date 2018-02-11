@@ -173,3 +173,18 @@ func (n *Node) getMsgHandler() processMsg {
 
 	return n.msgHandler
 }
+
+//Expose so that client can set new handler directly
+func (n *Node) SetResponseHandler(newHandler func([]byte)) {
+	n.responseHandlerMutex.Lock()
+	defer n.responseHandlerMutex.Unlock()
+
+	n.responseHandler = newHandler
+}
+
+func (n *Node) getResponseHandler() func([]byte) {
+	n.responseHandlerMutex.RLock()
+	defer n.responseHandlerMutex.RUnlock()
+
+	return n.responseHandler
+}

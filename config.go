@@ -8,6 +8,7 @@ const (
 	defMaxFailPings       = 3
 	defViewRemovalTimeout = 60
 	defVisUpdateTimeout   = 5
+	defMaxConc            = 100
 )
 
 //Config for ifrit client
@@ -33,6 +34,11 @@ type Config struct {
 
 	//How often ifrit should check if it has gained any new neighbours
 	VisUpdateTimeout uint32
+
+	//Max concurrent messages, used for rate limiting messaging service.
+	//E.g. Don't want to spawn 5000 goroutines if SendToAll is called with 5000 live memebers.
+	//When max is reached remaining sends are queued, defaults to 100.
+	MaxConcurrentMsgs uint32
 }
 
 func parseConfig(conf *Config, entryAddr string) *core.Config {
@@ -44,6 +50,7 @@ func parseConfig(conf *Config, entryAddr string) *core.Config {
 		nodeConf.MaxFailPings = defMaxFailPings
 		nodeConf.ViewRemovalTimeout = defViewRemovalTimeout
 		nodeConf.VisUpdateTimeout = defVisUpdateTimeout
+		nodeConf.MaxConc = defMaxConc
 	}
 
 	nodeConf.EntryAddr = entryAddr
@@ -70,6 +77,12 @@ func parseConfig(conf *Config, entryAddr string) *core.Config {
 		nodeConf.ViewRemovalTimeout = defViewRemovalTimeout
 	} else {
 		nodeConf.ViewRemovalTimeout = conf.ViewRemovalTimeout
+	}
+
+	if conf.MaxConcurrentMsgs == 0 {
+		nodeConf.MaxConc = defMaxConc
+	} else {
+		nodeConf.MaxConc = conf.MaxConcurrentMsgs
 	}
 
 	nodeConf.Visualizer = conf.Visualizer

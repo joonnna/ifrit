@@ -37,7 +37,7 @@ func (c *Client) Init(config *tls.Config) {
 	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
 	//c.dialOptions = append(c.dialOptions, grpc.WithCompressor(comp))
 	//c.dialOptions = append(c.dialOptions, grpc.WithDecompressor(decomp))
-	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*5))
+	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
 }
 
 func (c *Client) Dos(addr string, args *gossip.State) (*gossip.StateResponse, error) {

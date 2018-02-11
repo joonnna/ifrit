@@ -14,6 +14,7 @@ import (
 	"github.com/joonnna/ifrit/logger"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
+	"github.com/joonnna/workerpool"
 )
 
 var (
@@ -63,8 +64,13 @@ type Node struct {
 	msgHandler      processMsg
 	msgHandlerMutex sync.RWMutex
 
+	responseHandler      func([]byte)
+	responseHandlerMutex sync.RWMutex
+
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
+
+	dispatcher *workerpool.Dispatcher
 
 	privKey   *ecdsa.PrivateKey
 	localCert *x509.Certificate
@@ -118,6 +124,7 @@ type Config struct {
 	Visualizer         bool
 	VisAddr            string
 	VisUpdateTimeout   uint32
+	MaxConc            uint32
 }
 
 func (n *Node) gossipLoop() {
@@ -237,6 +244,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		viz:              conf.Visualizer,
 		vizUpdateTimeout: conf.VisUpdateTimeout,
 		vizAddr:          conf.VisAddr,
+		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -280,18 +288,32 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 	return n, nil
 }
 
+func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
+	msg := &gossip.Msg{
+		Content: data,
+	}
+
+	n.dispatcher.Submit(func() {
+		n.sendMsg(dest, ch, msg)
+	})
+}
+
 func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 	msg := &gossip.Msg{
 		Content: data,
 	}
 
 	for _, addr := range dest {
-		go n.sendMsg(addr, ch, msg)
+		a := addr
+		n.dispatcher.Submit(func() {
+			n.sendMsg(a, ch, msg)
+		})
 	}
+
 }
 
-func (n *Node) sendMsg(addr string, ch chan []byte, msg *gossip.Msg) {
-	reply, err := n.client.SendMsg(addr, msg)
+func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
+	reply, err := n.client.SendMsg(dest, msg)
 	if err != nil {
 		n.log.Err.Println(err)
 		ch <- nil
@@ -306,6 +328,7 @@ func (n *Node) ShutDownNode() {
 		}
 	}
 
+	n.dispatcher.Stop()
 	close(n.exitChan)
 	n.wg.Wait()
 }
@@ -315,7 +338,7 @@ func (n *Node) LiveMembers() []string {
 }
 
 func (n *Node) Id() string {
-	return n.server.HostInfo()
+	return n.key
 }
 
 func (n *Node) Start() {
@@ -337,6 +360,8 @@ func (n *Node) Start() {
 	go n.gossipLoop()
 	go n.monitor()
 	go n.checkTimeouts()
+
+	n.dispatcher.Start()
 
 	if n.viz {
 		go n.updateState()

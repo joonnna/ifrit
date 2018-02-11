@@ -72,6 +72,12 @@ func (c correct) Gossip(n *Node) {
 		n.mergeCertificates(reply.GetCertificates())
 		n.mergeNotes(reply.GetNotes())
 		n.mergeAccusations(reply.GetAccusations())
+
+		if handler := n.getResponseHandler(); handler != nil {
+			if r := reply.GetExternalGossip(); r != nil {
+				handler(r)
+			}
+		}
 	}
 }
 

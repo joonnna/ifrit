@@ -110,14 +110,18 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 }
 
 func (n *Node) Messenger(ctx context.Context, args *gossip.Msg) (*gossip.MsgResponse, error) {
+	var replyContent []byte
+
 	_, err := n.validateCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	replyContent, err := n.msgHandler(args.GetContent())
-	if err != nil {
-		return nil, err
+	if handler := n.getMsgHandler(); handler != nil {
+		replyContent, err = handler(args.GetContent())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &gossip.MsgResponse{Content: replyContent}, nil

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	_ "net/http/pprof"
 
@@ -15,6 +16,7 @@ import (
 )
 
 func createClients(requestChan chan interface{}, exitChan chan bool, arg string, vizAddr string) {
+	test := true
 	for {
 		select {
 		case <-requestChan:
@@ -24,12 +26,44 @@ func createClients(requestChan chan interface{}, exitChan chan bool, arg string,
 				fmt.Println(err)
 				continue
 			}
+
+			c.RegisterMsgHandler(msgHandler)
+
+			if test {
+				activateSendToAll(c)
+				test = false
+			}
+
 			requestChan <- c
 		case <-exitChan:
 			return
 		}
 
 	}
+}
+
+func activateSendTo(c *ifrit.Client) {
+	go func() {
+		data := []byte("Application message boys!")
+		for {
+			time.Sleep(time.Second * 10)
+			m := c.Members()
+			if len(m) == 0 {
+				continue
+			}
+			ch := c.SendTo(m[0], data)
+			r := <-ch
+			fmt.Println(string(r))
+		}
+	}()
+}
+
+func msgHandler(data []byte) ([]byte, error) {
+	fmt.Println(string(data))
+
+	resp := []byte("Got message, here is response!!!")
+
+	return resp, nil
 }
 
 func main() {
