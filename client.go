@@ -103,6 +103,7 @@ func (c *Client) SendToAll(data []byte) (chan []byte, int) {
 
 	numMembers := len(members)
 
+	//Don't want channel to be too big.
 	chSize := int(float32(numMembers) * 0.10)
 
 	if chSize <= 0 {

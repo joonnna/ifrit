@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package gossip;
+
 service gossip {
     rpc Spread (State) returns (StateResponse) {}
     rpc Messenger (Msg) returns (MsgResponse) {}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/joonnna/ifrit/logger"
-
 	"github.com/joonnna/ifrit/protobuf"
 )
 

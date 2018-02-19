@@ -30,7 +30,7 @@ func createClients(requestChan chan interface{}, exitChan chan bool, arg string,
 			c.RegisterMsgHandler(msgHandler)
 
 			if test {
-				activateSendToAll(c)
+				activateSendTo(c)
 				test = false
 			}
 

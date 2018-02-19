@@ -44,6 +44,8 @@ type Config struct {
 func parseConfig(conf *Config, entryAddr string) *core.Config {
 	nodeConf := &core.Config{}
 
+	nodeConf.EntryAddr = entryAddr
+
 	if conf == nil {
 		nodeConf.GossipRate = defGossipRate
 		nodeConf.MonitorRate = defMonitorRate
@@ -51,9 +53,8 @@ func parseConfig(conf *Config, entryAddr string) *core.Config {
 		nodeConf.ViewRemovalTimeout = defViewRemovalTimeout
 		nodeConf.VisUpdateTimeout = defVisUpdateTimeout
 		nodeConf.MaxConc = defMaxConc
+		return nodeConf
 	}
-
-	nodeConf.EntryAddr = entryAddr
 
 	if conf.GossipRate == 0 {
 		nodeConf.GossipRate = defGossipRate
