@@ -1,4 +1,5 @@
 # Ifrit
+Docs: https://godoc.org/github.com/joonnna/ifrit
 ## How to install golang
 https://golang.org/doc/install
 
