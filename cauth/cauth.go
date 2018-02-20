@@ -69,7 +69,7 @@ func NewCa() (*Ca, error) {
 	}
 
 	c := &Ca{
-		log:      logger.CreateLogger("ca", "caLog"),
+		log:      logger.CreateStdOutLogger("ca", "caLog"),
 		privKey:  privKey,
 		pubKey:   privKey.Public(),
 		listener: l,
@@ -78,15 +78,16 @@ func NewCa() (*Ca, error) {
 	return c, nil
 }
 
-// Shutsdown the certificate authority instance, will no longer serve signing requests.
+// Shutdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
 	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
 	c.listener.Close()
 }
 
-// Starts serving certificate signing requests, requires the amount of gossip rings
+// Start serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
+
 	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
 	err := c.newGroup(numRings)
 	if err != nil {
