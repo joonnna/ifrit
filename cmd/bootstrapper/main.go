@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"runtime"
@@ -16,18 +17,29 @@ import (
 	"github.com/joonnna/ifrit/log"
 )
 
+var (
+	clients []string
+)
+
 func createClients(requestChan chan interface{}, exitChan chan bool, arg string, vizAddr string) {
 	test := true
 	for {
 		select {
 		case <-requestChan:
-			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr}
-			c, err := ifrit.NewClient(arg, conf)
+			var addrs []string
+			if len(clients) > 0 {
+				idx := rand.Int() % len(clients)
+				addrs = append(addrs, clients[idx])
+				log.Info(addrs[0])
+			}
+			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr, EntryAddrs: addrs}
+			c, err := ifrit.NewClient(conf)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
 
+			clients = append(clients, c.Addr())
 			c.RegisterMsgHandler(msgHandler)
 
 			if test {

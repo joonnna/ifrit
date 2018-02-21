@@ -61,7 +61,7 @@ type signature struct {
 
 type note struct {
 	epoch uint64
-	mask  []byte
+	mask  uint32
 	*peerId
 	*signature
 }
@@ -70,7 +70,7 @@ type accusation struct {
 	ringNum uint32
 	epoch   uint64
 	accuser *peerId
-	mask    []byte
+	mask    uint32
 	*peerId
 	*signature
 }

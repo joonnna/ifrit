@@ -191,7 +191,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	g := c.groups[0]
 
-	log.Info("Got a certificate request from", reqCert.Subject.Locality)
+	log.Info("Got a certificate request from %s", reqCert.Subject.Locality)
 
 	//No idea what this is
 	//var oidExtensionBasicConstraints = []int{2, 5, 29, 19}
@@ -308,31 +308,6 @@ func (g *group) getTrustedNodes() [][]byte {
 }
 
 func genId() []byte {
-	/*
-		var id []byte
-
-		for {
-			id = uuid.NewV4().Bytes()
-			exists := false
-
-			for _, c := range existing {
-				if bytes.Equal(c.SubjectKeyId, id) {
-					exists = true
-					break
-				}
-			}
-
-			if !exists {
-				break
-			}
-		}
-
-		return id
-	*/
-
-	//return append(uuid.NewV1().Bytes(), uuid.NewV1().Bytes()...)
-	//return uuid.NewV1().Bytes()
-
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
 	return nonce

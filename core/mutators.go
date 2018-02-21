@@ -43,33 +43,31 @@ func (n *Node) deactivateRing(idx uint32) {
 
 	ringNum := idx - 1
 
-	len := uint32(len(n.recentNote.mask))
-
-	maxIdx := len - 1
+	maxIdx := n.numRings - 1
 
 	if ringNum > maxIdx || ringNum < 0 {
 		log.Error(errNonExistingRing.Error())
 		return
 	}
 
-	if n.recentNote.mask[ringNum] == 0 {
+	if active := hasBit(n.recentNote.mask, ringNum); !active {
 		log.Error(errAlreadyDeactivated.Error())
 		return
 	}
 
 	if n.deactivatedRings == n.maxByz {
 		var idx uint32
-		for idx = 0; idx < len; idx++ {
-			if idx != ringNum && n.recentNote.mask[idx] == 0 {
+		for idx = 0; idx < maxIdx; idx++ {
+			if idx != ringNum && !hasBit(n.recentNote.mask, idx) {
 				break
 			}
 		}
-		n.recentNote.mask[idx] = 1
+		n.recentNote.mask = setBit(n.recentNote.mask, idx)
 	} else {
 		n.deactivatedRings++
 	}
 
-	n.recentNote.mask[ringNum] = 0
+	n.recentNote.mask = clearBit(n.recentNote.mask, ringNum)
 
 	err := n.recentNote.sign(n.privKey)
 	if err != nil {
@@ -77,15 +75,11 @@ func (n *Node) deactivateRing(idx uint32) {
 	}
 }
 
-func (n *Node) getMask() []byte {
+func (n *Node) getMask() uint32 {
 	n.noteMutex.RLock()
 	defer n.noteMutex.RUnlock()
 
-	ret := make([]byte, len(n.recentNote.mask))
-
-	copy(ret, n.recentNote.mask)
-
-	return ret
+	return n.recentNote.mask
 }
 
 func (n *Node) collectGossipContent() (*gossip.State, error) {

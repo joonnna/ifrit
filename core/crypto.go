@@ -9,15 +9,21 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"math/big"
-	mrand "math/rand"
+	"net"
 	"net/http"
+	"strings"
+	"time"
+
+	"github.com/joonnna/ifrit/log"
 )
 
 var (
 	errSignature = errors.New("Can't unmarshal publickey")
+	errNoIp      = errors.New("Can't find ip in serviceAddr")
 )
 
 type certResponse struct {
@@ -121,14 +127,26 @@ func genServerConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
 		PrivateKey:  key,
 	}
 
-	pool := x509.NewCertPool()
-	pool.AddCert(certs.caCert)
-
-	return &tls.Config{
+	conf := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
-		ClientCAs:    pool,
-		ClientAuth:   tls.RequireAndVerifyClientCert,
 	}
+
+	if certs.caCert == nil {
+		conf.ClientAuth = tls.RequestClientCert
+		conf.VerifyPeerCertificate = test
+	} else {
+		pool := x509.NewCertPool()
+		pool.AddCert(certs.caCert)
+		conf.ClientCAs = pool
+		conf.ClientAuth = tls.RequireAndVerifyClientCert
+	}
+
+	return conf
+}
+
+func test(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	log.Debug("%d", len(rawCerts))
+	return nil
 }
 
 func genClientConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
@@ -137,13 +155,19 @@ func genClientConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
 		PrivateKey:  key,
 	}
 
-	pool := x509.NewCertPool()
-	pool.AddCert(certs.caCert)
-
-	return &tls.Config{
+	conf := &tls.Config{
 		Certificates: []tls.Certificate{tlsCert},
-		RootCAs:      pool,
 	}
+
+	if certs.caCert != nil {
+		pool := x509.NewCertPool()
+		pool.AddCert(certs.ownCert)
+		conf.RootCAs = pool
+	} else {
+		conf.InsecureSkipVerify = true
+	}
+
+	return conf
 }
 
 func genKeys() (*ecdsa.PrivateKey, error) {
@@ -157,6 +181,90 @@ func genKeys() (*ecdsa.PrivateKey, error) {
 
 func genNonce() []byte {
 	nonce := make([]byte, 32)
-	mrand.Read(nonce)
+	rand.Read(nonce)
 	return nonce
+}
+
+func checkSignature(c *x509.Certificate, ca *x509.Certificate) error {
+	if ca == nil {
+		//return c.CheckSignature(c.SignatureAlgorithm, c.Raw, c.Signature)
+		return c.CheckSignatureFrom(c)
+	} else {
+		return c.CheckSignatureFrom(ca)
+	}
+}
+
+func selfSignedCert(priv *ecdsa.PrivateKey, serviceAddr string, pingAddr string, numRings uint32) (*certSet, error) {
+	ringBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ringBytes[0:], numRings)
+
+	ext := pkix.Extension{
+		Id:       []int{2, 5, 13, 37},
+		Critical: false,
+		Value:    ringBytes,
+	}
+
+	s := pkix.Name{
+		Locality: []string{serviceAddr, pingAddr},
+	}
+
+	str := strings.Split(serviceAddr, ":")
+	if len(str) <= 0 {
+		return nil, errNoIp
+	}
+
+	ip := net.ParseIP(str[0])
+	if ip == nil {
+		return nil, errNoIp
+	}
+
+	serial, err := genSerialNumber()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO generate ids and serial numbers differently
+	newCert := &x509.Certificate{
+		SerialNumber:          serial,
+		SubjectKeyId:          genId(),
+		Subject:               s,
+		BasicConstraintsValid: true,
+		NotBefore:             time.Now().AddDate(-10, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		ExtraExtensions:       []pkix.Extension{ext},
+		PublicKey:             priv.PublicKey,
+		IPAddresses:           []net.IP{ip},
+		IsCA:                  true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
+	}
+
+	signedCert, err := x509.CreateCertificate(rand.Reader, newCert, newCert, priv.Public(), priv)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed, err := x509.ParseCertificate(signedCert)
+	if err != nil {
+		return nil, err
+	}
+
+	return &certSet{ownCert: parsed}, nil
+}
+
+func genId() []byte {
+	nonce := make([]byte, 32)
+	rand.Read(nonce)
+	return nonce
+
+}
+
+func genSerialNumber() (*big.Int, error) {
+	sLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	s, err := rand.Int(rand.Reader, sLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }

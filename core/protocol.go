@@ -150,7 +150,7 @@ func (c correct) Monitor(n *Node) {
 func (c correct) Timeouts(n *Node) {
 	timeouts := n.getAllTimeouts()
 	for key, t := range timeouts {
-		log.Debug("Have timeout for: ", t.addr)
+		log.Debug("Have timeout for: %s", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
 			log.Debug("%s timeout expired, removing from live", t.addr)
@@ -424,7 +424,7 @@ func (e experiment) Monitor(n *Node) {
 func (e experiment) Timeouts(n *Node) {
 	timeouts := n.getAllTimeouts()
 	for key, t := range timeouts {
-		log.Debug("Have timeout for: ", t.addr)
+		log.Debug("Have timeout for: %s", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
 			log.Debug("%s timeout expired, removing from live", t.addr)

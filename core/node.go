@@ -70,9 +70,10 @@ type Node struct {
 
 	dispatcher *workerpool.Dispatcher
 
-	privKey   *ecdsa.PrivateKey
-	localCert *x509.Certificate
-	caCert    *x509.Certificate
+	privKey    *ecdsa.PrivateKey
+	localCert  *x509.Certificate
+	caCert     *x509.Certificate
+	entryAddrs []string
 
 	stats *recorder
 
@@ -123,6 +124,9 @@ type Config struct {
 	VisAddr            string
 	VisUpdateTimeout   uint32
 	MaxConc            uint32
+	Ca                 bool
+	CaAddr             string
+	EntryAddrs         []string
 }
 
 func (n *Node) gossipLoop() {
@@ -165,8 +169,9 @@ func (n *Node) checkTimeouts() {
 }
 
 func NewNode(conf *Config, c client, s server) (*Node, error) {
-	var i uint32
+	var i, mask uint32
 	var extValue []byte
+	var certs *certSet
 
 	udpServer, err := udp.NewServer()
 	if err != nil {
@@ -180,12 +185,21 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		return nil, err
 	}
 
-	addr := fmt.Sprintf("http://%s/certificateRequest", conf.EntryAddr)
+	if conf.Ca {
+		addr := fmt.Sprintf("http://%s/certificateRequest", conf.CaAddr)
+		certs, err = sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
+		if err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
 
-	certs, err := sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
+	} else {
+		// TODO only have numrings in notes and not certificate?
+		certs, err = selfSignedCert(privKey, s.HostInfo(), udpServer.Addr(), uint32(32))
+		if err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
 	}
 
 	extensions := certs.ownCert.Extensions
@@ -241,6 +255,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		vizUpdateTimeout: conf.VisUpdateTimeout,
 		vizAddr:          conf.VisAddr,
 		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
+		entryAddrs:       conf.EntryAddrs,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -251,13 +266,14 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	n.client.Init(genClientConfig(certs, privKey))
 
+	for i = 0; i < n.numRings; i++ {
+		mask = setBit(mask, i)
+	}
+
 	localNote := &note{
 		epoch:  1,
-		mask:   make([]byte, numRings),
+		mask:   mask,
 		peerId: n.peerId,
-	}
-	for i = 0; i < n.numRings; i++ {
-		localNote.mask[i] = 1
 	}
 
 	err = localNote.sign(n.privKey)
@@ -268,17 +284,19 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	n.recentNote = localNote
 
-	for _, c := range certs.knownCerts {
-		if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
-			continue
+	if n.caCert != nil {
+		for _, c := range certs.knownCerts {
+			if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
+				continue
+			}
+			n.evalCertificate(c)
 		}
-		n.evalCertificate(c)
-	}
 
-	view := n.getView()
+		view := n.getView()
 
-	for _, p := range view {
-		n.addLivePeer(p)
+		for _, p := range view {
+			n.addLivePeer(p)
+		}
 	}
 
 	return n, nil
@@ -336,6 +354,10 @@ func (n *Node) Id() string {
 	return n.key
 }
 
+func (n *Node) Addr() string {
+	return n.server.HostInfo()
+}
+
 func (n *Node) Start() {
 	log.Info("Started Node")
 
@@ -371,6 +393,31 @@ func (n *Node) Start() {
 					break
 				}
 			}
+		}
+	}
+
+	// can continue even with error, will just send nil msg.
+	msg, err := n.collectGossipContent()
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	// With no ca we need to contact existing hosts.
+	// TODO retry if we fail to contact them?
+	if n.caCert == nil {
+		log.Debug("NO CA BOYS")
+		for _, addr := range n.entryAddrs {
+			log.Debug("Contacting %s", addr)
+			reply, err := n.client.Gossip(addr, msg)
+			if err != nil {
+				log.Error("%s, addr: %s", err.Error(), addr)
+				continue
+			}
+			log.Debug("Got response from %s", addr)
+
+			n.mergeCertificates(reply.GetCertificates())
+			n.mergeNotes(reply.GetNotes())
+			n.mergeAccusations(reply.GetAccusations())
 		}
 	}
 

@@ -55,7 +55,7 @@ func Info(s string, v ...interface{}) {
 
 func Error(s string, v ...interface{}) {
 	if err != nil {
-		if lvl := getLvl(); lvl == ERROR || lvl == INFO {
+		if lvl := getLvl(); lvl == ERROR || lvl == INFO || lvl == DEBUG {
 			err.Output(2, fmt.Sprintf(s, v...))
 		}
 	}

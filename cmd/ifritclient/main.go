@@ -19,10 +19,6 @@ var (
 	errNoAddr = errors.New("No certificate authority address provided, can't continue")
 )
 
-func cmp(this, other []byte) bool {
-	return string(this) == string(other)
-}
-
 func main() {
 	var caAddr string
 
@@ -43,7 +39,7 @@ func main() {
 
 	log.Init(f, log.DEBUG)
 
-	c, err := ifrit.NewClient(caAddr, nil)
+	c, err := ifrit.NewClient(&ifrit.Config{Ca: true, CaAddr: caAddr})
 	if err != nil {
 		fmt.Println(err)
 		panic(err)
