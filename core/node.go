@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
 	"github.com/joonnna/workerpool"
@@ -34,8 +34,6 @@ const (
 type processMsg func([]byte) ([]byte, error)
 
 type Node struct {
-	log *logger.Log
-
 	//Local peer representation
 	*peer
 
@@ -131,7 +129,7 @@ func (n *Node) gossipLoop() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Exiting gossiping")
+			log.Info("Exiting gossiping")
 			n.wg.Done()
 			return
 		case <-time.After(n.getGossipTimeout()):
@@ -144,7 +142,7 @@ func (n *Node) monitor() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Stopping monitoring")
+			log.Info("Stopping monitoring")
 			n.wg.Done()
 			return
 		case <-time.After(n.monitorTimeout):
@@ -157,7 +155,7 @@ func (n *Node) checkTimeouts() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Stopping view update")
+			log.Info("Stopping view update")
 			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
@@ -169,17 +167,16 @@ func (n *Node) checkTimeouts() {
 func NewNode(conf *Config, c client, s server) (*Node, error) {
 	var i uint32
 	var extValue []byte
-	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
 
-	udpServer, err := udp.NewServer(logger)
+	udpServer, err := udp.NewServer()
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	privKey, err := genKeys()
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -187,14 +184,14 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	certs, err := sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	extensions := certs.ownCert.Extensions
 
 	if len(certs.ownCert.SubjectKeyId) < 1 {
-		logger.Err.Println(errNoId)
+		log.Error(errNoId.Error())
 		return nil, errNoId
 	}
 
@@ -204,7 +201,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		}
 	}
 	if extValue == nil {
-		logger.Err.Println(errNoRingNum)
+		log.Error(errNoRingNum.Error())
 		return nil, errNoRingNum
 	}
 
@@ -214,13 +211,13 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	p, err := newPeer(nil, certs.ownCert, numRings)
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
-	v, err := newView(numRings, logger, p.peerId, p.addr)
+	v, err := newView(numRings, p.peerId, p.addr)
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -231,13 +228,12 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		monitorTimeout:   time.Second * time.Duration(conf.MonitorRate),
 		nodeDeadTimeout:  float64(conf.ViewRemovalTimeout),
 		view:             v,
-		pinger:           newPinger(udpServer, conf.MaxFailPings, privKey, logger),
+		pinger:           newPinger(udpServer, conf.MaxFailPings, privKey),
 		privKey:          privKey,
 		client:           c,
 		server:           s,
 		peer:             p,
-		stats:            &recorder{recordDuration: 60, log: logger},
-		log:              logger,
+		stats:            &recorder{recordDuration: 60},
 		localCert:        certs.ownCert,
 		caCert:           certs.caCert,
 		trustedBootNode:  certs.trusted,
@@ -249,7 +245,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -266,7 +262,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	err = localNote.sign(n.privKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -309,13 +305,12 @@ func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 			n.sendMsg(a, ch, msg)
 		})
 	}
-
 }
 
 func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 	reply, err := n.client.SendMsg(dest, msg)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		ch <- nil
 	}
 	ch <- reply.GetContent()
@@ -328,8 +323,8 @@ func (n *Node) ShutDownNode() {
 		}
 	}
 
-	n.dispatcher.Stop()
 	close(n.exitChan)
+	n.dispatcher.Stop()
 	n.wg.Wait()
 }
 
@@ -342,7 +337,7 @@ func (n *Node) Id() string {
 }
 
 func (n *Node) Start() {
-	n.log.Info.Println("Started Node")
+	log.Info("Started Node")
 
 	done := make(chan bool)
 
@@ -382,5 +377,6 @@ func (n *Node) Start() {
 	<-n.exitChan
 	n.server.ShutDown()
 	n.pinger.shutdown()
-	n.log.Info.Println("Exiting node")
+
+	log.Info("Exiting node")
 }

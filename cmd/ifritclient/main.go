@@ -12,6 +12,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/joonnna/ifrit"
+	"github.com/joonnna/ifrit/log"
 )
 
 var (
@@ -34,6 +35,13 @@ func main() {
 	if caAddr == "" {
 		panic(errNoAddr)
 	}
+
+	f, err := os.Create("/var/log/calog")
+	if err != nil {
+		panic(err)
+	}
+
+	log.Init(f, log.DEBUG)
 
 	c, err := ifrit.NewClient(caAddr, nil)
 	if err != nil {

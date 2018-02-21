@@ -6,12 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/log"
 )
 
 type recorder struct {
-	log *logger.Log
-
 	recordFlag      bool
 	recordMutex     sync.RWMutex
 	recordTimestamp time.Time
@@ -101,10 +99,10 @@ func (r *recorder) getFailedRequests() int {
 }
 
 func (r *recorder) doExp(args *expArgs) {
-	r.log.Info.Printf("Starting experiment, sleeping for %d minutes\n", args.Duration)
+	log.Info("Starting experiment, sleeping for %d minutes\n", args.Duration)
 	f, err := os.OpenFile("/home/uitple_firechain/res", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		r.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 

@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/netutil"
 )
 
@@ -32,8 +32,6 @@ var (
 )
 
 type Ca struct {
-	log *logger.Log
-
 	privKey *rsa.PrivateKey
 	pubKey  crypto.PublicKey
 
@@ -69,7 +67,6 @@ func NewCa() (*Ca, error) {
 	}
 
 	c := &Ca{
-		log:      logger.CreateStdOutLogger("ca", "caLog"),
 		privKey:  privKey,
 		pubKey:   privKey.Public(),
 		listener: l,
@@ -80,15 +77,14 @@ func NewCa() (*Ca, error) {
 
 // Shutdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
-	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
+	log.Info("Shuting down certificate authority on: %s", c.GetAddr())
 	c.listener.Close()
 }
 
 // Start serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
-
-	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
+	log.Info("Started certificate authority on: %s", c.GetAddr())
 	err := c.newGroup(numRings)
 	if err != nil {
 		return err
@@ -105,7 +101,7 @@ func (c Ca) GetAddr() string {
 func (c *Ca) newGroup(ringNum uint32) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -133,13 +129,13 @@ func (c *Ca) newGroup(ringNum uint32) error {
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
 	cert, err := x509.ParseCertificate(gCert)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -155,7 +151,7 @@ func (c *Ca) newGroup(ringNum uint32) error {
 
 	c.groups = append(c.groups, g)
 
-	c.log.Info.Println("Created new a new group!")
+	log.Info("Created new a new group!")
 
 	return nil
 }
@@ -175,7 +171,7 @@ func (c *Ca) httpHandler() error {
 
 	err := http.Serve(c.listener, nil)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -189,13 +185,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	reqCert, err := x509.ParseCertificateRequest(body.Bytes())
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	g := c.groups[0]
 
-	c.log.Info.Println("Got a certificate request from", reqCert.Subject.Locality)
+	log.Info("Got a certificate request from", reqCert.Subject.Locality)
 
 	//No idea what this is
 	//var oidExtensionBasicConstraints = []int{2, 5, 29, 19}
@@ -212,13 +208,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(reqCert.Subject.Locality) < 2 {
-		c.log.Err.Println(errNoAddr)
+		log.Error(errNoAddr.Error())
 		return
 	}
 
 	serialNumber, err := genSerialNumber()
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -240,13 +236,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	signedCert, err := x509.CreateCertificate(rand.Reader, newCert, g.groupCert, reqCert.PublicKey, c.privKey)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	knownCert, err := x509.ParseCertificate(signedCert)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 	trusted := g.addKnownCert(knownCert)
@@ -268,13 +264,12 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err = w.Write(b.Bytes())
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 }
 
 func (c *Ca) downloadHandler(w http.ResponseWriter, r *http.Request) {
-	c.log.Info.Println("Got a download request!")
 }
 
 func (g *group) addKnownCert(new *x509.Certificate) bool {

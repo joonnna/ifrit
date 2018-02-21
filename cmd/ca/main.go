@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/joonnna/ifrit/cauth"
+	"github.com/joonnna/ifrit/log"
 )
 
 func main() {
@@ -18,6 +19,13 @@ func main() {
 	args.UintVar(&numRings, "numRings", 10, "Number of gossip rings to be used")
 
 	args.Parse(os.Args[1:])
+
+	f, err := os.Create("/var/log/calog")
+	if err != nil {
+		panic(err)
+	}
+
+	log.Init(f, log.DEBUG)
 
 	ca, err := cauth.NewCa()
 	if err != nil {

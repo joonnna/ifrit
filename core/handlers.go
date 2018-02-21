@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
@@ -184,7 +185,7 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 		n.evalCertificate(cert)
@@ -240,9 +241,9 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	}
 
 	if newAcc.equal(acc) {
-		n.log.Info.Println("Already have accusation, discard")
+		log.Debug("Already have accusation, discard")
 		if !n.timerExist(accusedKey) {
-			n.log.Debug.Println("Started timer for: ", p.addr)
+			log.Debug("Started timer for: ", p.addr)
 			n.startTimer(p.key, p.getNote(), accuserPeer, p.addr)
 		}
 		return
@@ -258,20 +259,20 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	b, err := proto.Marshal(tmp)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	if !valid {
-		n.log.Debug.Println("Accuser: ", accuserPeer.addr)
-		n.log.Debug.Println("Accused: ", p.addr)
-		n.log.Info.Println("Invalid signature on accusation, ignoring")
+		log.Debug("Accuser: ", accuserPeer.addr)
+		log.Debug("Accused: ", p.addr)
+		log.Debug("Invalid signature on accusation, ignoring")
 		return
 	}
 
@@ -279,24 +280,24 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	if epoch == peerNote.epoch {
 		err := checkDisabledRings(mask, ringNum, n.maxByz, n.numRings)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			return
 		}
 
 		if !n.isPrev(p, accuserPeer, ringNum) {
-			n.log.Err.Println("Accuser is not pre-decessor of accused on given ring, invalid accusation")
+			log.Error("Accuser is not pre-decessor of accused on given ring, invalid accusation")
 			return
 		}
 
 		err = p.setAccusation(newAcc)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			return
 		}
-		n.log.Debug.Printf("Added accusation for: %s on ring %d", p.addr, newAcc.ringNum)
+		log.Debug("Added accusation for: %s on ring %d", p.addr, newAcc.ringNum)
 
 		if !n.timerExist(accusedKey) {
-			n.log.Debug.Println("Started timer for: ", p.addr)
+			log.Debug("Started timer for: ", p.addr)
 			n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
 		}
 	}
@@ -304,7 +305,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	if gossipNote == nil {
-		n.log.Err.Println("Got nil note")
+		log.Debug("Got nil note")
 		return false
 	}
 
@@ -336,24 +337,24 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 	b, err := proto.Marshal(tmp)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
 	if !valid {
-		n.log.Info.Println("Invalid signature on note, ignoring, ", p.addr)
+		log.Debug("Invalid signature on note, ignoring, ", p.addr)
 		return false
 	}
 
 	err = validMask(mask, n.maxByz, n.numRings)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Debug(err.Error())
 		return false
 	}
 
@@ -379,7 +380,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	} else {
 		//Peer is accused, need to check if this note invalidates accusation
 		if peerAccuse.epoch < epoch {
-			n.log.Info.Println("Rebuttal received for:", p.addr)
+			log.Debug("Rebuttal received for:", p.addr)
 			n.deleteTimeout(peerKey)
 			newNote := &note{
 				mask:   mask,
@@ -406,7 +407,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	if cert == nil {
-		n.log.Err.Println("Got nil cert")
+		log.Debug("Got nil cert")
 		return false
 	}
 
@@ -420,7 +421,7 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 
 	err := cert.CheckSignatureFrom(n.caCert)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 

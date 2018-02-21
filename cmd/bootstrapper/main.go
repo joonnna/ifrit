@@ -13,6 +13,7 @@ import (
 
 	"github.com/joonnna/ifrit"
 	"github.com/joonnna/ifrit/bootstrap"
+	"github.com/joonnna/ifrit/log"
 )
 
 func createClients(requestChan chan interface{}, exitChan chan bool, arg string, vizAddr string) {
@@ -80,6 +81,13 @@ func main() {
 
 	ch := make(chan interface{})
 	exitChan := make(chan bool)
+
+	f, err := os.Create("/var/log/ifritlog")
+	if err != nil {
+		panic(err)
+	}
+
+	log.Init(f, log.DEBUG)
 
 	l, err := bootstrap.NewLauncher(uint32(numRings), ch)
 	if err != nil {

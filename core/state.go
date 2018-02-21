@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/netutil"
 	"github.com/rs/cors"
 )
@@ -61,7 +62,7 @@ func (n *Node) httpHandler(c chan bool) {
 	//hostName := netutil.GetLocalIP()
 	l, err := netutil.ListenOnPort(hostName, httpPort)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -76,11 +77,14 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/dos", n.dosHandler)
 	r.HandleFunc("/neighbors", n.neighborsHandler)
 
+	//r.HandleFunc("/hosts", n.hostsHandler)
+	//r.HandleFunc("/state", n.stateHandler)
+
 	port := strings.Split(l.Addr().String(), ":")[1]
 
 	addrs, err := net.LookupHost(hostName)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -96,9 +100,15 @@ func (n *Node) httpHandler(c chan bool) {
 
 	err = http.Serve(l, handler)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
+}
+
+func (n *Node) hostsHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
 }
 
 func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +116,7 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 
 	if n.trustedBootNode {
-		n.log.Info.Println("Boot node, ignoring shutdown request")
+		log.Info("Boot node, ignoring shutdown request")
 		return
 	}
 
@@ -114,7 +124,7 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n.log.Info.Println("Received shutdown request!")
+	log.Info("Received shutdown request!")
 
 	n.ShutDownNode()
 }
@@ -124,11 +134,11 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body.Close()
 
 	if n.trustedBootNode {
-		n.log.Info.Println("Boot node, ignoring crash request")
+		log.Info("Boot node, ignoring crash request")
 		return
 	}
 
-	n.log.Info.Println("Received crash request, shutting down local comm")
+	log.Info("Received crash request, shutting down local comm")
 
 	n.server.ShutDown()
 	n.pinger.Shutdown()
@@ -138,19 +148,19 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
-	n.log.Info.Println("Received corrupt request, going rogue!")
+	log.Info("Received corrupt request, going rogue!")
 
 	n.setProtocol(spamAccusations{})
 }
 
 func (n *Node) dosHandler(w http.ResponseWriter, r *http.Request) {
-	n.log.Info.Println("Received dos request, spamming!")
+	log.Info("Received dos request, spamming!")
 
 	var args dosArgs
 
 	err := json.NewDecoder(r.Body).Decode(&args)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 	r.Body.Close()
@@ -169,7 +179,7 @@ func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&args)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 	r.Body.Close()
@@ -274,7 +284,7 @@ func (n *Node) newState(ringId uint32) *state {
 	succ, err := n.ringMap[ringId].getRingSucc()
 	if err != nil {
 		nextId = ""
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	} else {
 		nextId = fmt.Sprintf("%s|%d", succ.addr, ringId)
 	}
@@ -282,7 +292,7 @@ func (n *Node) newState(ringId uint32) *state {
 	prev, err := n.ringMap[ringId].getRingPrev()
 	if err != nil {
 		prevId = ""
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	} else {
 		prevId = fmt.Sprintf("%s|%d", prev.addr, ringId)
 	}
@@ -301,12 +311,13 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 	addr := fmt.Sprintf("http://%s/update", n.vizAddr)
 	req, err := http.NewRequest("POST", addr, r)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
+		return
 	}
 
 	resp, err := c.Do(req)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
@@ -320,7 +331,7 @@ func (n *Node) add(ringId uint32) error {
 	addr := fmt.Sprintf("http://%s/add", n.vizAddr)
 	req, err := http.NewRequest("POST", addr, bytes)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -328,7 +339,7 @@ func (n *Node) add(ringId uint32) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
@@ -343,14 +354,15 @@ func (n *Node) remove(ringId uint32) {
 	addr := fmt.Sprintf("http://%s/remove", n.vizAddr)
 	req, err := http.NewRequest("POST", addr, bytes)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
+		return
 	}
 
 	client := &http.Client{}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	} else {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()

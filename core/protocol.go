@@ -3,6 +3,7 @@ package core
 import (
 	"time"
 
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -24,7 +25,7 @@ func (c correct) Rebuttal(n *Node) {
 	for {
 		neighbours, err = n.getGossipPartners()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 		} else {
 			break
 		}
@@ -42,7 +43,7 @@ func (c correct) Rebuttal(n *Node) {
 		}
 		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 	}
@@ -55,7 +56,7 @@ func (c correct) Gossip(n *Node) {
 	}
 	neighbours, err := n.getGossipPartners()
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -65,7 +66,7 @@ func (c correct) Gossip(n *Node) {
 		}
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
-			n.log.Err.Println(err, addr)
+			log.Error("%s, addr: %s", err.Error(), addr)
 			continue
 		}
 
@@ -85,7 +86,7 @@ func (c correct) Monitor(n *Node) {
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
@@ -100,7 +101,7 @@ func (c correct) Monitor(n *Node) {
 				continue
 			}
 
-			n.log.Info.Printf("%s is dead, accusing", p.addr)
+			log.Debug("%s is dead, accusing", p.addr)
 			peerNote := p.getNote()
 			//Will always have note for a peer in our liveView, except when the peer stems
 			//from the initial contact list of the CA, if it's dead
@@ -121,7 +122,7 @@ func (c correct) Monitor(n *Node) {
 
 			acc := p.getRingAccusation(ring.ringNum)
 			if a.equal(acc) {
-				n.log.Info.Println("Already accused peer on this ring")
+				log.Debug("Already accused peer on this ring")
 				if !n.timerExist(p.key) {
 					n.startTimer(p.key, peerNote, n.peer, p.addr)
 				}
@@ -130,13 +131,13 @@ func (c correct) Monitor(n *Node) {
 
 			err = a.sign(n.privKey)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
 			err = p.setAccusation(a)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 			if !n.timerExist(p.key) {
@@ -149,10 +150,10 @@ func (c correct) Monitor(n *Node) {
 func (c correct) Timeouts(n *Node) {
 	timeouts := n.getAllTimeouts()
 	for key, t := range timeouts {
-		n.log.Debug.Println("Have timeout for: ", t.addr)
+		log.Debug("Have timeout for: ", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
-			n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
+			log.Debug("%s timeout expired, removing from live", t.addr)
 			n.deleteTimeout(key)
 			n.removeLivePeer(key)
 		}
@@ -162,7 +163,7 @@ func (c correct) Timeouts(n *Node) {
 func (sa spamAccusations) Gossip(n *Node) {
 	msg, err := createFalseAccusations(n)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -171,7 +172,7 @@ func (sa spamAccusations) Gossip(n *Node) {
 	for _, p := range allNodes {
 		reply, err := n.client.Gossip(p.addr, msg)
 		if err != nil {
-			n.log.Err.Println(err, p.addr)
+			log.Error(err.Error())
 			continue
 		}
 		n.mergeCertificates(reply.GetCertificates())
@@ -183,7 +184,7 @@ func (sa spamAccusations) Monitor(n *Node) {
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
@@ -207,13 +208,13 @@ func (sa spamAccusations) Monitor(n *Node) {
 
 		err = a.sign(n.privKey)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
 		err = p.setAccusation(a)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			return
 		}
 
@@ -231,7 +232,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 	for {
 		neighbours, err = n.getGossipPartners()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 		} else {
 			break
 		}
@@ -249,7 +250,7 @@ func (sa spamAccusations) Rebuttal(n *Node) {
 		}
 		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 	}
@@ -281,13 +282,13 @@ func createFalseAccusations(n *Node) (*gossip.State, error) {
 
 			err := a.sign(n.privKey)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
 			err = p.setAccusation(a)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
@@ -309,7 +310,7 @@ func (e experiment) Rebuttal(n *Node) {
 	for {
 		neighbours, err = n.getGossipPartners()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 		} else {
 			break
 		}
@@ -327,7 +328,7 @@ func (e experiment) Rebuttal(n *Node) {
 		}
 		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 	}
@@ -336,7 +337,7 @@ func (e experiment) Rebuttal(n *Node) {
 func dos(addr string, msg *gossip.State, n *Node) {
 	_, err := n.client.Gossip(addr, msg)
 	if err != nil {
-		n.log.Err.Println(err, addr)
+		log.Error("%s, addr: %s", err.Error(), addr)
 	}
 }
 
@@ -359,7 +360,7 @@ func (e experiment) Monitor(n *Node) {
 	for _, ring := range n.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
@@ -374,7 +375,7 @@ func (e experiment) Monitor(n *Node) {
 				continue
 			}
 
-			n.log.Info.Printf("%s is dead, accusing", p.addr)
+			log.Debug("%s is dead, accusing", p.addr)
 			peerNote := p.getNote()
 			//Will always have note for a peer in our liveView, except when the peer stems
 			//from the initial contact list of the CA, if it's dead
@@ -395,7 +396,7 @@ func (e experiment) Monitor(n *Node) {
 
 			acc := p.getRingAccusation(ring.ringNum)
 			if a.equal(acc) {
-				n.log.Info.Println("Already accused peer on this ring")
+				log.Debug("Already accused peer on this ring")
 				if !n.timerExist(p.key) {
 					n.startTimer(p.key, peerNote, n.peer, p.addr)
 				}
@@ -404,13 +405,13 @@ func (e experiment) Monitor(n *Node) {
 
 			err = a.sign(n.privKey)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
 			err = p.setAccusation(a)
 			if err != nil {
-				n.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 			if !n.timerExist(p.key) {
@@ -423,10 +424,10 @@ func (e experiment) Monitor(n *Node) {
 func (e experiment) Timeouts(n *Node) {
 	timeouts := n.getAllTimeouts()
 	for key, t := range timeouts {
-		n.log.Debug.Println("Have timeout for: ", t.addr)
+		log.Debug("Have timeout for: ", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
-			n.log.Debug.Printf("%s timeout expired, removing from live", t.addr)
+			log.Debug("%s timeout expired, removing from live", t.addr)
 			n.deleteTimeout(key)
 			n.removeLivePeer(key)
 		}

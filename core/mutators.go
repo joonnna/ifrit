@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -21,7 +22,7 @@ func (n *Node) setEpoch(newEpoch uint64) {
 
 	err := n.recentNote.sign(n.privKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	}
 }
 
@@ -47,12 +48,12 @@ func (n *Node) deactivateRing(idx uint32) {
 	maxIdx := len - 1
 
 	if ringNum > maxIdx || ringNum < 0 {
-		n.log.Err.Println(errNonExistingRing)
+		log.Error(errNonExistingRing.Error())
 		return
 	}
 
 	if n.recentNote.mask[ringNum] == 0 {
-		n.log.Err.Println(errAlreadyDeactivated)
+		log.Error(errAlreadyDeactivated.Error())
 		return
 	}
 
@@ -72,7 +73,7 @@ func (n *Node) deactivateRing(idx uint32) {
 
 	err := n.recentNote.sign(n.privKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 	}
 }
 

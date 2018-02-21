@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	"github.com/joonnna/ifrit/log"
 )
 
 var (
@@ -34,13 +34,11 @@ type view struct {
 
 	viewUpdateTimeout time.Duration
 
-	log *logger.Log
-
 	//Local id only used for special case in addLivePeer
 	local *peerId
 }
 
-func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, error) {
+func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 	var i uint32
 	var err error
 
@@ -55,7 +53,6 @@ func newView(numRings uint32, log *logger.Log, id *peerId, addr string) (*view, 
 		liveMap:           make(map[string]*peer),
 		timeoutMap:        make(map[string]*timeout),
 		viewUpdateTimeout: time.Second * 2,
-		log:               log,
 		numRings:          numRings,
 		local:             id,
 		maxByz:            uint32(maxByz),
@@ -121,13 +118,13 @@ func (v *view) addViewPeer(key string, n *note, cert *x509.Certificate, rings ui
 	defer v.viewMutex.Unlock()
 
 	if _, ok := v.viewMap[key]; ok {
-		v.log.Err.Printf("Tried to add peer twice to viewMap")
+		log.Error("Tried to add peer twice to viewMap")
 		return
 	}
 
 	p, err := newPeer(n, cert, rings)
 	if err != nil {
-		v.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -162,14 +159,14 @@ func (v *view) getNeighbours() []string {
 	for _, ring := range v.ringMap {
 		succ, err := ring.getRingSucc()
 		if err != nil {
-			v.log.Info.Println(err)
+			log.Error(err.Error())
 		} else {
 			neighbours = append(neighbours, succ.addr)
 		}
 
 		prev, err := ring.getRingPrev()
 		if err != nil {
-			v.log.Info.Println(err)
+			log.Error(err.Error())
 		} else {
 			neighbours = append(neighbours, prev.addr)
 		}
@@ -235,7 +232,7 @@ func (v *view) addLivePeer(p *peer) {
 	v.liveMutex.Lock()
 
 	if _, ok := v.liveMap[p.key]; ok {
-		v.log.Err.Printf("Tried to add peer twice to liveMap: %s", p.addr)
+		log.Error("Tried to add peer twice to liveMap: %s", p.addr)
 		v.liveMutex.Unlock()
 		return
 	}
@@ -250,13 +247,13 @@ func (v *view) addLivePeer(p *peer) {
 		//Although no errors "should" occur
 		err := ring.add(p.id, p.addr)
 		if err != nil {
-			v.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
 		succKey, prevKey, err := ring.findNeighbours(p.id)
 		if err != nil {
-			v.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 
@@ -297,13 +294,13 @@ func (v *view) removeLivePeer(key string) {
 	}
 	id := p.id
 
-	v.log.Debug.Printf("Removed livePeer: %s", p.addr)
+	log.Debug("Removed livePeer: %s", p.addr)
 	delete(v.liveMap, key)
 
 	for _, ring := range v.ringMap {
 		err := ring.remove(id)
 		if err != nil {
-			v.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 	}
@@ -373,13 +370,13 @@ func (v *view) getAllTimeouts() map[string]*timeout {
 func (v *view) isPrev(curr, toCheck *peer, ringNum uint32) bool {
 	r, ok := v.ringMap[ringNum]
 	if !ok {
-		v.log.Err.Println("checking prev on non-existing ring")
+		log.Error("checking prev on non-existing ring")
 		return false
 	}
 
 	prev, err := r.isPrev(curr.id, toCheck.id)
 	if err != nil {
-		v.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
