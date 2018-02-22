@@ -76,9 +76,8 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/latencies", n.latenciesHandler)
 	r.HandleFunc("/dos", n.dosHandler)
 	r.HandleFunc("/neighbors", n.neighborsHandler)
-
-	//r.HandleFunc("/hosts", n.hostsHandler)
-	//r.HandleFunc("/state", n.stateHandler)
+	r.HandleFunc("/hosts", n.hostsHandler)
+	r.HandleFunc("/state", n.stateHandler)
 
 	port := strings.Split(l.Addr().String(), ":")[1]
 
@@ -108,6 +107,23 @@ func (n *Node) httpHandler(c chan bool) {
 func (n *Node) hostsHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
+
+	addrs := n.getLivePeerAddrs()
+
+	for _, a := range addrs {
+		w.Write([]byte(fmt.Sprintf("%s\n", a)))
+	}
+}
+
+func (n *Node) stateHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	addrs := n.getLivePeerAddrs()
+
+	for _, a := range addrs {
+		w.Write([]byte(fmt.Sprintf("%s\n", a)))
+	}
 
 }
 

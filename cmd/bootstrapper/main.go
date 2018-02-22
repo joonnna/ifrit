@@ -101,7 +101,7 @@ func main() {
 
 	log.Init(f, log.DEBUG)
 
-	l, err := bootstrap.NewLauncher(uint32(numRings), ch)
+	l, err := bootstrap.NewLauncher(uint32(numRings), ch, nil)
 	if err != nil {
 		panic(err)
 	}
