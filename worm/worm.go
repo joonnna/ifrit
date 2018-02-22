@@ -18,6 +18,8 @@ type Worm struct {
 	stateMap      map[string][]byte
 	stateMutex    sync.RWMutex
 
+	totalStateErrors uint32
+
 	exitCh chan bool
 
 	wp *workerpool.Dispatcher
@@ -41,6 +43,7 @@ func NewWorm(cmp func([]byte, []byte) error, hosts, state string, interval uint)
 }
 
 func (w *Worm) Start() {
+	w.wp.Start()
 	go w.hostLoop()
 	go w.stateLoop()
 }
@@ -52,22 +55,25 @@ func (w *Worm) Stop() {
 func (w *Worm) stateLoop() {
 	for {
 		select {
+		case <-w.exitCh:
+			return
+
 		case <-w.stateTicker.C:
 			w.getHostStates()
 			w.cmpStates()
-		case <-w.exitCh:
-			return
 		}
 	}
 }
 
 func (w *Worm) hostLoop() {
 	for {
+		h := w.getHosts()
+		log.Debug("Hosts", "amount", len(h), "addrs", h)
 		select {
-		case <-w.hostTicker.C:
-			w.getNewHosts()
 		case <-w.exitCh:
 			return
+		case <-w.hostTicker.C:
+			w.getNewHosts()
 		}
 	}
 }
@@ -119,12 +125,22 @@ func (w *Worm) cmpStates() {
 	w.stateMutex.RLock()
 	defer w.stateMutex.RUnlock()
 
-	for _, s := range w.stateMap {
-		for _, s2 := range w.stateMap {
+	errors := 0
+
+	for k, s := range w.stateMap {
+		for k2, s2 := range w.stateMap {
+			if s == nil || s2 == nil || k == k2 {
+				continue
+			}
 			err := w.stateCmp(s, s2)
 			if err != nil {
 				log.Error(err.Error())
+				errors++
 			}
 		}
 	}
+
+	w.totalStateErrors += uint32(errors)
+	log.Debug("Different states", "amount", errors)
+	log.Debug("Total errors", "amount", w.totalStateErrors)
 }

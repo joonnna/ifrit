@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"testing"
 
-	"github.com/joonnna/ifrit/logger"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -56,8 +55,6 @@ func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.Private
 	return p, peerPrivKey
 }
 
-// Make sure that VariableThatShouldStartAtFive is set to five
-// before each test
 func (suite *NodeTestSuite) SetupTest() {
 	var numRings uint32
 
@@ -65,15 +62,12 @@ func (suite *NodeTestSuite) SetupTest() {
 
 	p, priv := newTestPeer("mainPeer1234", numRings, "localhost:1000")
 
-	logger := logger.CreateLogger("test", "testlog")
-
 	v, err := newView(numRings, logger, p.peerId, p.addr)
 	require.NoError(suite.T(), err, "Failed to create view")
 
 	n := &Node{
 		peer:    p,
 		privKey: priv,
-		log:     logger,
 		view:    v,
 	}
 

@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -78,7 +79,8 @@ type Node struct {
 	stats *recorder
 
 	trustedBootNode  bool
-	httpAddr         string
+	vizId            string
+	httpListener     net.Listener
 	viz              bool
 	vizAddr          string
 	vizUpdateTimeout uint32
@@ -172,6 +174,8 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 	var i, mask uint32
 	var extValue []byte
 	var certs *certSet
+	var http string
+	var l net.Listener
 
 	udpServer, err := udp.NewServer()
 	if err != nil {
@@ -185,9 +189,17 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		return nil, err
 	}
 
+	if conf.Visualizer {
+		l, err = initHttp()
+		if err != nil {
+			log.Error(err.Error())
+		}
+		http = l.Addr().String()
+	}
+
 	if conf.Ca {
 		addr := fmt.Sprintf("http://%s/certificateRequest", conf.CaAddr)
-		certs, err = sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
+		certs, err = sendCertRequest(privKey, addr, s.HostInfo(), udpServer.Addr(), http)
 		if err != nil {
 			log.Error(err.Error())
 			return nil, err
@@ -195,7 +207,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	} else {
 		// TODO only have numrings in notes and not certificate?
-		certs, err = selfSignedCert(privKey, s.HostInfo(), udpServer.Addr(), uint32(32))
+		certs, err = selfSignedCert(privKey, s.HostInfo(), udpServer.Addr(), http, uint32(32))
 		if err != nil {
 			log.Error(err.Error())
 			return nil, err
@@ -256,6 +268,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		vizAddr:          conf.VisAddr,
 		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
 		entryAddrs:       conf.EntryAddrs,
+		httpListener:     l,
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -350,6 +363,10 @@ func (n *Node) LiveMembers() []string {
 	return n.getLivePeerAddrs()
 }
 
+func (n *Node) LiveMembersHttp() []string {
+	return n.getLivePeerHttpAddrs()
+}
+
 func (n *Node) Id() string {
 	return n.key
 }
@@ -358,10 +375,12 @@ func (n *Node) Addr() string {
 	return n.server.HostInfo()
 }
 
+func (n *Node) HttpAddr() string {
+	return n.httpListener.Addr().String()
+}
+
 func (n *Node) Start() {
 	log.Info("Started Node")
-
-	done := make(chan bool)
 
 	n.setProtocol(correct{})
 
@@ -382,9 +401,7 @@ func (n *Node) Start() {
 
 	if n.viz {
 		go n.updateState()
-		go n.httpHandler(done)
-
-		<-done
+		go n.httpHandler()
 
 		for _, r := range n.ringMap {
 			for {
@@ -405,15 +422,12 @@ func (n *Node) Start() {
 	// With no ca we need to contact existing hosts.
 	// TODO retry if we fail to contact them?
 	if n.caCert == nil {
-		log.Debug("NO CA BOYS")
 		for _, addr := range n.entryAddrs {
-			log.Debug("Contacting", "addr", addr)
 			reply, err := n.client.Gossip(addr, msg)
 			if err != nil {
 				log.Error(err.Error(), "addr", addr)
 				continue
 			}
-			log.Debug("Got response", "addr", addr)
 
 			n.mergeCertificates(reply.GetCertificates())
 			n.mergeNotes(reply.GetNotes())
@@ -422,6 +436,7 @@ func (n *Node) Start() {
 	}
 
 	<-n.exitChan
+	n.httpListener.Close()
 	n.server.ShutDown()
 	n.pinger.shutdown()
 

@@ -12,6 +12,8 @@ import (
 
 	"github.com/joonnna/ifrit/cauth"
 	"github.com/joonnna/ifrit/worm"
+
+	log "github.com/inconshreveable/log15"
 )
 
 const (
@@ -39,6 +41,7 @@ type application interface {
 	Start()
 	ShutDown()
 	Addr() string
+	HttpAddr() string
 }
 
 func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher, error) {
@@ -68,6 +71,7 @@ func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher,
 func (l *Launcher) Start() {
 	go l.ca.Start(l.numRings)
 	if l.worm != nil {
+		log.Info("Starting worm")
 		l.worm.Start()
 	}
 	http.HandleFunc("/addApplication", l.addApplicationHandler)
@@ -114,8 +118,8 @@ func (l *Launcher) startApplication() {
 
 	go client.Start()
 
-	if len(l.applicationList) == 0 && l.worm != nil {
-		l.worm.AddHost(client.Addr())
+	if len(l.applicationList) <= 0 && l.worm != nil {
+		l.worm.AddHost(client.HttpAddr())
 	}
 
 	l.applicationList = append(l.applicationList, client)

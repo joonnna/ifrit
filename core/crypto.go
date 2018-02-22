@@ -67,12 +67,12 @@ func validateSignature(r, s, data []byte, pub *ecdsa.PublicKey) (bool, error) {
 	return ecdsa.Verify(pub, b, &rInt, &sInt), nil
 }
 
-func sendCertRequest(caAddr string, privKey *ecdsa.PrivateKey, serviceAddr string, pingAddr string) (*certSet, error) {
+func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr, serviceAddr, pingAddr, httpAddr string) (*certSet, error) {
 	var certs certResponse
 	set := &certSet{}
 
 	s := pkix.Name{
-		Locality: []string{serviceAddr, pingAddr},
+		Locality: []string{serviceAddr, pingAddr, httpAddr},
 	}
 
 	template := x509.CertificateRequest{
@@ -186,7 +186,7 @@ func checkSignature(c *x509.Certificate, ca *x509.Certificate) error {
 	}
 }
 
-func selfSignedCert(priv *ecdsa.PrivateKey, serviceAddr string, pingAddr string, numRings uint32) (*certSet, error) {
+func selfSignedCert(priv *ecdsa.PrivateKey, serviceAddr, pingAddr, httpAddr string, numRings uint32) (*certSet, error) {
 	ringBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ringBytes[0:], numRings)
 
@@ -197,7 +197,7 @@ func selfSignedCert(priv *ecdsa.PrivateKey, serviceAddr string, pingAddr string,
 	}
 
 	s := pkix.Name{
-		Locality: []string{serviceAddr, pingAddr},
+		Locality: []string{serviceAddr, pingAddr, httpAddr},
 	}
 
 	str := strings.Split(serviceAddr, ":")

@@ -76,7 +76,7 @@ func (c *Client) Start() {
 	c.node.Start()
 }
 
-// Returns the address of all other ifrit clients in the network which is currently
+// Returns the address(ip:port, rpc endpoint) of all other ifrit clients in the network which is currently
 // believed to be alive.
 func (c *Client) Members() []string {
 	return c.node.LiveMembers()
@@ -139,4 +139,17 @@ func (c *Client) Id() string {
 // Can be directly used as entry addresses in the config.
 func (c *Client) Addr() string {
 	return c.node.Addr()
+}
+
+// Returns the address(ip:port) of the ifrit http endpoint.
+// Only used for debuging, populated if visualizer is enabled..
+func (c *Client) HttpAddr() string {
+	return c.node.HttpAddr()
+}
+
+// Returns the address(ip:port, http endpoint) of all members of the fireflies
+// network believed to be alive.
+// Only used for debuging, populated if visualizer is enabled.
+func (c *Client) MembersHttp() []string {
+	return c.node.LiveMembersHttp()
 }

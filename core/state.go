@@ -57,14 +57,23 @@ func (s *state) marshal() io.Reader {
 	return bytes.NewReader(buff.Bytes())
 }
 
-func (n *Node) httpHandler(c chan bool) {
+func initHttp() (net.Listener, error) {
 	hostName, _ := os.Hostname()
 	//hostName := netutil.GetLocalIP()
 	l, err := netutil.ListenOnPort(hostName, httpPort)
 	if err != nil {
-		log.Error(err.Error())
+		return nil, err
+	}
+
+	return l, nil
+}
+
+func (n *Node) httpHandler() {
+	if n.httpListener == nil {
 		return
 	}
+
+	hostName, _ := os.Hostname()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/shutdownNode", n.shutdownHandler)
@@ -79,7 +88,7 @@ func (n *Node) httpHandler(c chan bool) {
 	r.HandleFunc("/hosts", n.hostsHandler)
 	r.HandleFunc("/state", n.stateHandler)
 
-	port := strings.Split(l.Addr().String(), ":")[1]
+	port := strings.Split(n.httpListener.Addr().String(), ":")[1]
 
 	addrs, err := net.LookupHost(hostName)
 	if err != nil {
@@ -87,17 +96,11 @@ func (n *Node) httpHandler(c chan bool) {
 		return
 	}
 
-	n.httpAddr = fmt.Sprintf("http://%s:%s", addrs[0], port)
-	go func() {
-		<-n.exitChan
-		l.Close()
-	}()
-
-	close(c)
+	n.vizId = fmt.Sprintf("http://%s:%s", addrs[0], port)
 
 	handler := cors.Default().Handler(r)
 
-	err = http.Serve(l, handler)
+	err = http.Serve(n.httpListener, handler)
 	if err != nil {
 		log.Error(err.Error())
 		return
@@ -317,7 +320,7 @@ func (n *Node) newState(ringId uint32) *state {
 		ID:       id,
 		Next:     nextId,
 		Prev:     prevId,
-		HttpAddr: n.httpAddr,
+		HttpAddr: n.vizId,
 		Trusted:  n.trustedBootNode,
 	}
 }

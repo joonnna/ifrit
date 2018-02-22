@@ -214,6 +214,21 @@ func (v *view) getLivePeerAddrs() []string {
 	return ret
 }
 
+func (v *view) getLivePeerHttpAddrs() []string {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	idx := 0
+	ret := make([]string, len(v.liveMap))
+
+	for _, p := range v.liveMap {
+		ret[idx] = p.httpAddr
+		idx++
+	}
+
+	return ret
+}
+
 func (v *view) getLivePeer(key string) *peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
