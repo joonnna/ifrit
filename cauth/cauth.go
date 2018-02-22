@@ -95,7 +95,7 @@ func (c *Ca) Start(numRings uint32) error {
 
 // Returns the address(ip:port) of the certificate authority, this can
 // be directly used as input to the ifrit client entry address.
-func (c Ca) GetAddr() string {
+func (c Ca) Addr() string {
 	return c.listener.Addr().String()
 }
 

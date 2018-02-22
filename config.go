@@ -22,7 +22,8 @@ const (
 )
 
 // Config for ifrit client
-// All values that are not set are set to their default values..
+// All values that are not set are set to their default values.
+// Passing a nil config results in all defaults.
 type Config struct {
 	// How often ifrit should gossip with neighbours (in seconds), defaults to 10 seconds
 	GossipRate uint32
@@ -66,8 +67,14 @@ func parseConfig(conf *Config) (*core.Config, error) {
 	nodeConf := &core.Config{}
 
 	if conf == nil {
-		return nil, errNoConf
+		nodeConf.GossipRate = defGossipRate
+		nodeConf.MonitorRate = defMonitorRate
+		nodeConf.MaxFailPings = defMaxFailPings
+		nodeConf.ViewRemovalTimeout = defViewRemovalTimeout
+		nodeConf.MaxConc = defMaxConc
+		return nodeConf, nil
 	}
+
 	if conf.Ca {
 		if conf.CaAddr == "" {
 			return nil, errNoCaAddr

@@ -58,7 +58,7 @@ func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher,
 
 	l := &Launcher{
 		numRings:  numRings,
-		EntryAddr: c.GetAddr(),
+		EntryAddr: c.Addr(),
 		ca:        c,
 		ch:        ch,
 		listener:  listener,

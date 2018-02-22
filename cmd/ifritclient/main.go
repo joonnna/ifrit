@@ -28,10 +28,11 @@ func main() {
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.StringVar(&caAddr, "addr", "", "address(ip:port) of certificate authority")
 	args.Parse(os.Args[1:])
-
-	if caAddr == "" {
-		panic(errNoAddr)
-	}
+	/*
+		if caAddr == "" {
+			panic(errNoAddr)
+		}
+	*/
 
 	r := log.Root()
 
@@ -39,7 +40,7 @@ func main() {
 
 	r.SetHandler(h)
 
-	c, err := ifrit.NewClient(&ifrit.Config{Ca: true, CaAddr: caAddr})
+	c, err := ifrit.NewClient(nil) //&ifrit.Config{Ca: true, CaAddr: caAddr})
 	if err != nil {
 		fmt.Println(err)
 		panic(err)

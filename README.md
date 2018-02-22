@@ -30,13 +30,43 @@ import (
 func main() {
     var numRings uint32 = 5
 
-    ca := cauth.NewCa()
+    ca, _ := cauth.NewCa()
     go ca.Start(numRings)
 
-    c := client.NewClient(ca.GetAddr(), nil)
-    go c.Start()
+    config := &ifrit.Config{
+        Ca: true,
+        CaAddr: ca.Addr(),
+    }
 
-    doApplicationStuff(c)
+    c := client.NewClient(config)
+    go c.Start()
+}
+```
+
+## Starting up a clients with self signed certificates(no ca)
+```go
+package main
+
+import (
+	"github.com/joonnna/ifrit"
+)
+
+func main() {
+    // nil config results in full defaults..
+    // first client has no entry point, will operate alone.
+    // with no ca, ifrit defaults to 32 rings.
+    first, _ := ifrit.NewClient(nil)
+    go first.Start()
+
+    config := &ifrit.Config{
+        EntryAddrs: []string{first.Addr()},
+    }
+
+    numClients := 5
+    for i := 0; i < numClients; i++ {
+        c, _ := ifrit.NewClient(config)
+        go c.Start()
+    }
 }
 ```
 
