@@ -3,7 +3,7 @@ package core
 import (
 	"time"
 
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -43,7 +43,7 @@ func (c correct) Rebuttal(n *Node) {
 		}
 		_, err = n.client.Gossip(addr, msg)
 		if err != nil {
-			log.Error(err.Error())
+			log.Error(err.Error(), "addr", addr)
 			continue
 		}
 	}
@@ -66,7 +66,7 @@ func (c correct) Gossip(n *Node) {
 		}
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
-			log.Error("%s, addr: %s", err.Error(), addr)
+			log.Error(err.Error(), "addr", addr)
 			continue
 		}
 
@@ -101,7 +101,7 @@ func (c correct) Monitor(n *Node) {
 				continue
 			}
 
-			log.Debug("%s is dead, accusing", p.addr)
+			log.Debug("Successor dead, accusing", "succ", p.addr)
 			peerNote := p.getNote()
 			//Will always have note for a peer in our liveView, except when the peer stems
 			//from the initial contact list of the CA, if it's dead
@@ -150,10 +150,10 @@ func (c correct) Monitor(n *Node) {
 func (c correct) Timeouts(n *Node) {
 	timeouts := n.getAllTimeouts()
 	for key, t := range timeouts {
-		log.Debug("Have timeout for: %s", t.addr)
+		log.Debug("Have timeout", "addr", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
-			log.Debug("%s timeout expired, removing from live", t.addr)
+			log.Debug("Timeout expired, removing from live", "addr", t.addr)
 			n.deleteTimeout(key)
 			n.removeLivePeer(key)
 		}

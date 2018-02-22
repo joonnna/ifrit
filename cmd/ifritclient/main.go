@@ -12,7 +12,8 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/joonnna/ifrit"
-	"github.com/joonnna/ifrit/log"
+
+	log "github.com/inconshreveable/log15"
 )
 
 var (
@@ -32,12 +33,11 @@ func main() {
 		panic(errNoAddr)
 	}
 
-	f, err := os.Create("/var/log/calog")
-	if err != nil {
-		panic(err)
-	}
+	r := log.Root()
 
-	log.Init(f, log.DEBUG)
+	h := log.CallerFileHandler(log.Must.FileHandler("/var/log/ifritlog", log.TerminalFormat()))
+
+	r.SetHandler(h)
 
 	c, err := ifrit.NewClient(&ifrit.Config{Ca: true, CaAddr: caAddr})
 	if err != nil {

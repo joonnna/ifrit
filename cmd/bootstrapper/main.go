@@ -12,9 +12,9 @@ import (
 
 	_ "net/http/pprof"
 
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit"
 	"github.com/joonnna/ifrit/bootstrap"
-	"github.com/joonnna/ifrit/log"
 )
 
 var (
@@ -94,12 +94,11 @@ func main() {
 	ch := make(chan interface{})
 	exitChan := make(chan bool)
 
-	f, err := os.Create("/var/log/ifritlog")
-	if err != nil {
-		panic(err)
-	}
+	r := log.Root()
 
-	log.Init(f, log.DEBUG)
+	h := log.CallerFileHandler(log.Must.FileHandler("/var/log/ifritlog", log.TerminalFormat()))
+
+	r.SetHandler(h)
 
 	l, err := bootstrap.NewLauncher(uint32(numRings), ch, nil)
 	if err != nil {

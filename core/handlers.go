@@ -6,7 +6,7 @@ import (
 	"math/bits"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
@@ -29,8 +29,6 @@ var (
 
 func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateResponse, error) {
 	reply := &gossip.StateResponse{}
-
-	log.Debug(n.server.HostInfo())
 
 	cert, err := n.validateCtx(ctx)
 	if err != nil {

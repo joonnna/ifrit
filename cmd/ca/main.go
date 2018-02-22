@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"syscall"
 
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/cauth"
-	"github.com/joonnna/ifrit/log"
 )
 
 func main() {
@@ -20,12 +20,11 @@ func main() {
 
 	args.Parse(os.Args[1:])
 
-	f, err := os.Create("/var/log/calog")
-	if err != nil {
-		panic(err)
-	}
+	r := log.Root()
 
-	log.Init(f, log.DEBUG)
+	h := log.CallerFileHandler(log.Must.FileHandler("/var/log/ifritlog", log.TerminalFormat()))
+
+	r.SetHandler(h)
 
 	ca, err := cauth.NewCa()
 	if err != nil {

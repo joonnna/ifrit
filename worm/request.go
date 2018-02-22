@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 )
 
 func (w *Worm) getNewHosts() {

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
 	"github.com/joonnna/workerpool"
@@ -407,13 +407,13 @@ func (n *Node) Start() {
 	if n.caCert == nil {
 		log.Debug("NO CA BOYS")
 		for _, addr := range n.entryAddrs {
-			log.Debug("Contacting %s", addr)
+			log.Debug("Contacting", "addr", addr)
 			reply, err := n.client.Gossip(addr, msg)
 			if err != nil {
-				log.Error("%s, addr: %s", err.Error(), addr)
+				log.Error(err.Error(), "addr", addr)
 				continue
 			}
-			log.Debug("Got response from %s", addr)
+			log.Debug("Got response", "addr", addr)
 
 			n.mergeCertificates(reply.GetCertificates())
 			n.mergeNotes(reply.GetNotes())

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/netutil"
 	"github.com/rs/cors"
 )

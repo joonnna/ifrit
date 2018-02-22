@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
 

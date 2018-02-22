@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/log"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/workerpool"
 )
 

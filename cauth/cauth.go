@@ -19,8 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/log"
 	"github.com/joonnna/ifrit/netutil"
+
+	log "github.com/inconshreveable/log15"
 )
 
 const (
@@ -77,14 +78,14 @@ func NewCa() (*Ca, error) {
 
 // Shutdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
-	log.Info("Shuting down certificate authority on: %s", c.GetAddr())
+	log.Info("Shuting down certificate authority")
 	c.listener.Close()
 }
 
 // Start serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
-	log.Info("Started certificate authority on: %s", c.GetAddr())
+	log.Info("Started certificate authority")
 	err := c.newGroup(numRings)
 	if err != nil {
 		return err
@@ -191,7 +192,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	g := c.groups[0]
 
-	log.Info("Got a certificate request from %s", reqCert.Subject.Locality)
+	log.Info("Got a certificat request", "addr", reqCert.Subject.Locality)
 
 	//No idea what this is
 	//var oidExtensionBasicConstraints = []int{2, 5, 29, 19}

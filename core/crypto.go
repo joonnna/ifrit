@@ -17,8 +17,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/joonnna/ifrit/log"
 )
 
 var (
@@ -133,7 +131,6 @@ func genServerConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
 
 	if certs.caCert == nil {
 		conf.ClientAuth = tls.RequestClientCert
-		conf.VerifyPeerCertificate = test
 	} else {
 		pool := x509.NewCertPool()
 		pool.AddCert(certs.caCert)
@@ -142,11 +139,6 @@ func genServerConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
 	}
 
 	return conf
-}
-
-func test(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-	log.Debug("%d", len(rawCerts))
-	return nil
 }
 
 func genClientConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
