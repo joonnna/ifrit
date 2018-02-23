@@ -1,22 +1,11 @@
 # Ifrit
 Docs: https://godoc.org/github.com/joonnna/ifrit
-## How to install golang
-https://golang.org/doc/install
 
-## How to setup golang environment
-https://golang.org/doc/code.html
-
-## Client
+## Client && Certificate authority
 ```go
 import github.com/joonnna/ifrit
-```
-
-## Certificate authority
-```go
 import github.com/joonnna/ifrit/cauth
 ```
-
-To download Ifrit simply issue the following command after including it in a src file "go get ./..."
 
 ## Starting up a client and certificate authority
 ```go
