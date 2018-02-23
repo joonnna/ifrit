@@ -1,7 +1,7 @@
 # Ifrit
 Docs: https://godoc.org/github.com/joonnna/ifrit
 
-## Client && Certificate authority
+## Client and Certificate authority
 ```go
 import github.com/joonnna/ifrit
 import github.com/joonnna/ifrit/cauth
