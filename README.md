@@ -1,4 +1,9 @@
 # Ifrit
+Go library implementing the Fireflies protocol, https://dl.acm.org/citation.cfm?id=2701418.
+Ifrit provides a membership, message, and gossip service.
+Applications can send messages directly to their destination due to the full membership view
+provided by the Fireflies protocol.
+
 Docs: https://godoc.org/github.com/joonnna/ifrit
 
 ## Client and Certificate authority
@@ -41,9 +46,9 @@ import (
 )
 
 func main() {
-    // nil config results in full defaults..
-    // first client has no entry point, will operate alone.
-    // with no ca, ifrit defaults to 32 rings.
+    // Nil config results in full defaults.
+    // First client has no entry point, will operate alone.
+    // With no ca, ifrit defaults to 32 rings.
     first, _ := ifrit.NewClient(nil)
     go first.Start()
 
@@ -73,15 +78,14 @@ import (
 )
 
 
-// Mockup application
+// Mockup application.
 type application struct {
     ifritClient *ifrit.Client
 
-    exitChan chan bool
     data     *appData
 }
 
-// Start the mockup application
+// Start the mockup application.
 func (a *application) Start() {
     a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
@@ -118,16 +122,15 @@ import (
 )
 
 
-// Mockup application
+// Mockup application.
 type application struct {
     ifritClient *ifrit.Client
 
-    exitChan chan bool
     data     *appData
 }
 
 
-// Start the mockup application
+// Start the mockup application.
 func (a *application) Start() {
     a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
@@ -173,16 +176,15 @@ import (
 )
 
 
-// Mockup application
+// Mockup application.
 type application struct {
     ifritClient *ifrit.Client
 
-    exitChan chan bool
     data     *appData
 }
 
 
-// Start the mockup application
+// Start the mockup application.
 func (a *application) Start() {
     a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
