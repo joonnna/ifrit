@@ -13,12 +13,14 @@ type Worm struct {
 	hostMap      map[string]bool
 	hostEndpoint string
 
-	stateEndpoint string
-	stateCmp      func([]byte, []byte) error
-	stateMap      map[string][]byte
-	stateMutex    sync.RWMutex
-
+	stateEndpoint    string
+	stateCmp         func([]byte, []byte) (uint64, error)
+	stateMap         map[string][]byte
+	stateMutex       sync.RWMutex
+	maxBlock         uint64
 	totalStateErrors uint32
+
+	vizAddr string
 
 	exitCh chan bool
 
@@ -28,7 +30,7 @@ type Worm struct {
 	stateTicker *time.Ticker
 }
 
-func NewWorm(cmp func([]byte, []byte) error, hosts, state string, interval uint) *Worm {
+func NewWorm(cmp func([]byte, []byte) (uint64, error), hosts, state, viz string, interval uint) *Worm {
 	return &Worm{
 		stateCmp:      cmp,
 		hostEndpoint:  hosts,
@@ -39,6 +41,7 @@ func NewWorm(cmp func([]byte, []byte) error, hosts, state string, interval uint)
 		wp:            workerpool.NewDispatcher(50),
 		hostMap:       make(map[string]bool),
 		stateMap:      make(map[string][]byte),
+		vizAddr:       viz,
 	}
 }
 
@@ -61,6 +64,7 @@ func (w *Worm) stateLoop() {
 		case <-w.stateTicker.C:
 			w.getHostStates()
 			w.cmpStates()
+			w.vizUpdate(w.maxBlock, w.totalStateErrors)
 		}
 	}
 }
@@ -125,6 +129,9 @@ func (w *Worm) cmpStates() {
 	w.stateMutex.RLock()
 	defer w.stateMutex.RUnlock()
 
+	var maxBlock uint64 = 0
+	var err error
+
 	errors := 0
 
 	for k, s := range w.stateMap {
@@ -132,7 +139,7 @@ func (w *Worm) cmpStates() {
 			if s == nil || s2 == nil || k == k2 {
 				continue
 			}
-			err := w.stateCmp(s, s2)
+			maxBlock, err = w.stateCmp(s, s2)
 			if err != nil {
 				log.Error(err.Error())
 				errors++
@@ -141,6 +148,10 @@ func (w *Worm) cmpStates() {
 	}
 
 	w.totalStateErrors += uint32(errors)
+	if maxBlock > w.maxBlock {
+		w.maxBlock = maxBlock
+	}
 	log.Debug("Different states", "amount", errors)
 	log.Debug("Total errors", "amount", w.totalStateErrors)
+	log.Debug("Max block", "num", w.maxBlock)
 }

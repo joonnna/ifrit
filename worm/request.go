@@ -1,7 +1,10 @@
 package worm
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -9,6 +12,26 @@ import (
 
 	log "github.com/inconshreveable/log15"
 )
+
+const (
+	vizEndpoint = "blockupdate"
+)
+
+type chainState struct {
+	Currblock uint64
+	Errors    uint32
+}
+
+func (cs *chainState) marshal() io.Reader {
+	buff := new(bytes.Buffer)
+
+	err := json.NewEncoder(buff).Encode(cs)
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return bytes.NewReader(buff.Bytes())
+}
 
 func (w *Worm) getNewHosts() {
 	existing := w.getHosts()
@@ -67,6 +90,7 @@ func (w *Worm) getHostStates() {
 
 func (w *Worm) doStateRequest(host string, wg *sync.WaitGroup) {
 	defer wg.Done()
+
 	url := fmt.Sprintf("http://%s/%s", host, w.stateEndpoint)
 
 	resp, err := http.Get(url)
@@ -83,4 +107,28 @@ func (w *Worm) doStateRequest(host string, wg *sync.WaitGroup) {
 	}
 
 	w.addState(host, buf)
+}
+
+func (w *Worm) vizUpdate(blockNum uint64, errors uint32) {
+	c := &chainState{
+		Currblock: blockNum,
+		Errors:    errors,
+	}
+
+	url := fmt.Sprintf("http://%s/%s", w.vizAddr, vizEndpoint)
+
+	req, err := http.NewRequest("POST", url, c.marshal())
+	if err != nil {
+		log.Error(err.Error())
+		return
+	}
+	client := &http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Error(err.Error())
+	} else {
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}
 }
