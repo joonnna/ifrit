@@ -17,10 +17,12 @@ type Server struct {
 
 func NewServer() (*Server, error) {
 	port := netutil.GetOpenPort()
-	//hostName := netutil.GetLocalIP()
 	hostName, _ := os.Hostname()
-	addr := fmt.Sprintf("%s:%d", hostName, port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	//hostName := netutil.GetLocalIP()
+	/*
+		addr := fmt.Sprintf("%s:%d", hostName, port)
+	*/
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
 	}
