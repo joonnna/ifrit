@@ -3,7 +3,6 @@ package udp
 import (
 	"fmt"
 	"net"
-	"os"
 	"time"
 
 	log "github.com/inconshreveable/log15"
@@ -17,11 +16,6 @@ type Server struct {
 
 func NewServer() (*Server, error) {
 	port := netutil.GetOpenPort()
-	hostName, _ := os.Hostname()
-	//hostName := netutil.GetLocalIP()
-	/*
-		addr := fmt.Sprintf("%s:%d", hostName, port)
-	*/
 	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, err
@@ -32,14 +26,7 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	addrs, err := net.LookupHost(hostName)
-	if err != nil {
-		return nil, err
-	}
-
-	externalAddr := fmt.Sprintf("%s:%d", addrs[0], udpAddr.Port)
-
-	return &Server{conn: conn, addr: externalAddr}, nil
+	return &Server{conn: conn, addr: conn.LocalAddr().String()}, nil
 }
 
 func (s Server) Send(addr string, data []byte) ([]byte, error) {
