@@ -3,11 +3,11 @@ package netutil
 import (
 	"errors"
 	"fmt"
-	"log"
-	"math/rand"
 	"net"
 	"strconv"
 	"strings"
+
+	log "github.com/inconshreveable/log15"
 )
 
 var (
@@ -57,20 +57,23 @@ func ListenOnPort(hostName string, port int) (net.Listener, error) {
 	var l net.Listener
 	var err error
 
-	addrs, err := net.LookupHost(hostName)
-	if err != nil {
-		return l, err
-	}
+	/*
+		addrs, err := net.LookupHost(hostName)
+		if err != nil {
+			return l, err
+		}
+	*/
 
-	startPort := rand.Int() % port
+	startPort := port
 
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addrs[0], startPort))
+		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", startPort))
 		if err == nil {
 			break
 		}
 
 		if startPort > (port + 100) {
+			log.Error(err.Error())
 			return l, errFoundNoPort
 		}
 
@@ -84,15 +87,16 @@ func GetListener(hostName string) (net.Listener, error) {
 	var l net.Listener
 	var err error
 
-	addrs, err := net.LookupHost(hostName)
-	if err != nil {
-		return l, err
-	}
-
+	/*
+		addrs, err := net.LookupHost(hostName)
+		if err != nil {
+			return l, err
+		}
+	*/
 	attempts := 0
 
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:", addrs[0]))
+		l, err = net.Listen("tcp4", ":")
 		if err == nil {
 			return l, nil
 		} else {
@@ -112,7 +116,7 @@ func GetListener(hostName string) (net.Listener, error) {
 func GetLocalIP() string {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err.Error())
 	}
 	defer conn.Close()
 
