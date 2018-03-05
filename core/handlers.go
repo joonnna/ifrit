@@ -274,7 +274,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	if !valid {
 		log.Debug("Accuser: %s", accuserPeer.addr)
 		log.Debug("Accused: %s", p.addr)
-		log.Debug("Invalid signature on accusation, ignoring")
+		log.Debug("Invalid signature on accusation, ignoring", "accuser", accuserPeer.addr, "accused", p.addr)
 		return
 	}
 
@@ -296,10 +296,10 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			log.Error(err.Error())
 			return
 		}
-		log.Debug("Added accusation for: %s on ring %d", p.addr, newAcc.ringNum)
+		log.Debug("Added accusation", "addr", p.addr, "ring", newAcc.ringNum)
 
 		if !n.timerExist(accusedKey) {
-			log.Debug("Started timer for: %s", p.addr)
+			log.Debug("Started timer", "addr", p.addr)
 			n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
 		}
 	}
@@ -382,7 +382,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	} else {
 		//Peer is accused, need to check if this note invalidates accusation
 		if peerAccuse.epoch < epoch {
-			log.Debug("Rebuttal received for: %s", p.addr)
+			log.Debug("Rebuttal received", "addr", p.addr)
 			n.deleteTimeout(peerKey)
 			newNote := &note{
 				mask:   mask,

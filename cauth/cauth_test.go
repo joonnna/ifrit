@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joonnna/ifrit/lib/protobuf/test"
+	"github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -66,9 +66,6 @@ func TestTLSconnection(t *testing.T) {
 	c1, p1 := genCert("127.0.0.1")
 	c2, p2 := genCert("127.0.0.1")
 
-	fmt.Println(len(c1.IPAddresses))
-	fmt.Println(len(c2.IPAddresses))
-
 	sc1 := signCert(c1, cert, priv)
 	sc2 := signCert(c2, cert, priv)
 
@@ -77,10 +74,7 @@ func TestTLSconnection(t *testing.T) {
 
 	go t1.startServing(sc1, cert, p1, addr)
 
-	time.Sleep(time.Second * 5)
-
 	t2.startPinging(sc2, cert, p2, addr)
-
 }
 
 func (s *stub) startServing(c, caCert *x509.Certificate, priv *rsa.PrivateKey, addr string) {
@@ -111,7 +105,7 @@ func (s *stub) startServing(c, caCert *x509.Certificate, priv *rsa.PrivateKey, a
 	srv := grpc.NewServer(grpc.Creds(creds))
 
 	// Register the handler object
-	test.RegisterPingServiceServer(srv, s)
+	gossip.RegisterGossipServer(srv, s)
 
 	// Serve and Listen
 	if err := srv.Serve(lis); err != nil {
@@ -123,10 +117,12 @@ func (s *stub) startServing(c, caCert *x509.Certificate, priv *rsa.PrivateKey, a
 
 }
 
-func (s *stub) DoShit(ctx context.Context, msg *test.Ping) (*test.Pong, error) {
-	fmt.Println(msg.GetMsg())
+func (s *stub) Spread(ctx context.Context, msg *gossip.State) (*gossip.StateResponse, error) {
+	return nil, nil
+}
 
-	return &test.Pong{Msg: "fuck off"}, nil
+func (s *stub) Messenger(ctx context.Context, msg *gossip.Msg) (*gossip.MsgResponse, error) {
+	return &gossip.MsgResponse{Content: []byte("this is a test message")}, nil
 }
 
 func (s *stub) startPinging(c, caCert *x509.Certificate, priv *rsa.PrivateKey, addr string) {
@@ -153,16 +149,12 @@ func (s *stub) startPinging(c, caCert *x509.Certificate, priv *rsa.PrivateKey, a
 	}
 
 	// Initialize the client and make the request
-	client := test.NewPingServiceClient(conn)
-	pong, err := client.DoShit(context.Background(), &test.Ping{Msg: "YOYO"})
+	client := gossip.NewGossipClient(conn)
+	_, err = client.Messenger(context.Background(), &gossip.Msg{Content: []byte("YOYO")})
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-
-	// Log the ping
-	fmt.Printf("%s\n", pong.String())
-	return
 }
 
 func signCert(c *x509.Certificate, caCert *x509.Certificate, privKey *rsa.PrivateKey) *x509.Certificate {

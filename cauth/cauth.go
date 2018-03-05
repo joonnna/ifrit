@@ -85,7 +85,7 @@ func (c *Ca) Shutdown() {
 // Start serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
-	log.Info("Started certificate authority")
+	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
 	err := c.newGroup(numRings)
 	if err != nil {
 		return err

@@ -247,7 +247,7 @@ func (v *view) addLivePeer(p *peer) {
 	v.liveMutex.Lock()
 
 	if _, ok := v.liveMap[p.key]; ok {
-		log.Error("Tried to add peer twice to liveMap: %s", p.addr)
+		log.Error("Tried to add peer twice to liveMap", "addr", p.addr)
 		v.liveMutex.Unlock()
 		return
 	}
@@ -309,7 +309,7 @@ func (v *view) removeLivePeer(key string) {
 	}
 	id := p.id
 
-	log.Debug("Removed livePeer: %s", p.addr)
+	log.Debug("Removed livePeer", "addr", p.addr)
 	delete(v.liveMap, key)
 
 	for _, ring := range v.ringMap {

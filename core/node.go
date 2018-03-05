@@ -269,6 +269,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
 		entryAddrs:       conf.EntryAddrs,
 		httpListener:     l,
+		protocol:         correct{},
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
@@ -381,8 +382,6 @@ func (n *Node) HttpAddr() string {
 
 func (n *Node) Start() {
 	log.Info("Started Node")
-
-	n.setProtocol(correct{})
 
 	go n.server.Start()
 	go n.pinger.serve()

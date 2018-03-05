@@ -1,9 +1,10 @@
 package core
 
 import (
+	"os"
 	"testing"
 
-	"github.com/joonnna/ifrit/logger"
+	log "github.com/inconshreveable/log15"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -16,28 +17,28 @@ type ViewTestSuite struct {
 }
 
 func (suite *ViewTestSuite) SetupTest() {
-	var numRings uint32
+	var numRings uint32 = 3
 	var err error
-
-	numRings = 3
-
-	logger := logger.CreateLogger("test", "testlog")
 
 	suite.peer, _ = newTestPeer("test1234", numRings, "localhost:3123")
 
-	suite.view, err = newView(numRings, logger, suite.peerId, suite.addr)
+	suite.view, err = newView(numRings, suite.peerId, suite.addr)
 	require.NoError(suite.T(), err, "Failed to create view")
 }
 
 func TestViewTestSuite(t *testing.T) {
+	r := log.Root()
+
+	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+
 	suite.Run(t, new(ViewTestSuite))
 }
 
 func (suite *ViewTestSuite) TestAddSamePeerTwice() {
 	p, _ := newTestPeer("test1", suite.numRings, "localhost:123")
 
-	suite.addViewPeer(p)
-	suite.addViewPeer(p)
+	suite.viewMap[p.key] = p
+	suite.viewMap[p.key] = p
 
 	assert.NotNil(suite.T(), suite.getViewPeer(p.key), "Peer doesn't exist after double add")
 
@@ -141,7 +142,7 @@ func (suite *ViewTestSuite) TestFindNeighboursWhenAlone() {
 	assert.Equal(suite.T(), len(suite.findNeighbours(p.peerId)), 1, "Should find 1 neighbours when only two peers in rings")
 }
 
-func (suite *ViewTestSuite) TestFindNeighboursWhenNoteAlone() {
+func (suite *ViewTestSuite) TestFindNeighboursWhenNotAlone() {
 	p, _ := newTestPeer("test1", suite.numRings, "localhost:123")
 	p2, _ := newTestPeer("test12", suite.numRings, "localhost:1234")
 	p3, _ := newTestPeer("test13", suite.numRings, "localhost:1235")
@@ -189,13 +190,13 @@ func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
 	p6, _ := newTestPeer("test17", suite.numRings, "localhost:1238")
 	p7, _ := newTestPeer("test18", suite.numRings, "localhost:1239")
 
-	suite.addViewPeer(p1)
-	suite.addViewPeer(p2)
-	suite.addViewPeer(p3)
-	suite.addViewPeer(p4)
-	suite.addViewPeer(p5)
-	suite.addViewPeer(p6)
-	suite.addViewPeer(p7)
+	suite.viewMap[p1.key] = p1
+	suite.viewMap[p2.key] = p2
+	suite.viewMap[p3.key] = p3
+	suite.viewMap[p4.key] = p4
+	suite.viewMap[p5.key] = p5
+	suite.viewMap[p6.key] = p6
+	suite.viewMap[p7.key] = p7
 
 	suite.addLivePeer(p1)
 	suite.addLivePeer(p2)
@@ -234,7 +235,7 @@ func (suite *ViewTestSuite) TestAddLivePeerRemovesInvalidAccusation() {
 
 	//add new peer and assert that all accusations that should be invalidated are removed
 	p8, _ := newTestPeer("test19", suite.numRings, "localhost:1239")
-	suite.addViewPeer(p8)
+	suite.viewMap[p8.key] = p8
 	suite.addLivePeer(p8)
 
 	for num, r := range suite.ringMap {
