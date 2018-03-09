@@ -95,7 +95,7 @@ type client interface {
 
 type server interface {
 	Init(config *tls.Config, n interface{}, maxConcurrent uint32) error
-	HostInfo() string
+	Addr() string
 	Start() error
 	ShutDown()
 }
@@ -194,12 +194,13 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		if err != nil {
 			log.Error(err.Error())
 		}
+
 		http = l.Addr().String()
 	}
 
 	if conf.Ca {
 		addr := fmt.Sprintf("http://%s/certificateRequest", conf.CaAddr)
-		certs, err = sendCertRequest(privKey, addr, s.HostInfo(), udpServer.Addr(), http)
+		certs, err = sendCertRequest(privKey, addr, s.Addr(), udpServer.Addr(), http)
 		if err != nil {
 			log.Error(err.Error())
 			return nil, err
@@ -207,7 +208,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	} else {
 		// TODO only have numrings in notes and not certificate?
-		certs, err = selfSignedCert(privKey, s.HostInfo(), udpServer.Addr(), http, uint32(32))
+		certs, err = selfSignedCert(privKey, s.Addr(), udpServer.Addr(), http, uint32(32))
 		if err != nil {
 			log.Error(err.Error())
 			return nil, err
@@ -373,7 +374,7 @@ func (n *Node) Id() string {
 }
 
 func (n *Node) Addr() string {
-	return n.server.HostInfo()
+	return n.server.Addr()
 }
 
 func (n *Node) HttpAddr() string {

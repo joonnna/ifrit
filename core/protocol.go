@@ -62,13 +62,21 @@ func (c correct) Gossip(n *Node) {
 
 	for _, addr := range neighbours {
 		if addr == n.addr {
+			/*
+				log.Debug("Tried to gossip with myself")
+				log.Debug("Full view", "amount", len(n.getView()))
+				log.Debug("Live view", "amount", len(n.getLivePeers()))
+			*/
 			continue
 		}
+
 		reply, err := n.client.Gossip(addr, msg)
 		if err != nil {
 			log.Error(err.Error(), "addr", addr)
 			continue
 		}
+
+		//log.Debug("Gossipied", "addr", addr)
 
 		n.mergeCertificates(reply.GetCertificates())
 		n.mergeNotes(reply.GetNotes())

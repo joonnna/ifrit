@@ -8,9 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -58,9 +56,7 @@ func (s *state) marshal() io.Reader {
 }
 
 func initHttp() (net.Listener, error) {
-	hostName, _ := os.Hostname()
-	//hostName := netutil.GetLocalIP()
-	l, err := netutil.ListenOnPort(hostName, httpPort)
+	l, err := netutil.ListenOnPort(httpPort)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +69,7 @@ func (n *Node) httpHandler() {
 		return
 	}
 
-	hostName, _ := os.Hostname()
+	//hostName, _ := os.Hostname()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/shutdownNode", n.shutdownHandler)
@@ -87,20 +83,21 @@ func (n *Node) httpHandler() {
 	r.HandleFunc("/neighbors", n.neighborsHandler)
 	r.HandleFunc("/hosts", n.hostsHandler)
 	r.HandleFunc("/state", n.stateHandler)
+	/*
+		port := strings.Split(n.httpListener.Addr().String(), ":")[1]
 
-	port := strings.Split(n.httpListener.Addr().String(), ":")[1]
+		addrs, err := net.LookupHost(hostName)
+		if err != nil {
+			log.Error(err.Error())
+			return
+		}
+	*/
 
-	addrs, err := net.LookupHost(hostName)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-
-	n.vizId = fmt.Sprintf("http://%s:%s", addrs[0], port)
+	n.vizId = fmt.Sprintf("http://%s", n.httpListener.Addr().String())
 
 	handler := cors.Default().Handler(r)
 
-	err = http.Serve(n.httpListener, handler)
+	err := http.Serve(n.httpListener, handler)
 	if err != nil {
 		log.Error(err.Error())
 		return

@@ -22,7 +22,7 @@ func main() {
 
 	r := log.Root()
 
-	h := log.CallerFileHandler(log.Must.FileHandler("/var/log/ifritlog", log.TerminalFormat()))
+	h := log.CallerFileHandler(log.Must.FileHandler("calog", log.TerminalFormat()))
 
 	r.SetHandler(h)
 

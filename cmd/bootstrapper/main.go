@@ -32,7 +32,7 @@ func createClients(requestChan chan interface{}, exitChan chan bool, arg string,
 				addrs = append(addrs, clients[idx])
 				log.Info(addrs[0])
 			}
-			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr, EntryAddrs: addrs}
+			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr, Ca: true, CaAddr: arg}
 			c, err := ifrit.NewClient(conf)
 			if err != nil {
 				fmt.Println(err)

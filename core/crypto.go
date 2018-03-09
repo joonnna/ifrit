@@ -153,7 +153,7 @@ func genClientConfig(certs *certSet, key *ecdsa.PrivateKey) *tls.Config {
 
 	if certs.caCert != nil {
 		pool := x509.NewCertPool()
-		pool.AddCert(certs.ownCert)
+		pool.AddCert(certs.caCert)
 		conf.RootCAs = pool
 	} else {
 		conf.InsecureSkipVerify = true

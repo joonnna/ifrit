@@ -52,7 +52,7 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
 		timeoutMap:        make(map[string]*timeout),
-		viewUpdateTimeout: time.Second * 2,
+		viewUpdateTimeout: time.Second * 10,
 		numRings:          numRings,
 		local:             id,
 		maxByz:            uint32(maxByz),

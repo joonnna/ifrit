@@ -14,7 +14,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -61,8 +60,7 @@ func NewCa() (*Ca, error) {
 		return nil, err
 	}
 
-	hostName, _ := os.Hostname()
-	l, err := netutil.ListenOnPort(hostName, caPort)
+	l, err := netutil.ListenOnPort(caPort)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +138,7 @@ func (c *Ca) newGroup(ringNum uint32) error {
 		return err
 	}
 
-	bootNodes := 3
+	bootNodes := 200
 
 	g := &group{
 		groupCert:     cert,

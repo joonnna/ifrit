@@ -75,6 +75,7 @@ func (p *pinger) ping(dest *peer) error {
 	}
 
 	if !valid {
+		log.Error(errInvalidPongSignature.Error())
 		return errInvalidPongSignature
 	}
 
