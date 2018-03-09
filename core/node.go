@@ -63,6 +63,9 @@ type Node struct {
 	msgHandler      processMsg
 	msgHandlerMutex sync.RWMutex
 
+	gossipHandler      processMsg
+	gossipHandlerMutex sync.RWMutex
+
 	responseHandler      func([]byte)
 	responseHandlerMutex sync.RWMutex
 

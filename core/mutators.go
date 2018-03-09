@@ -170,6 +170,21 @@ func (n *Node) getMsgHandler() processMsg {
 }
 
 //Expose so that client can set new handler directly
+func (n *Node) SetGossipHandler(newHandler processMsg) {
+	n.gossipHandlerMutex.Lock()
+	defer n.gossipHandlerMutex.Unlock()
+
+	n.gossipHandler = newHandler
+}
+
+func (n *Node) getGossipHandler() processMsg {
+	n.gossipHandlerMutex.RLock()
+	defer n.gossipHandlerMutex.RUnlock()
+
+	return n.gossipHandler
+}
+
+//Expose so that client can set new handler directly
 func (n *Node) SetResponseHandler(newHandler func([]byte)) {
 	n.responseHandlerMutex.Lock()
 	defer n.responseHandlerMutex.Unlock()
