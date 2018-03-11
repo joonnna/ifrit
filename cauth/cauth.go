@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"math/big"
@@ -78,18 +79,46 @@ func NewCa() (*Ca, error) {
 	return c, nil
 }
 
-// Shutdown the certificate authority instance, will no longer serve signing requests.
+// SavePrivateKey writes the CA private key to the given io object.
+func (c *Ca) SavePrivateKey(out io.Writer) {
+
+	b := x509.MarshalPKCS1PrivateKey(c.privKey)
+
+	block := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: b,
+	}
+
+	pem.Encode(out, block)
+}
+
+// SaveCertificate Public key / certifiace to the given io object.
+func (c *Ca) SaveCertificate(out io.Writer) error {
+
+	for _, j := range c.groups {
+		b := j.groupCert.Raw
+
+		block := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: b,
+		}
+		pem.Encode(out, block)
+	}
+
+	return nil
+}
+
+// Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
 	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
 	c.listener.Close()
 }
 
-// Start serving certificate signing requests, requires the amount of gossip rings
+// Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
-
 	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
-	err := c.newGroup(numRings)
+	err := c.NewGroup(numRings)
 	if err != nil {
 		return err
 	}
@@ -102,7 +131,8 @@ func (c Ca) GetAddr() string {
 	return c.listener.Addr().String()
 }
 
-func (c *Ca) newGroup(ringNum uint32) error {
+// NewGroup creates a new Ifrit group.
+func (c *Ca) NewGroup(ringNum uint32) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
 		c.log.Err.Println(err)
