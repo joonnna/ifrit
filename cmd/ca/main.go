@@ -43,20 +43,23 @@ func saveState(ca *cauth.Ca) {
 }
 
 func main() {
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	configor.New(&configor.Config{ENVPrefix: "CA"}).Load(&CAConfig, "/etc/ifrit/ca/config.yml", "config.yml")
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.UintVar(&CAConfig.NumRings, "numRings", CAConfig.NumRings, "Number of gossip rings to be used")
+	args.StringVar(&CAConfig.LogFile, "logfile", "", "Log to file.")
 
 	args.Parse(os.Args[1:])
 
-	r := log.Root()
+	if CAConfig.LogFile != "" {
 
-	h := log.CallerFileHandler(log.Must.FileHandler("calog", log.TerminalFormat()))
-
-	r.SetHandler(h)
+		r := log.Root()
+		h := log.CallerFileHandler(log.Must.FileHandler(CAConfig.LogFile, log.TerminalFormat()))
+		r.SetHandler(h)
+	}
 
 	ca, err := cauth.NewCa()
 	if err != nil {

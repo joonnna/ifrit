@@ -11,4 +11,5 @@ var CAConfig = struct {
 	KeyFile         string `default:"./ca_key.pem"`
 	CertificateFile string `default:"./ca_cert.pem"`
 	NumRings        uint   `default:"10"`
+	LogFile         string
 }{}
