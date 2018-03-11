@@ -11,20 +11,34 @@ import (
 	"github.com/joonnna/ifrit/cauth"
 )
 
+var (
+	KeyFilePath           = "ca_key.pem"
+	CACertificateFilePath = "ca_cert.pem"
+)
+
+var (
+	logger = log.New("module", "ca/main")
+)
+
 // saveState saves ca private key and public certificates to disk.
 func saveState(ca *cauth.Ca) {
 
-	f, err := os.Create("./caKey.pem")
+	f, err := os.Create(KeyFilePath)
 	if err != nil {
+		logger.Error("Cannot create CA private key file.", "file", KeyFilePath)
 		panic(err)
 	}
+
+	logger.Info("Save CA private key.", "file", KeyFilePath)
 	ca.SavePrivateKey(f)
 
-	f, err = os.Create("./caCerts.pem")
+	f, err = os.Create(CACertificateFilePath)
 	if err != nil {
+		logger.Error("Cannot create CA file.", "file", KeyFilePath)
 		panic(err)
 	}
 
+	logger.Info("Save CA certificate.", "file", CACertificateFilePath)
 	err = ca.SaveCertificate(f)
 
 	if err != nil {
@@ -51,7 +65,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 
 	saveState(ca)
 	defer saveState(ca)
