@@ -3,8 +3,10 @@ package core
 import (
 	"crypto/x509"
 	"errors"
+	"math/bits"
 
 	"github.com/golang/protobuf/proto"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
@@ -52,6 +54,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 	//Help new peer integrate into the network
 	if !neighbours && !exist {
+
 		if valid := n.evalCertificate(cert); !valid {
 			return nil, errNoCert
 		}
@@ -95,7 +98,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 	n.mergeViews(args.GetExistingHosts(), reply)
 
-	if handler := n.getMsgHandler(); handler != nil && extGossip != nil {
+	if handler := n.getGossipHandler(); handler != nil && extGossip != nil {
 		reply.ExternalGossip, err = handler(extGossip)
 		if err != nil {
 			return nil, err
@@ -184,7 +187,7 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			continue
 		}
 		n.evalCertificate(cert)
@@ -240,9 +243,9 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	}
 
 	if newAcc.equal(acc) {
-		n.log.Info.Println("Already have accusation, discard")
+		log.Debug("Already have accusation, discard")
 		if !n.timerExist(accusedKey) {
-			n.log.Debug.Println("Started timer for: ", p.addr)
+			log.Debug("Started timer for: %s", p.addr)
 			n.startTimer(p.key, p.getNote(), accuserPeer, p.addr)
 		}
 		return
@@ -258,20 +261,20 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 	b, err := proto.Marshal(tmp)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, accuserPeer.publicKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	if !valid {
-		n.log.Debug.Println("Accuser: ", accuserPeer.addr)
-		n.log.Debug.Println("Accused: ", p.addr)
-		n.log.Info.Println("Invalid signature on accusation, ignoring")
+		log.Debug("Accuser: %s", accuserPeer.addr)
+		log.Debug("Accused: %s", p.addr)
+		log.Debug("Invalid signature on accusation, ignoring", "accuser", accuserPeer.addr, "accused", p.addr)
 		return
 	}
 
@@ -279,24 +282,24 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	if epoch == peerNote.epoch {
 		err := checkDisabledRings(mask, ringNum, n.maxByz, n.numRings)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			return
 		}
 
 		if !n.isPrev(p, accuserPeer, ringNum) {
-			n.log.Err.Println("Accuser is not pre-decessor of accused on given ring, invalid accusation")
+			log.Error("Accuser is not pre-decessor of accused on given ring, invalid accusation")
 			return
 		}
 
 		err = p.setAccusation(newAcc)
 		if err != nil {
-			n.log.Err.Println(err)
+			log.Error(err.Error())
 			return
 		}
-		n.log.Debug.Printf("Added accusation for: %s on ring %d", p.addr, newAcc.ringNum)
+		log.Debug("Added accusation", "addr", p.addr, "ring", newAcc.ringNum)
 
 		if !n.timerExist(accusedKey) {
-			n.log.Debug.Println("Started timer for: ", p.addr)
+			log.Debug("Started timer", "addr", p.addr)
 			n.startTimer(p.key, p.recentNote, accuserPeer, p.addr)
 		}
 	}
@@ -304,7 +307,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 
 func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	if gossipNote == nil {
-		n.log.Err.Println("Got nil note")
+		log.Debug("Got nil note")
 		return false
 	}
 
@@ -336,24 +339,24 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 	b, err := proto.Marshal(tmp)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), b, p.publicKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
 	if !valid {
-		n.log.Info.Println("Invalid signature on note, ignoring, ", p.addr)
+		log.Debug("Invalid signature on note, ignoring, %s", p.addr)
 		return false
 	}
 
 	err = validMask(mask, n.maxByz, n.numRings)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Debug(err.Error())
 		return false
 	}
 
@@ -379,7 +382,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	} else {
 		//Peer is accused, need to check if this note invalidates accusation
 		if peerAccuse.epoch < epoch {
-			n.log.Info.Println("Rebuttal received for:", p.addr)
+			log.Debug("Rebuttal received", "addr", p.addr)
 			n.deleteTimeout(peerKey)
 			newNote := &note{
 				mask:   mask,
@@ -406,7 +409,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	if cert == nil {
-		n.log.Err.Println("Got nil cert")
+		log.Debug("Got nil cert")
 		return false
 	}
 
@@ -418,9 +421,9 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 		return false
 	}
 
-	err := cert.CheckSignatureFrom(n.caCert)
+	err := checkSignature(cert, n.caCert)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return false
 	}
 
@@ -462,47 +465,18 @@ func (n *Node) validateCtx(ctx context.Context) (*x509.Certificate, error) {
 	return tlsInfo.State.PeerCertificates[0], nil
 }
 
-/*
-func (n *Node) mergeGossip(set []*gossip.Data) {
-	for _, entry := range set {
-		n.evalGossip(entry)
-	}
-}
+func validMask(mask uint32, maxByz uint32, numRings uint32) error {
+	active := bits.OnesCount32(mask)
+	disabled := numRings - uint32(active)
 
-func (n *Node) evalGossip(item *gossip.Data) {
-	if exists := n.gossipExists(string(item.Id)); exists {
-		return
-	}
-
-	n.addGossip(item.Content, string(item.Id))
-}
-*/
-func validMask(mask []byte, maxByz uint32, numRings uint32) error {
-	var deactivated uint32
-
-	if mask == nil {
-		return errNoMask
-	}
-
-	if uint32(len(mask)) != numRings {
-		return errInvalidMaskLength
-	}
-
-	deactivated = 0
-	for _, b := range mask {
-		if b == 0 {
-			deactivated++
-		}
-	}
-
-	if deactivated > maxByz {
+	if disabled > maxByz {
 		return errTooManyDeactivatedRings
 	}
 
 	return nil
 }
 
-func checkDisabledRings(mask []byte, ringNum uint32, maxByz uint32, numRings uint32) error {
+func checkDisabledRings(mask uint32, ringNum uint32, maxByz uint32, numRings uint32) error {
 	err := validMask(mask, maxByz, numRings)
 	if err != nil {
 		return err
@@ -510,15 +484,31 @@ func checkDisabledRings(mask []byte, ringNum uint32, maxByz uint32, numRings uin
 
 	idx := ringNum - 1
 
-	maxIdx := uint32(len(mask) - 1)
+	maxIdx := uint32(numRings - 1)
 
 	if idx > maxIdx || idx < 0 {
 		return errNonExistingRing
 	}
 
-	if mask[idx] == 0 {
+	if active := hasBit(mask, idx); !active {
 		return errDeactivatedRing
 	}
 
 	return nil
+}
+
+func setBit(n uint32, pos uint32) uint32 {
+	n |= (1 << pos)
+	return n
+}
+
+func clearBit(n uint32, pos uint32) uint32 {
+	mask := uint32(^(1 << pos))
+	n &= mask
+	return n
+}
+
+func hasBit(n uint32, pos uint32) bool {
+	val := n & (1 << pos)
+	return (val > 0)
 }

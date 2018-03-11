@@ -15,13 +15,13 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
 	"github.com/joonnna/ifrit/netutil"
+
+	log "github.com/inconshreveable/log15"
 )
 
 const (
@@ -33,8 +33,6 @@ var (
 )
 
 type Ca struct {
-	log *logger.Log
-
 	privKey *rsa.PrivateKey
 	pubKey  crypto.PublicKey
 
@@ -63,14 +61,12 @@ func NewCa() (*Ca, error) {
 		return nil, err
 	}
 
-	hostName, _ := os.Hostname()
-	l, err := netutil.ListenOnPort(hostName, caPort)
+	l, err := netutil.ListenOnPort(caPort)
 	if err != nil {
 		return nil, err
 	}
 
 	c := &Ca{
-		log:      logger.CreateStdOutLogger("ca", "caLog"),
 		privKey:  privKey,
 		pubKey:   privKey.Public(),
 		listener: l,
@@ -110,14 +106,14 @@ func (c *Ca) SaveCertificate(out io.Writer) error {
 
 // Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
-	c.log.Info.Println("Shuting down certificate authority on: ", c.GetAddr())
+	log.Info("Shuting down certificate authority")
 	c.listener.Close()
 }
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(numRings uint32) error {
-	c.log.Info.Println("Started certificate authority on: ", c.GetAddr())
+	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
 	err := c.NewGroup(numRings)
 	if err != nil {
 		return err
@@ -127,7 +123,7 @@ func (c *Ca) Start(numRings uint32) error {
 
 // Returns the address(ip:port) of the certificate authority, this can
 // be directly used as input to the ifrit client entry address.
-func (c Ca) GetAddr() string {
+func (c Ca) Addr() string {
 	return c.listener.Addr().String()
 }
 
@@ -135,7 +131,7 @@ func (c Ca) GetAddr() string {
 func (c *Ca) NewGroup(ringNum uint32) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -163,17 +159,17 @@ func (c *Ca) NewGroup(ringNum uint32) error {
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
 	cert, err := x509.ParseCertificate(gCert)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
-	bootNodes := 3
+	bootNodes := 200
 
 	g := &group{
 		groupCert:     cert,
@@ -185,7 +181,7 @@ func (c *Ca) NewGroup(ringNum uint32) error {
 
 	c.groups = append(c.groups, g)
 
-	c.log.Info.Println("Created new a new group!")
+	log.Info("Created new a new group!")
 
 	return nil
 }
@@ -205,7 +201,7 @@ func (c *Ca) httpHandler() error {
 
 	err := http.Serve(c.listener, nil)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -219,13 +215,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	reqCert, err := x509.ParseCertificateRequest(body.Bytes())
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	g := c.groups[0]
 
-	c.log.Info.Println("Got a certificate request from", reqCert.Subject.Locality)
+	log.Info("Got a certificat request", "addr", reqCert.Subject.Locality)
 
 	//No idea what this is
 	//var oidExtensionBasicConstraints = []int{2, 5, 29, 19}
@@ -242,13 +238,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(reqCert.Subject.Locality) < 2 {
-		c.log.Err.Println(errNoAddr)
+		log.Error(errNoAddr.Error())
 		return
 	}
 
 	serialNumber, err := genSerialNumber()
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
@@ -270,13 +266,13 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	signedCert, err := x509.CreateCertificate(rand.Reader, newCert, g.groupCert, reqCert.PublicKey, c.privKey)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 
 	knownCert, err := x509.ParseCertificate(signedCert)
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 	trusted := g.addKnownCert(knownCert)
@@ -298,13 +294,12 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err = w.Write(b.Bytes())
 	if err != nil {
-		c.log.Err.Println(err)
+		log.Error(err.Error())
 		return
 	}
 }
 
 func (c *Ca) downloadHandler(w http.ResponseWriter, r *http.Request) {
-	c.log.Info.Println("Got a download request!")
 }
 
 func (g *group) addKnownCert(new *x509.Certificate) bool {
@@ -343,31 +338,6 @@ func (g *group) getTrustedNodes() [][]byte {
 }
 
 func genId() []byte {
-	/*
-		var id []byte
-
-		for {
-			id = uuid.NewV4().Bytes()
-			exists := false
-
-			for _, c := range existing {
-				if bytes.Equal(c.SubjectKeyId, id) {
-					exists = true
-					break
-				}
-			}
-
-			if !exists {
-				break
-			}
-		}
-
-		return id
-	*/
-
-	//return append(uuid.NewV1().Bytes(), uuid.NewV1().Bytes()...)
-	//return uuid.NewV1().Bytes()
-
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
 	return nonce

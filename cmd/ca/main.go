@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"syscall"
 
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/cauth"
 )
 
@@ -39,6 +40,12 @@ func main() {
 	args.UintVar(&numRings, "numRings", 10, "Number of gossip rings to be used")
 
 	args.Parse(os.Args[1:])
+
+	r := log.Root()
+
+	h := log.CallerFileHandler(log.Must.FileHandler("calog", log.TerminalFormat()))
+
+	r.SetHandler(h)
 
 	ca, err := cauth.NewCa()
 	if err != nil {

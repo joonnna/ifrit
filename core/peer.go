@@ -28,6 +28,9 @@ type peer struct {
 	addr     string
 	pingAddr string
 
+	// Debuging and experiments only.
+	httpAddr string
+
 	noteMutex  sync.RWMutex
 	recentNote *note
 
@@ -61,7 +64,7 @@ type signature struct {
 
 type note struct {
 	epoch uint64
-	mask  []byte
+	mask  uint32
 	*peerId
 	*signature
 }
@@ -70,7 +73,7 @@ type accusation struct {
 	ringNum uint32
 	epoch   uint64
 	accuser *peerId
-	mask    []byte
+	mask    uint32
 	*peerId
 	*signature
 }
@@ -93,9 +96,12 @@ func (p peerId) equal(other *peerId) bool {
 func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, error) {
 	var ok bool
 	var i uint32
+	var http string
 
-	if len(cert.Subject.Locality) < 2 {
+	if fields := len(cert.Subject.Locality); fields < 2 {
 		return nil, errPeerAddr
+	} else if fields == 3 {
+		http = cert.Subject.Locality[2]
 	}
 
 	if len(cert.SubjectKeyId) == 0 {
@@ -117,6 +123,7 @@ func newPeer(recentNote *note, cert *x509.Certificate, numRings uint32) (*peer, 
 	return &peer{
 		addr:        cert.Subject.Locality[0],
 		pingAddr:    cert.Subject.Locality[1],
+		httpAddr:    http,
 		recentNote:  recentNote,
 		cert:        cert,
 		peerId:      newPeerId(cert.SubjectKeyId),

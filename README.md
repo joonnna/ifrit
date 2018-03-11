@@ -1,22 +1,16 @@
 # Ifrit
+Go library implementing the Fireflies protocol, https://dl.acm.org/citation.cfm?id=2701418.
+Ifrit provides a membership, message, and gossip service.
+Applications can send messages directly to their destination due to the full membership view
+provided by the Fireflies protocol.
+
 Docs: https://godoc.org/github.com/joonnna/ifrit
-## How to install golang
-https://golang.org/doc/install
 
-## How to setup golang environment
-https://golang.org/doc/code.html
-
-## Client
+## Client and Certificate authority
 ```go
 import github.com/joonnna/ifrit
-```
-
-## Certificate authority
-```go
 import github.com/joonnna/ifrit/cauth
 ```
-
-To download Ifrit simply issue the following command after including it in a src file "go get ./..."
 
 ## Starting up a client and certificate authority
 ```go
@@ -30,26 +24,48 @@ import (
 func main() {
     var numRings uint32 = 5
 
-    ca := cauth.NewCa()
+    ca, _ := cauth.NewCa()
     go ca.Start(numRings)
 
-    c := client.NewClient(ca.GetAddr(), nil)
-    go c.Start()
+    config := &ifrit.Config{
+        Ca: true,
+        CaAddr: ca.Addr(),
+    }
 
-    doApplicationStuff(c)
+    c := client.NewClient(config)
+    go c.Start()
 }
 ```
 
-## Application example of adding external gossip
-In this example we aim to utilize the external gossip content functionality of ifrit.
-Each time our application state is altered, we set the appropriate state in ifrit
-through the SetGossipContent() function.
-Our application state will then be gossiped with our neighbours which will receive it
-through their registered message handlers.
+## Starting up a clients with self signed certificates(no ca)
+```go
+package main
 
-The example is simplified for clarity reasons and is meant to represent an example usage
-of the SetGossipContent() functionality.
+import (
+	"github.com/joonnna/ifrit"
+)
 
+func main() {
+    // Nil config results in full defaults.
+    // First client has no entry point, will operate alone.
+    // With no ca, ifrit defaults to 32 rings.
+    first, _ := ifrit.NewClient(nil)
+    go first.Start()
+
+    config := &ifrit.Config{
+        EntryAddrs: []string{first.Addr()},
+    }
+
+    numClients := 5
+    for i := 0; i < numClients; i++ {
+        c, _ := ifrit.NewClient(config)
+        go c.Start()
+    }
+}
+```
+
+## Example of adding gossip
+Mockup application uses ifrit's gossip functionality for state convergence.
 ```go
 package main
 
@@ -62,108 +78,38 @@ import (
 )
 
 
-// We assume that the CA is deployed on another server
-var (
-    caAddr "...."
-)
-
-// Mockup application
+// Mockup application.
 type application struct {
     ifritClient *ifrit.Client
 
-    exitChan chan bool
     data     *appData
 }
 
-// Mockup data structure
-type appData struct {
-    Users map[int]*user
-}
-
-// Mockup users
-type user struct {
-    FirstName string
-    LastName  string
-    Address   string
-}
-
-// We store the client instance within the application
-// such that we can communicate with it as we see fit
-func newApp(caAddr string) (*application, error) {
-    c, err := ifrit.NewClient(caAddr, nil)
-    if err != nil {
-        return nil, err
-    }
-
-    return &application{
-        ifritClient: c,
-    }, nil
-}
-
-// Start the mockup application
+// Start the mockup application.
 func (a *application) Start() {
     a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
     for {
-        select {
-        case <-a.exitChan:
-            return
-
-        case <-time.After(time.Second * 20):
-            a.addRandomUser()
-        }
+        a.doStuff()
     }
-}
-
-func (a *application) State() []byte {
-    var buf bytes.Buffer
-
-    json.NewEncoder(buf).Encode(a.data)
-
-    return buf.Bytes()
 }
 
 // This callback will be invoked on each received message.
 func (a *application) handleMessages(data []byte) ([]byte, error) {
-    received := &appData{}
+    msg := data.Unmarshal()
 
-    err := json.NewDecoder(bytes.NewReader(data)).Decode(received)
-    if err != nil {
-        return nil, err
-    }
-
-    for k, v := range received {
-        if _, ok := a.data.Users[k]; !ok {
-            a.data.Users[k] = v
-        }
-    }
+    a.state = mergeState(msg)
 
     //Updating to a new state so that its propegated throughout the ifrit network
-    a.ifritClient.SetGossipContent(a.State())
+    a.ifritClient.SetGossipContent(a.state)
 
-    //No need to send a response, all application state will eventually converge
     return nil, nil
-}
-
-//We assume that the CA is deployed on another server
-func main() {
-    a, err := newApp()
-    if err != nil {
-        panic(err)
-    }
-
-    a.Start()
 }
 ```
 
 
-## Application example of sending messages
-In this example we aim to utilize the message sending functionality of ifrit.
-We send, receive, and respond to application specific messages transferred through ifrit.
-
-The example is simplified for clarity reasons and is meant to represent an example usage
-of the message sending functionality.
-
+## Example of sending messages
+Mockup application periodically sends messages participants in the network.
 ```go
 package main
 
@@ -175,101 +121,93 @@ import (
     "github.com/joonnna/ifrit"
 )
 
-// We assume that the CA is deployed on another server
-var (
-    caAddr = "...."
-)
 
-
-// Mockup application
+// Mockup application.
 type application struct {
     ifritClient *ifrit.Client
 
-    exitChan chan bool
     data     *appData
 }
 
-// Mockup data structure
-type appData struct {
-    Users map[int]*user
-}
 
-// Mockup users
-type user struct {
-    FirstName string
-    LastName  string
-    Address   string
-}
-
-// We store the client instance within the application
-// such that we can communicate with it as we see fit
-func newApp() (*application, error) {
-    c, err := ifrit.NewClient(caAddr)
-    if err != nil {
-        return nil, err
-    }
-
-    return &application{
-        ifritClient: c,
-    }, nil
-}
-
-// Start the mockup application
+// Start the mockup application.
 func (a *application) Start() {
     a.ifritClient.RegisterMsgHandler(a.handleMessages)
 
     for {
-        select {
-        case <-a.exitChan:
-            return
-        case <-time.After(time.Sceond * 40):
-            a.addRandomUser()
-            ch, num := a.ifritClient.SendToAll(a.State())
+        a.doStuff()
 
-            for i := 0; i < num; i++ {
-                select {
-                case resp <- ch:
-                    a.handleResponse(resp)
-                case <-time.After(time.Minute * 2):
-                    break
-                }
-            }
-        }
+        msg := a.newStuff()
+
+        members := a.ifritClient.Members()
+
+        ch := a.ifritClient.SendTo(members[randIdx], msg)
+
+        resp := <-ch
+        a.handleResp(resp)
     }
-}
-
-func (a *application) State() []byte {
-    var buf bytes.Buffer
-
-    json.NewEncoder(buf).Encode(a.data)
-
-    return buf.Bytes()
 }
 
 // This callback will be invoked on each received message.
 func (a *application) handleMessages(data []byte) ([]byte, error) {
-    received := &appData{}
+    msg := data.Unmarshal()
 
-    err := json.NewDecoder(bytes.NewReader(data)).Decode(received)
-    if err != nil {
-        return nil, err
-    }
+    a.storeMsg(msg)
 
-    for k, v := range received {
-        if _, ok := a.data.Users[k]; !ok {
-            a.data.Users[k] = v
-        }
-    }
+    return a.generateResponse(msg), nil
+}
+```
 
-    return a.generateResponse(), nil
+
+
+
+
+## Example of sending message to all
+Mockup application periodically sends messages to all participants in the network.
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "time"
+
+    "github.com/joonnna/ifrit"
+)
+
+
+// Mockup application.
+type application struct {
+    ifritClient *ifrit.Client
+
+    data     *appData
 }
 
-func main() {
-    a, err := newApp()
-    if err != nil {
-        panic(err)
-    }
 
-    a.Start()
+// Start the mockup application.
+func (a *application) Start() {
+    a.ifritClient.RegisterMsgHandler(a.handleMessages)
+
+    for {
+        a.doStuff()
+
+        msg := a.newStuff()
+
+        ch, num := a.ifritClient.SendToAll(msg)
+
+        for i := 0; i < num; i++ {
+            resp := <-ch
+            a.handleResp(resp)
+        }
+    }
+}
+
+// This callback will be invoked on each received message.
+func (a *application) handleMessages(data []byte) ([]byte, error) {
+    msg := data.Unmarshal()
+
+    a.storeMsg(msg)
+
+    return a.generateResponse(msg), nil
 }
 ```

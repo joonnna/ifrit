@@ -2,9 +2,10 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"os"
 	"testing"
 
-	"github.com/joonnna/ifrit/logger"
+	log "github.com/inconshreveable/log15"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -18,7 +19,7 @@ type NodeTestSuite struct {
 }
 
 func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.PrivateKey) {
-	var i uint32
+	var i, mask uint32
 
 	peerPrivKey, err := genKeys()
 	if err != nil {
@@ -36,14 +37,14 @@ func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.Private
 		p.accusations[i] = nil
 	}
 
-	localNote := &note{
-		epoch:  1,
-		mask:   make([]byte, numRings),
-		peerId: p.peerId,
+	for i = 0; i < numRings; i++ {
+		mask = setBit(mask, i)
 	}
 
-	for i = 0; i < numRings; i++ {
-		localNote.mask[i] = 1
+	localNote := &note{
+		epoch:  1,
+		mask:   mask,
+		peerId: p.peerId,
 	}
 
 	_, err = localNote.signAndMarshal(peerPrivKey)
@@ -56,32 +57,28 @@ func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.Private
 	return p, peerPrivKey
 }
 
-// Make sure that VariableThatShouldStartAtFive is set to five
-// before each test
 func (suite *NodeTestSuite) SetupTest() {
-	var numRings uint32
-
-	numRings = 3
+	var numRings uint32 = 6
 
 	p, priv := newTestPeer("mainPeer1234", numRings, "localhost:1000")
 
-	logger := logger.CreateLogger("test", "testlog")
-
-	v, err := newView(numRings, logger, p.peerId, p.addr)
+	v, err := newView(numRings, p.peerId, p.addr)
 	require.NoError(suite.T(), err, "Failed to create view")
 
 	n := &Node{
-		peer:    p,
-		privKey: priv,
-		log:     logger,
-		view:    v,
+		peer:     p,
+		privKey:  priv,
+		view:     v,
+		protocol: correct{},
 	}
 
 	suite.Node = n
 }
 
-// In order for 'go test' to run this suite, we need to create
-// a normal test function and pass our suite to suite.Run
 func TestNodeTestSuite(t *testing.T) {
+	r := log.Root()
+
+	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+
 	suite.Run(t, new(NodeTestSuite))
 }

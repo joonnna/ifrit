@@ -6,22 +6,25 @@ import (
 	"os"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/netutil"
 )
 
 type Server struct {
-	log  *logger.Log
 	conn *net.UDPConn
 	addr string
 }
 
-func NewServer(log *logger.Log) (*Server, error) {
+func NewServer() (*Server, error) {
 	port := netutil.GetOpenPort()
-	//hostName := netutil.GetLocalIP()
-	hostName, _ := os.Hostname()
-	addr := fmt.Sprintf("%s:%d", hostName, port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	h, _ := os.Hostname()
+
+	addr, err := net.LookupHost(h)
+	if err != nil {
+		return nil, err
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr[0], port))
 	if err != nil {
 		return nil, err
 	}
@@ -31,26 +34,22 @@ func NewServer(log *logger.Log) (*Server, error) {
 		return nil, err
 	}
 
-	addrs, err := net.LookupHost(hostName)
-	if err != nil {
-		return nil, err
-	}
-
-	externalAddr := fmt.Sprintf("%s:%d", addrs[0], udpAddr.Port)
-
-	return &Server{log: log, conn: conn, addr: externalAddr}, nil
+	return &Server{
+		conn: conn,
+		addr: fmt.Sprintf("%s:%d", addr, port),
+	}, nil
 }
 
 func (s Server) Send(addr string, data []byte) ([]byte, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		s.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	c, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
-		s.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 	c.SetDeadline(time.Now().Add(time.Second * 5))
@@ -58,7 +57,7 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 
 	_, err = c.Write(data)
 	if err != nil {
-		s.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -66,7 +65,7 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 
 	n, err := c.Read(bytes)
 	if err != nil {
-		s.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -82,13 +81,13 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 		default:
 			n, addr, err := s.conn.ReadFrom(bytes)
 			if err != nil {
-				s.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
 			resp, err := signMsg(bytes[:n])
 			if err != nil {
-				s.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 
 			}
@@ -96,7 +95,7 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 			s.conn.SetWriteDeadline(time.Now().Add(time.Second * 3))
 			_, err = s.conn.WriteTo(resp, addr)
 			if err != nil {
-				s.log.Err.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 		}

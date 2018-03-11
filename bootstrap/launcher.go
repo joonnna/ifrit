@@ -11,6 +11,9 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/joonnna/ifrit/cauth"
+	"github.com/joonnna/ifrit/worm"
+
+	log "github.com/inconshreveable/log15"
 )
 
 const (
@@ -28,15 +31,20 @@ type Launcher struct {
 	EntryAddr string
 	numRings  uint32
 
+	// TODO naming things...
+	worm *worm.Worm
+
 	ch chan interface{}
 }
 
 type application interface {
 	Start()
 	ShutDown()
+	Addr() string
+	HttpAddr() string
 }
 
-func NewLauncher(numRings uint32, ch chan interface{}) (*Launcher, error) {
+func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		return nil, err
@@ -50,10 +58,11 @@ func NewLauncher(numRings uint32, ch chan interface{}) (*Launcher, error) {
 
 	l := &Launcher{
 		numRings:  numRings,
-		EntryAddr: c.GetAddr(),
+		EntryAddr: c.Addr(),
 		ca:        c,
 		ch:        ch,
 		listener:  listener,
+		worm:      w,
 	}
 
 	return l, nil
@@ -61,7 +70,10 @@ func NewLauncher(numRings uint32, ch chan interface{}) (*Launcher, error) {
 
 func (l *Launcher) Start() {
 	go l.ca.Start(l.numRings)
-
+	if l.worm != nil {
+		log.Info("Starting worm")
+		l.worm.Start()
+	}
 	http.HandleFunc("/addApplication", l.addApplicationHandler)
 
 	http.Serve(l.listener, nil)
@@ -69,6 +81,9 @@ func (l *Launcher) Start() {
 
 func (l *Launcher) ShutDown() {
 	l.shutDownApplications()
+	if l.worm != nil {
+		l.worm.Stop()
+	}
 	l.listener.Close()
 	l.ca.Shutdown()
 }
@@ -102,6 +117,10 @@ func (l *Launcher) startApplication() {
 	}
 
 	go client.Start()
+
+	if len(l.applicationList) <= 0 && l.worm != nil {
+		l.worm.AddHost(client.HttpAddr())
+	}
 
 	l.applicationList = append(l.applicationList, client)
 }

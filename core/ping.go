@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/ifrit/logger"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -18,7 +18,6 @@ type pinger struct {
 	exitChan chan bool
 	transport
 	privKey        *ecdsa.PrivateKey
-	log            *logger.Log
 	maxFailedPings uint32
 }
 
@@ -28,12 +27,11 @@ type transport interface {
 	Shutdown()
 }
 
-func newPinger(t transport, maxPing uint32, priv *ecdsa.PrivateKey, log *logger.Log) *pinger {
+func newPinger(t transport, maxPing uint32, priv *ecdsa.PrivateKey) *pinger {
 	return &pinger{
 		transport:      t,
 		privKey:        priv,
 		exitChan:       make(chan bool),
-		log:            log,
 		maxFailedPings: maxPing,
 	}
 }
@@ -49,7 +47,7 @@ func (p *pinger) ping(dest *peer) error {
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -57,7 +55,7 @@ func (p *pinger) ping(dest *peer) error {
 
 	respBytes, err := p.Send(dest.pingAddr, data)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
@@ -65,18 +63,19 @@ func (p *pinger) ping(dest *peer) error {
 
 	err = proto.Unmarshal(respBytes, resp)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 	sign := resp.GetSignature()
 
 	valid, err := validateSignature(sign.GetR(), sign.GetS(), resp.GetNonce(), dest.publicKey)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return err
 	}
 
 	if !valid {
+		log.Error(errInvalidPongSignature.Error())
 		return errInvalidPongSignature
 	}
 
@@ -89,7 +88,7 @@ func (p *pinger) ping(dest *peer) error {
 func (p pinger) signPong(data []byte) ([]byte, error) {
 	sign, err := signContent(data, p.privKey)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -105,7 +104,7 @@ func (p pinger) signPong(data []byte) ([]byte, error) {
 
 	bytes, err := proto.Marshal(resp)
 	if err != nil {
-		p.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 

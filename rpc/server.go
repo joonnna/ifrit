@@ -4,7 +4,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
-	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joonnna/ifrit/netutil"
@@ -16,26 +17,35 @@ import (
 
 var (
 	errInvalidInterface = errors.New("Provided interface is invalid")
+	errNoPort           = errors.New("Listener has no port")
 )
 
 type Server struct {
 	rpcServer *grpc.Server
 
 	listener net.Listener
+	port     int
 }
 
 func NewServer() (*Server, error) {
-	//hostName := netutil.GetLocalIP()
-	//hostName := "0.0.0.0"
-	hostName, _ := os.Hostname()
-	l, err := netutil.ListenOnPort(hostName, 8100)
-	//l, err := netutils.GetListener(hostName)
+	l, err := netutil.ListenOnPort(8100)
+	if err != nil {
+		return nil, err
+	}
+
+	split := strings.Split(l.Addr().String(), ":")
+	if len(split) < 2 {
+		return nil, errNoPort
+	}
+
+	port, err := strconv.Atoi(split[1])
 	if err != nil {
 		return nil, err
 	}
 
 	return &Server{
 		listener: l,
+		port:     port,
 	}, nil
 }
 
@@ -79,17 +89,7 @@ func (s *Server) ShutDown() {
 	s.rpcServer.Stop()
 }
 
-func (s *Server) HostInfo() string {
-	/*
-		port := strings.Split(s.listener.Addr().String(), ":")[1]
-		host, _ := os.Hostname()
-
-		addrs, err := net.LookupHost(host)
-		if err != nil {
-			return ""
-		}
-
-		return fmt.Sprintf("%s:%s", addrs[0], port)
-	*/
+func (s *Server) Addr() string {
+	//return s.port
 	return s.listener.Addr().String()
 }

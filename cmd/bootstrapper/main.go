@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/signal"
 	"runtime"
@@ -11,28 +12,46 @@ import (
 
 	_ "net/http/pprof"
 
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit"
 	"github.com/joonnna/ifrit/bootstrap"
 )
 
+var (
+	clients []string
+)
+
 func createClients(requestChan chan interface{}, exitChan chan bool, arg string, vizAddr string) {
-	test := true
+	//test := true
 	for {
 		select {
 		case <-requestChan:
-			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr}
-			c, err := ifrit.NewClient(arg, conf)
+			var addrs []string
+			if len(clients) > 0 {
+				idx := rand.Int() % len(clients)
+				addrs = append(addrs, clients[idx])
+				log.Info(addrs[0])
+			}
+			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr, Ca: true, CaAddr: arg}
+			c, err := ifrit.NewClient(conf)
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
 
+			clients = append(clients, c.Addr())
 			c.RegisterMsgHandler(msgHandler)
+			c.RegisterGossipHandler(gossipHandler)
+			c.RegisterResponseHandler(gossipResponseHandler)
+			c.SetGossipContent([]byte("This is a gossip message"))
 
-			if test {
-				activateSendTo(c)
-				test = false
-			}
+			activateSendTo(c)
+			/*
+				if test {
+					activateSendTo(c)
+					test = false
+				}
+			*/
 
 			requestChan <- c
 		case <-exitChan:
@@ -47,15 +66,25 @@ func activateSendTo(c *ifrit.Client) {
 		data := []byte("Application message boys!")
 		for {
 			time.Sleep(time.Second * 10)
-			m := c.Members()
-			if len(m) == 0 {
-				continue
+			ch, num := c.SendToAll(data)
+			for i := 0; i < num; i++ {
+				r := <-ch
+				fmt.Println(string(r))
 			}
-			ch := c.SendTo(m[0], data)
-			r := <-ch
-			fmt.Println(string(r))
 		}
 	}()
+}
+
+func gossipHandler(data []byte) ([]byte, error) {
+	fmt.Println(string(data))
+
+	resp := []byte("This is a gossip response!!!")
+
+	return resp, nil
+}
+
+func gossipResponseHandler(data []byte) {
+	fmt.Println(string(data))
 }
 
 func msgHandler(data []byte) ([]byte, error) {
@@ -81,7 +110,13 @@ func main() {
 	ch := make(chan interface{})
 	exitChan := make(chan bool)
 
-	l, err := bootstrap.NewLauncher(uint32(numRings), ch)
+	r := log.Root()
+
+	h := log.CallerFileHandler(log.Must.FileHandler("/var/log/ifritlog", log.TerminalFormat()))
+
+	r.SetHandler(h)
+
+	l, err := bootstrap.NewLauncher(uint32(numRings), ch, nil)
 	if err != nil {
 		panic(err)
 	}

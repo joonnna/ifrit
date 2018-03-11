@@ -4,6 +4,8 @@ import (
 	"crypto/ecdsa"
 
 	"github.com/golang/protobuf/proto"
+	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/protobuf"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -76,7 +78,7 @@ func (suite *NodeTestSuite) TestAddValidNote() {
 
 	noteMsg := newPbNote(newNote, priv)
 
-	suite.addViewPeer(p)
+	suite.viewMap[p.key] = p
 
 	suite.evalNote(noteMsg)
 
@@ -98,7 +100,7 @@ func (suite *NodeTestSuite) TestAddInvalidNote() {
 
 	noteMsg := newPbNote(newNote, priv)
 
-	suite.addViewPeer(p)
+	suite.viewMap[p.key] = p
 
 	suite.evalNote(noteMsg)
 
@@ -145,7 +147,7 @@ func (suite *NodeTestSuite) TestInvalidRebuttal() {
 
 	noteMsg := newPbNote(newNote, priv)
 
-	suite.addViewPeer(p)
+	suite.viewMap[p.key] = p
 
 	suite.evalNote(noteMsg)
 
@@ -173,7 +175,7 @@ func (suite *NodeTestSuite) TestValidRebuttal() {
 
 	noteMsg := newPbNote(newNote, priv)
 
-	suite.addViewPeer(p)
+	suite.viewMap[p.key] = p
 
 	suite.evalNote(noteMsg)
 
@@ -185,7 +187,7 @@ func (suite *NodeTestSuite) TestAccusedNotInView() {
 
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.addViewPeer(accuser)
+	suite.viewMap[accuser.key] = accuser
 
 	n := accused.getNote()
 
@@ -209,7 +211,7 @@ func (suite *NodeTestSuite) TestAccuserNotInView() {
 
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.addViewPeer(accused)
+	suite.viewMap[accused.key] = accused
 
 	n := accused.getNote()
 
@@ -233,8 +235,9 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.addViewPeer(accused)
-	suite.addViewPeer(accuser)
+	suite.viewMap[accused.key] = accused
+	suite.viewMap[accuser.key] = accuser
+
 	suite.addLivePeer(accused)
 	suite.addLivePeer(accuser)
 
@@ -253,8 +256,6 @@ func (suite *NodeTestSuite) TestValidAccStartsTimer() {
 	suite.evalAccusation(accMsg)
 
 	assert.True(suite.T(), suite.timerExist(accused.key), "Valid accusation does not start timer")
-
-	suite.log.Debug.Println(len(suite.getView()))
 }
 
 func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
@@ -262,8 +263,9 @@ func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
 
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.addViewPeer(accused)
-	suite.addViewPeer(accuser)
+	suite.viewMap[accused.key] = accused
+	suite.viewMap[accuser.key] = accuser
+
 	suite.addLivePeer(accused)
 	suite.addLivePeer(accuser)
 
@@ -284,40 +286,14 @@ func (suite *NodeTestSuite) TestInvaldAccDoesNotStartTimer() {
 	assert.False(suite.T(), suite.timerExist(accused.key), "Invalid accusation starts timer")
 }
 
-func (suite *NodeTestSuite) TestNonExistingMask() {
-	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
-
-	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
-
-	suite.addViewPeer(accused)
-	suite.addViewPeer(accuser)
-	suite.addLivePeer(accused)
-	suite.addLivePeer(accuser)
-
-	n := accused.getNote()
-
-	acc := &accusation{
-		epoch:   n.epoch,
-		mask:    nil,
-		peerId:  accused.peerId,
-		accuser: accuser.peerId,
-		ringNum: 1,
-	}
-
-	accMsg := newPbAcc(acc, priv)
-
-	suite.evalAccusation(accMsg)
-
-	assert.False(suite.T(), suite.timerExist(accused.key), "Invalid accusation starts timer")
-}
-
 func (suite *NodeTestSuite) TestInvalidMask() {
 	accused, _ := newTestPeer("accused1234", suite.numRings, "localhost:123")
 
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.addViewPeer(accused)
-	suite.addViewPeer(accuser)
+	suite.viewMap[accused.key] = accused
+	suite.viewMap[accuser.key] = accuser
+
 	suite.addLivePeer(accused)
 	suite.addLivePeer(accuser)
 
@@ -325,7 +301,7 @@ func (suite *NodeTestSuite) TestInvalidMask() {
 
 	acc := &accusation{
 		epoch:   n.epoch,
-		mask:    make([]byte, suite.numRings),
+		mask:    0,
 		peerId:  accused.peerId,
 		accuser: accuser.peerId,
 		ringNum: 1,
@@ -341,9 +317,7 @@ func (suite *NodeTestSuite) TestInvalidMask() {
 func (suite *NodeTestSuite) TestRebuttal() {
 	accuser, priv := newTestPeer("accuser1234", suite.numRings, "localhost:124")
 
-	suite.setProtocol(1)
-
-	suite.addViewPeer(accuser)
+	suite.viewMap[accuser.key] = accuser
 
 	n := suite.getNote()
 
@@ -364,36 +338,49 @@ func (suite *NodeTestSuite) TestRebuttal() {
 }
 
 func (suite *NodeTestSuite) TestDeactivateRing() {
-	var ringNum uint32
-	ringNum = 0
-	suite.deactivateRing(ringNum)
+	var ringNum uint32 = 1
 
-	assert.Equal(suite.T(), suite.deactivatedRings, uint32(1), "Deactivated rings not incremented")
-	assert.Equal(suite.T(), suite.recentNote.mask[ringNum], uint8(0), "Deactivated rings not incremented")
+	log.Debug("mask", "val", suite.recentNote.mask)
+	log.Debug("Deactivated", "val", suite.deactivatedRings)
+	suite.deactivateRing(ringNum)
+	log.Debug("Deactivated", "val", suite.deactivatedRings)
+	log.Debug("mask", "val", suite.recentNote.mask)
+
+	assert.Equal(suite.T(), suite.deactivatedRings, uint32(1), "Deactivated rings not incremented.")
+	assert.False(suite.T(), hasBit(suite.recentNote.mask, (ringNum-1)), "Deactivated ring still has bit present.")
 }
 
 func (suite *NodeTestSuite) TestDeactivateInvalidRing() {
-	var ringNum uint32
+	var ringNum, i uint32
 	ringNum = 312312
 	suite.deactivateRing(ringNum)
 
 	assert.Equal(suite.T(), suite.deactivatedRings, uint32(0), "Deactivated rings incremented on invalid deactivation")
 
-	for _, b := range suite.recentNote.mask {
-		assert.Equal(suite.T(), b, uint8(1), "Deactivated ring on invalid deactivation")
+	for i = 0; i < suite.numRings; i++ {
+		assert.True(suite.T(), hasBit(suite.recentNote.mask, i), "Ring deactivated on invalid deactivation.")
 	}
 }
 
 func (suite *NodeTestSuite) TestDeactivateTooManyRings() {
-	var ringNum uint32
-	ringNum = 0
-	prevLen := len(suite.recentNote.mask)
-	suite.deactivateRing(ringNum)
-	suite.deactivateRing(ringNum + 1)
+	var r1 uint32 = 1
+	var r2 uint32 = 2
+	var r3 uint32 = 3
 
-	assert.Equal(suite.T(), prevLen, len(suite.recentNote.mask), "mask changes length after deactivations ?!?!")
-	assert.Equal(suite.T(), suite.deactivatedRings, uint32(1), "Deactivated rings reflects wrong value")
-	assert.Equal(suite.T(), suite.recentNote.mask[ringNum], uint8(1), "Previous ring deactivation not re-activated")
-	assert.Equal(suite.T(), suite.recentNote.mask[ringNum+1], uint8(0), "Ring not deactivated")
+	suite.deactivateRing(r1)
+	suite.deactivateRing(r2)
+
+	assert.Equal(suite.T(), suite.deactivatedRings, suite.Node.maxByz, "Allowed to deactivate too many rings.")
+	assert.False(suite.T(), hasBit(suite.recentNote.mask, r1-1), "Failed to deactivate first ring")
+	assert.False(suite.T(), hasBit(suite.recentNote.mask, r2-1), "Failed to deactivate second ring")
+
+	suite.deactivateRing(r3)
+	assert.False(suite.T(), hasBit(suite.recentNote.mask, r3-1), "Failed to deactivate ring when exceeding limit")
+
+	if hasBit(suite.recentNote.mask, r1-1) {
+		assert.False(suite.T(), hasBit(suite.recentNote.mask, r2-1), "Failed to re-activate ring upon exceeding limit.")
+	} else {
+		assert.False(suite.T(), hasBit(suite.recentNote.mask, r1-1), "Failed to re-activate ring upon exceeding limit.")
+	}
 
 }

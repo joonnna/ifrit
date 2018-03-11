@@ -8,10 +8,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/logger"
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
 	"github.com/joonnna/workerpool"
@@ -34,8 +35,6 @@ const (
 type processMsg func([]byte) ([]byte, error)
 
 type Node struct {
-	log *logger.Log
-
 	//Local peer representation
 	*peer
 
@@ -64,6 +63,9 @@ type Node struct {
 	msgHandler      processMsg
 	msgHandlerMutex sync.RWMutex
 
+	gossipHandler      processMsg
+	gossipHandlerMutex sync.RWMutex
+
 	responseHandler      func([]byte)
 	responseHandlerMutex sync.RWMutex
 
@@ -72,14 +74,16 @@ type Node struct {
 
 	dispatcher *workerpool.Dispatcher
 
-	privKey   *ecdsa.PrivateKey
-	localCert *x509.Certificate
-	caCert    *x509.Certificate
+	privKey    *ecdsa.PrivateKey
+	localCert  *x509.Certificate
+	caCert     *x509.Certificate
+	entryAddrs []string
 
 	stats *recorder
 
 	trustedBootNode  bool
-	httpAddr         string
+	vizId            string
+	httpListener     net.Listener
 	viz              bool
 	vizAddr          string
 	vizUpdateTimeout uint32
@@ -94,7 +98,7 @@ type client interface {
 
 type server interface {
 	Init(config *tls.Config, n interface{}, maxConcurrent uint32) error
-	HostInfo() string
+	Addr() string
 	Start() error
 	ShutDown()
 }
@@ -125,13 +129,16 @@ type Config struct {
 	VisAddr            string
 	VisUpdateTimeout   uint32
 	MaxConc            uint32
+	Ca                 bool
+	CaAddr             string
+	EntryAddrs         []string
 }
 
 func (n *Node) gossipLoop() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Exiting gossiping")
+			log.Info("Exiting gossiping")
 			n.wg.Done()
 			return
 		case <-time.After(n.getGossipTimeout()):
@@ -144,7 +151,7 @@ func (n *Node) monitor() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Stopping monitoring")
+			log.Info("Stopping monitoring")
 			n.wg.Done()
 			return
 		case <-time.After(n.monitorTimeout):
@@ -157,7 +164,7 @@ func (n *Node) checkTimeouts() {
 	for {
 		select {
 		case <-n.exitChan:
-			n.log.Info.Println("Stopping view update")
+			log.Info("Stopping view update")
 			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
@@ -167,34 +174,54 @@ func (n *Node) checkTimeouts() {
 }
 
 func NewNode(conf *Config, c client, s server) (*Node, error) {
-	var i uint32
+	var i, mask uint32
 	var extValue []byte
-	logger := logger.CreateLogger(s.HostInfo(), "nodelog")
+	var certs *certSet
+	var http string
+	var l net.Listener
 
-	udpServer, err := udp.NewServer(logger)
+	udpServer, err := udp.NewServer()
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	privKey, err := genKeys()
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
-	addr := fmt.Sprintf("http://%s/certificateRequest", conf.EntryAddr)
+	if conf.Visualizer {
+		l, err = initHttp()
+		if err != nil {
+			log.Error(err.Error())
+		}
 
-	certs, err := sendCertRequest(addr, privKey, s.HostInfo(), udpServer.Addr())
-	if err != nil {
-		logger.Err.Println(err)
-		return nil, err
+		http = l.Addr().String()
+	}
+
+	if conf.Ca {
+		addr := fmt.Sprintf("http://%s/certificateRequest", conf.CaAddr)
+		certs, err = sendCertRequest(privKey, addr, s.Addr(), udpServer.Addr(), http)
+		if err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
+
+	} else {
+		// TODO only have numrings in notes and not certificate?
+		certs, err = selfSignedCert(privKey, s.Addr(), udpServer.Addr(), http, uint32(32))
+		if err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
 	}
 
 	extensions := certs.ownCert.Extensions
 
 	if len(certs.ownCert.SubjectKeyId) < 1 {
-		logger.Err.Println(errNoId)
+		log.Error(errNoId.Error())
 		return nil, errNoId
 	}
 
@@ -204,7 +231,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		}
 	}
 	if extValue == nil {
-		logger.Err.Println(errNoRingNum)
+		log.Error(errNoRingNum.Error())
 		return nil, errNoRingNum
 	}
 
@@ -214,13 +241,13 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	p, err := newPeer(nil, certs.ownCert, numRings)
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
-	v, err := newView(numRings, logger, p.peerId, p.addr)
+	v, err := newView(numRings, p.peerId, p.addr)
 	if err != nil {
-		logger.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
@@ -231,13 +258,12 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		monitorTimeout:   time.Second * time.Duration(conf.MonitorRate),
 		nodeDeadTimeout:  float64(conf.ViewRemovalTimeout),
 		view:             v,
-		pinger:           newPinger(udpServer, conf.MaxFailPings, privKey, logger),
+		pinger:           newPinger(udpServer, conf.MaxFailPings, privKey),
 		privKey:          privKey,
 		client:           c,
 		server:           s,
 		peer:             p,
-		stats:            &recorder{recordDuration: 60, log: logger},
-		log:              logger,
+		stats:            &recorder{recordDuration: 60},
 		localCert:        certs.ownCert,
 		caCert:           certs.caCert,
 		trustedBootNode:  certs.trusted,
@@ -245,44 +271,50 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		vizUpdateTimeout: conf.VisUpdateTimeout,
 		vizAddr:          conf.VisAddr,
 		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
+		entryAddrs:       conf.EntryAddrs,
+		httpListener:     l,
+		protocol:         correct{},
 	}
 
 	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	n.client.Init(genClientConfig(certs, privKey))
 
+	for i = 0; i < n.numRings; i++ {
+		mask = setBit(mask, i)
+	}
+
 	localNote := &note{
 		epoch:  1,
-		mask:   make([]byte, numRings),
+		mask:   mask,
 		peerId: n.peerId,
-	}
-	for i = 0; i < n.numRings; i++ {
-		localNote.mask[i] = 1
 	}
 
 	err = localNote.sign(n.privKey)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		return nil, err
 	}
 
 	n.recentNote = localNote
 
-	for _, c := range certs.knownCerts {
-		if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
-			continue
+	if n.caCert != nil {
+		for _, c := range certs.knownCerts {
+			if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
+				continue
+			}
+			n.evalCertificate(c)
 		}
-		n.evalCertificate(c)
-	}
 
-	view := n.getView()
+		view := n.getView()
 
-	for _, p := range view {
-		n.addLivePeer(p)
+		for _, p := range view {
+			n.addLivePeer(p)
+		}
 	}
 
 	return n, nil
@@ -309,13 +341,12 @@ func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 			n.sendMsg(a, ch, msg)
 		})
 	}
-
 }
 
 func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 	reply, err := n.client.SendMsg(dest, msg)
 	if err != nil {
-		n.log.Err.Println(err)
+		log.Error(err.Error())
 		ch <- nil
 	}
 	ch <- reply.GetContent()
@@ -328,8 +359,8 @@ func (n *Node) ShutDownNode() {
 		}
 	}
 
-	n.dispatcher.Stop()
 	close(n.exitChan)
+	n.dispatcher.Stop()
 	n.wg.Wait()
 }
 
@@ -337,16 +368,24 @@ func (n *Node) LiveMembers() []string {
 	return n.getLivePeerAddrs()
 }
 
+func (n *Node) LiveMembersHttp() []string {
+	return n.getLivePeerHttpAddrs()
+}
+
 func (n *Node) Id() string {
 	return n.key
 }
 
+func (n *Node) Addr() string {
+	return n.server.Addr()
+}
+
+func (n *Node) HttpAddr() string {
+	return n.httpListener.Addr().String()
+}
+
 func (n *Node) Start() {
-	n.log.Info.Println("Started Node")
-
-	done := make(chan bool)
-
-	n.setProtocol(correct{})
+	log.Info("Started Node")
 
 	go n.server.Start()
 	go n.pinger.serve()
@@ -365,9 +404,7 @@ func (n *Node) Start() {
 
 	if n.viz {
 		go n.updateState()
-		go n.httpHandler(done)
-
-		<-done
+		go n.httpHandler()
 
 		for _, r := range n.ringMap {
 			for {
@@ -379,8 +416,32 @@ func (n *Node) Start() {
 		}
 	}
 
+	// can continue even with error, will just send nil msg.
+	msg, err := n.collectGossipContent()
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	// With no ca we need to contact existing hosts.
+	// TODO retry if we fail to contact them?
+	if n.caCert == nil {
+		for _, addr := range n.entryAddrs {
+			reply, err := n.client.Gossip(addr, msg)
+			if err != nil {
+				log.Error(err.Error(), "addr", addr)
+				continue
+			}
+
+			n.mergeCertificates(reply.GetCertificates())
+			n.mergeNotes(reply.GetNotes())
+			n.mergeAccusations(reply.GetAccusations())
+		}
+	}
+
 	<-n.exitChan
+	n.httpListener.Close()
 	n.server.ShutDown()
 	n.pinger.shutdown()
-	n.log.Info.Println("Exiting node")
+
+	log.Info("Exiting node")
 }

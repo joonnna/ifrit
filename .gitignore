@@ -39,3 +39,5 @@ build.sh
 plot.py
 planetlab/cmd_results
 experiment_results
+cmd/_plexperiments
+ifritlog
