@@ -57,7 +57,7 @@ func main() {
 	if CAConfig.LogFile != "" {
 
 		r := log.Root()
-		h := log.CallerFileHandler(log.Must.FileHandler(CAConfig.LogFile, log.TerminalFormat()))
+		h := log.CallerFileHandler(log.Must.FileHandler(CAConfig.LogFile, log.LogfmtFormat()))
 		r.SetHandler(h)
 	}
 
