@@ -27,7 +27,8 @@ type view struct {
 	ringMap  map[uint32]*ring
 	numRings uint32
 
-	currGossipRing uint32
+	currGossipRing  uint32
+	currMonitorRing uint32
 
 	maxByz           uint32
 	deactivatedRings uint32
@@ -58,6 +59,7 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 		maxByz:            uint32(maxByz),
 		deactivatedRings:  0,
 		currGossipRing:    1,
+		currMonitorRing:   1,
 	}
 
 	for i = 1; i <= numRings; i++ {
@@ -436,6 +438,13 @@ func (v *view) incrementGossipRing() {
 	}
 }
 
+func (v *view) incrementMonitorRing() {
+	v.currMonitorRing = ((v.currMonitorRing + 1) % (v.numRings + 1))
+	if v.currMonitorRing == 0 {
+		v.currMonitorRing = 1
+	}
+}
+
 func (v *view) getGossipPartners() ([]string, error) {
 	var addrs []string
 	defer v.incrementGossipRing()
@@ -456,4 +465,17 @@ func (v *view) getGossipPartners() ([]string, error) {
 	addrs = append(addrs, prev.addr)
 
 	return addrs, nil
+}
+
+func (v *view) getMonitorTarget() (string, uint32, error) {
+	defer v.incrementMonitorRing()
+
+	r := v.ringMap[v.currMonitorRing]
+
+	succ, err := r.getRingSucc()
+	if err != nil {
+		return "", 0, err
+	}
+
+	return succ.key, r.ringNum, nil
 }

@@ -91,73 +91,66 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	for _, ring := range n.ringMap {
-		succ, err := ring.getRingSucc()
-		if err != nil {
-			log.Error(err.Error())
-			continue
+	succ, ringNum, err := n.getMonitorTarget()
+	if err != nil {
+		log.Error(err.Error())
+		return
+	}
+
+	p := n.getLivePeer(succ)
+	if p == nil {
+		return
+	}
+
+	err = n.ping(p)
+	if err == errDead {
+		log.Debug("Successor dead, accusing", "succ", p.addr)
+		peerNote := p.getNote()
+		//Will always have note for a peer in our liveView, except when the peer stems
+		//from the initial contact list of the CA, if it's dead
+		//we should remove it to ensure it doesn't stay in our liveView.
+		//Not possible to accuse a peer without a note.
+		if peerNote == nil {
+			n.removeLivePeer(p.key)
+			return
 		}
 
-		p := n.getLivePeer(succ.key)
-		if p == nil {
-			continue
+		a := &accusation{
+			peerId:  p.peerId,
+			epoch:   peerNote.epoch,
+			accuser: n.peerId,
+			mask:    peerNote.mask,
+			ringNum: ringNum,
 		}
 
-		err = n.ping(p)
-		if err != nil {
-			if err != errDead {
-				continue
-			}
-
-			log.Debug("Successor dead, accusing", "succ", p.addr)
-			peerNote := p.getNote()
-			//Will always have note for a peer in our liveView, except when the peer stems
-			//from the initial contact list of the CA, if it's dead
-			//we should remove it to ensure it doesn't stay in our liveView.
-			//Not possible to accuse a peer without a note.
-			if peerNote == nil {
-				n.removeLivePeer(p.key)
-				continue
-			}
-
-			a := &accusation{
-				peerId:  p.peerId,
-				epoch:   peerNote.epoch,
-				accuser: n.peerId,
-				mask:    peerNote.mask,
-				ringNum: ring.ringNum,
-			}
-
-			acc := p.getRingAccusation(ring.ringNum)
-			if a.equal(acc) {
-				log.Debug("Already accused peer on this ring")
-				if !n.timerExist(p.key) {
-					n.startTimer(p.key, peerNote, n.peer, p.addr)
-				}
-				continue
-			}
-
-			err = a.sign(n.privKey)
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
-
-			err = p.setAccusation(a)
-			if err != nil {
-				log.Error(err.Error())
-				continue
-			}
+		acc := p.getRingAccusation(ringNum)
+		if a.equal(acc) {
+			log.Debug("Already accused peer on this ring")
 			if !n.timerExist(p.key) {
 				n.startTimer(p.key, peerNote, n.peer, p.addr)
 			}
+			return
+		}
+
+		err = a.sign(n.privKey)
+		if err != nil {
+			log.Error(err.Error())
+			return
+		}
+
+		err = p.setAccusation(a)
+		if err != nil {
+			log.Error(err.Error())
+			return
+		}
+		if !n.timerExist(p.key) {
+			n.startTimer(p.key, peerNote, n.peer, p.addr)
 		}
 	}
 }
 
 func (c correct) Timeouts(n *Node) {
-	timeouts := n.getAllTimeouts()
-	for key, t := range timeouts {
+	for key, t := range n.getAllTimeouts() {
 		log.Debug("Have timeout", "addr", t.addr)
 		since := time.Since(t.timeStamp)
 		if since.Seconds() > n.nodeDeadTimeout {
