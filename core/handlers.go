@@ -153,12 +153,9 @@ func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) 
 		}
 	}
 
-	if _, exists := given[n.key]; !exists {
-		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
-	} else if given[n.key] < n.getEpoch() {
+	if epoch, exists := given[n.key]; !exists || epoch < n.getEpoch() {
 		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
 	}
-
 }
 
 func (n *Node) mergeNotes(notes []*gossip.Note) {
