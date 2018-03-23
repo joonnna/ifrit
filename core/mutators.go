@@ -89,9 +89,7 @@ func (n *Node) collectGossipContent() (*gossip.State, error) {
 		ExternalGossip: n.getExternalGossip(),
 	}
 
-	view := n.getView()
-
-	for _, p := range view {
+	for _, p := range n.getView() {
 		peerEpoch := uint64(0)
 
 		if peerNote := p.getNote(); peerNote != nil {
@@ -197,4 +195,32 @@ func (n *Node) getResponseHandler() func([]byte) {
 	defer n.responseHandlerMutex.RUnlock()
 
 	return n.responseHandler
+}
+
+func (n *Node) StartGossipRecording() {
+	n.recordMutex.Lock()
+	defer n.recordMutex.Unlock()
+
+	n.recordGossipRounds = true
+}
+
+func (n *Node) isGossipRecording() bool {
+	n.recordMutex.RLock()
+	defer n.recordMutex.RUnlock()
+
+	return n.recordGossipRounds
+}
+
+func (n *Node) GetGossipRounds() uint32 {
+	n.roundMutex.RLock()
+	defer n.roundMutex.RUnlock()
+
+	return n.rounds
+}
+
+func (n *Node) incrementGossipRounds() {
+	n.roundMutex.Lock()
+	defer n.roundMutex.Unlock()
+
+	n.rounds++
 }

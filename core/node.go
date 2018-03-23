@@ -57,6 +57,12 @@ type Node struct {
 	gossipTimeout      time.Duration
 	gossipTimeoutMutex sync.RWMutex
 
+	recordGossipRounds bool
+	recordMutex        sync.RWMutex
+
+	rounds     uint32
+	roundMutex sync.RWMutex
+
 	monitorTimeout  time.Duration
 	nodeDeadTimeout float64
 
@@ -84,6 +90,7 @@ type Node struct {
 	trustedBootNode  bool
 	vizId            string
 	httpListener     net.Listener
+	httpAddr         string
 	viz              bool
 	vizAddr          string
 	vizUpdateTimeout uint32
@@ -143,6 +150,9 @@ func (n *Node) gossipLoop() {
 			return
 		case <-time.After(n.getGossipTimeout()):
 			n.getProtocol().Gossip(n)
+			if n.isGossipRecording() {
+				n.incrementGossipRounds()
+			}
 		}
 	}
 }
@@ -330,6 +340,27 @@ func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
 	})
 }
 
+func (n *Node) Sign(content []byte) ([]byte, []byte, error) {
+	signature, err := signContent(content, n.privKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return signature.r, signature.s, nil
+}
+
+func (n *Node) Verify(r, s, content []byte, id string) bool {
+	p := n.getViewPeer(id)
+	if p == nil {
+		return false
+	}
+
+	// TODO Cannot return error, change verifySignature
+	valid, _ := validateSignature(r, s, content, p.publicKey)
+
+	return valid
+}
+
 func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 	msg := &gossip.Msg{
 		Content: data,
@@ -381,7 +412,8 @@ func (n *Node) Addr() string {
 }
 
 func (n *Node) HttpAddr() string {
-	return n.httpListener.Addr().String()
+	//return n.httpListener.Addr().String()
+	return n.httpAddr
 }
 
 func (n *Node) Start() {
