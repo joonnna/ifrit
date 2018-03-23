@@ -168,3 +168,26 @@ func (c *Client) HttpAddr() string {
 func (c *Client) MembersHttp() []string {
 	return c.node.LiveMembersHttp()
 }
+
+// Starts recording amount of gossip rounds, used for experiments.
+func (c *Client) RecordGossipRounds() {
+	c.node.StartGossipRecording()
+}
+
+// Returns the amount of gossip rounds since recording started.
+func (c *Client) GetGossipRounds() uint32 {
+	return c.node.GetGossipRounds()
+}
+
+// Signs the provided content with the internal private key of ifrit.
+func (c *Client) Sign(content []byte) ([]byte, []byte, error) {
+	return c.node.Sign(content)
+}
+
+// Checks if the given content is correctly signed by the public key
+// belonging to the given node id.
+// The id represents another node in the Fireflies network, if the id
+// is not recongnized false is returned.
+func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
+	return c.node.Verify(r, s, content, id)
+}
