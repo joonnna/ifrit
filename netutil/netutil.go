@@ -43,19 +43,20 @@ func ListenOnPort(port int) (net.Listener, error) {
 	var err error
 
 	startPort := port
-	h, _ := os.Hostname()
+	/*
+		h, _ := os.Hostname()
 
-	addr, err := net.LookupHost(h)
-	if err != nil {
-		return nil, err
-	}
+		addr, err := net.LookupHost(h)
+		if err != nil {
+			return nil, err
+		}
 
-	for _, a := range addr {
-		log.Debug(a)
-	}
-
+		for _, a := range addr {
+			log.Debug(a)
+		}
+	*/
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addr[0], startPort))
+		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", startPort))
 		if err == nil {
 			break
 		}
@@ -77,15 +78,16 @@ func GetListener() (net.Listener, error) {
 
 	attempts := 0
 
-	h, _ := os.Hostname()
+	/*
+		h, _ := os.Hostname()
 
-	addr, err := net.LookupHost(h)
-	if err != nil {
-		return nil, err
-	}
-
+		addr, err := net.LookupHost(h)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:", addr[0]))
+		l, err = net.Listen("tcp4", ":")
 		if err == nil {
 			return l, nil
 		} else {

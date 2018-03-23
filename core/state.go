@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -83,9 +84,8 @@ func (n *Node) httpHandler() {
 	r.HandleFunc("/neighbors", n.neighborsHandler)
 	r.HandleFunc("/hosts", n.hostsHandler)
 	r.HandleFunc("/state", n.stateHandler)
-	/*
-		port := strings.Split(n.httpListener.Addr().String(), ":")[1]
 
+	/*
 		addrs, err := net.LookupHost(hostName)
 		if err != nil {
 			log.Error(err.Error())
@@ -93,7 +93,10 @@ func (n *Node) httpHandler() {
 		}
 	*/
 
-	n.vizId = fmt.Sprintf("http://%s", n.httpListener.Addr().String())
+	ip := netutil.GetLocalIP()
+	port := strings.Split(n.httpListener.Addr().String(), ":")[1]
+	n.httpAddr = fmt.Sprintf("%s:%d", ip, port)
+	n.vizId = fmt.Sprintf("http://%s", n.httpAddr)
 
 	handler := cors.Default().Handler(r)
 

@@ -3,6 +3,7 @@ package rpc
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -15,23 +16,42 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
+const (
+	port = 8100
+)
+
 var (
 	errInvalidInterface = errors.New("Provided interface is invalid")
 	errNoPort           = errors.New("Listener has no port")
+	errNoAddr           = errors.New("Can't lookup own hostname")
 )
 
 type Server struct {
 	rpcServer *grpc.Server
 
 	listener net.Listener
-	port     int
+	addr     string
 }
 
 func NewServer() (*Server, error) {
-	l, err := netutil.ListenOnPort(8100)
+	l, err := netutil.ListenOnPort(port)
 	if err != nil {
 		return nil, err
 	}
+	/*
+		h, _ := os.Hostname()
+
+		addr, err := net.LookupHost(h)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(addr) < 1 {
+			return nil, errNoAddr
+		}
+
+		ip := addr[0]
+	*/
 
 	split := strings.Split(l.Addr().String(), ":")
 	if len(split) < 2 {
@@ -45,7 +65,7 @@ func NewServer() (*Server, error) {
 
 	return &Server{
 		listener: l,
-		port:     port,
+		addr:     fmt.Sprintf("%s:%d", netutil.GetLocalIP(), port),
 	}, nil
 }
 
@@ -91,5 +111,6 @@ func (s *Server) ShutDown() {
 
 func (s *Server) Addr() string {
 	//return s.port
-	return s.listener.Addr().String()
+	//return s.listener.Addr().String()
+	return s.addr
 }
