@@ -8,6 +8,7 @@ res
 deploy_res
 clean_res
 /cmd/firechainClient/firechainClient
+/cmd/ifritclient/ifritclient
 cmd/ca/ca
 transfe-ca_res
 test.sh
