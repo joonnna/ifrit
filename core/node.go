@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/netutil"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
 	"github.com/joonnna/workerpool"
@@ -208,7 +210,8 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 			log.Error(err.Error())
 		}
 
-		http = l.Addr().String()
+		httpPort := strings.Split(l.Addr().String(), ":")[1]
+		http = fmt.Sprintf("%s:%s", netutil.GetLocalIP(), httpPort)
 	}
 
 	if conf.Ca {

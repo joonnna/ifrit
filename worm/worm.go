@@ -147,6 +147,9 @@ func (w *Worm) cmpStates() {
 		}
 	}
 
+	if len(w.stateMap) == 0 {
+		return
+	}
 	w.totalStateErrors += uint32(errors / len(w.stateMap))
 	if maxBlock > w.maxBlock {
 		w.maxBlock = maxBlock

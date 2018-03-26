@@ -43,20 +43,19 @@ func ListenOnPort(port int) (net.Listener, error) {
 	var err error
 
 	startPort := port
+	h, _ := os.Hostname()
+
+	addr, err := net.LookupHost(h)
+	if err != nil {
+		return nil, err
+	}
 	/*
-		h, _ := os.Hostname()
-
-		addr, err := net.LookupHost(h)
-		if err != nil {
-			return nil, err
-		}
-
 		for _, a := range addr {
 			log.Debug(a)
 		}
 	*/
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", startPort))
+		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addr[0], startPort))
 		if err == nil {
 			break
 		}
@@ -78,16 +77,15 @@ func GetListener() (net.Listener, error) {
 
 	attempts := 0
 
-	/*
-		h, _ := os.Hostname()
+	h, _ := os.Hostname()
 
-		addr, err := net.LookupHost(h)
-		if err != nil {
-			return nil, err
-		}
-	*/
+	addr, err := net.LookupHost(h)
+	if err != nil {
+		return nil, err
+	}
+
 	for {
-		l, err = net.Listen("tcp4", ":")
+		l, err = net.Listen("tcp4", fmt.Sprintf("%s:", addr[0]))
 		if err == nil {
 			return l, nil
 		} else {
@@ -105,15 +103,26 @@ func GetListener() (net.Listener, error) {
 
 //Hacky AF
 func GetLocalIP() string {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Error(err.Error())
+	/*
+			conn, err := net.Dial("udp", "8.8.8.8:80")
+			if err != nil {
+				log.Error(err.Error())
+			}
+			defer conn.Close()
+
+			localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+			return localAddr.IP.String()
+		return h
+	*/
+
+	h, _ := os.Hostname()
+	addr, err := net.LookupHost(h)
+	if err != nil || len(addr) < 1 {
+		return ""
 	}
-	defer conn.Close()
 
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP.String()
+	return addr[0]
 }
 
 func LocalIP() (string, error) {

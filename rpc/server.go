@@ -111,6 +111,6 @@ func (s *Server) ShutDown() {
 
 func (s *Server) Addr() string {
 	//return s.port
-	//return s.listener.Addr().String()
-	return s.addr
+	return s.listener.Addr().String()
+	//return s.addr
 }

@@ -54,10 +54,13 @@ func main() {
 
 	args.Parse(os.Args[1:])
 
-	if CAConfig.LogFile != "" {
+	r := log.Root()
 
-		r := log.Root()
+	if CAConfig.LogFile != "" {
 		h := log.CallerFileHandler(log.Must.FileHandler(CAConfig.LogFile, log.LogfmtFormat()))
+		r.SetHandler(h)
+	} else {
+		h := log.CallerFileHandler(log.Must.FileHandler("calog", log.TerminalFormat()))
 		r.SetHandler(h)
 	}
 

@@ -169,14 +169,13 @@ func (c *Ca) NewGroup(ringNum uint32) error {
 		return err
 	}
 
-	bootNodes := 5
+	bootNodes := 50
 
 	g := &group{
-		groupCert:     cert,
-		ringNum:       ringNum,
-		knownCerts:    make([]*x509.Certificate, bootNodes),
-		bootNodes:     bootNodes,
-		currBootNodes: 0,
+		groupCert:  cert,
+		ringNum:    ringNum,
+		knownCerts: make([]*x509.Certificate, bootNodes),
+		bootNodes:  bootNodes,
 	}
 
 	c.groups = append(c.groups, g)
@@ -248,7 +247,11 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ip := net.ParseIP(strings.Split(reqCert.Subject.Locality[0], ":")[0])
+	ipAddr, err := net.ResolveIPAddr("ip4", strings.Split(reqCert.Subject.Locality[0], ":")[0])
+	if err != nil {
+		log.Error(err.Error())
+		return
+	}
 	id := genId()
 
 	newCert := &x509.Certificate{
@@ -259,7 +262,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		NotAfter:        time.Now().AddDate(10, 0, 0),
 		ExtraExtensions: []pkix.Extension{ext},
 		PublicKey:       reqCert.PublicKey,
-		IPAddresses:     []net.IP{ip},
+		IPAddresses:     []net.IP{ipAddr.IP},
 		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
