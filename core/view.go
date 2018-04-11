@@ -257,6 +257,9 @@ func (v *view) addLivePeer(p *peer) {
 	v.liveMap[p.key] = p
 	v.liveMutex.Unlock()
 
+	//TODO should check if i get a new neighbor, if so, add possibility
+	//to remove rpc connection of old neighbor.
+
 	var prevId *peerId
 
 	for _, ring := range v.ringMap {

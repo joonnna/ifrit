@@ -40,6 +40,19 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 	neighbours := n.shouldBeNeighbours(pId)
 	exist := n.viewPeerExist(key)
+	p := n.getViewPeer(key)
+
+	if !neighbours && exist && p != nil && p.isAccused() {
+		n.evalNote(args.GetOwnNote())
+
+		for _, a := range p.getAllAccusations() {
+			if a != nil {
+				reply.Accusations = append(reply.Accusations, a.toPbMsg())
+			}
+		}
+
+		return reply, nil
+	}
 
 	//Peers that have already been seen should be rejected
 	if !neighbours && exist {
@@ -172,6 +185,10 @@ func (n *Node) mergeNotes(notes []*gossip.Note) {
 }
 
 func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
+	if accusations == nil {
+		return
+	}
+
 	for _, acc := range accusations {
 		n.evalAccusation(acc)
 	}
@@ -205,6 +222,10 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 	accuserKey := string(accuser[:])
 
 	if n.peerId.equal(&peerId{id: accused}) {
+		if e := n.getEpoch(); epoch != e {
+			log.Debug("Received accusation for myself on old note", "epoch", epoch, "local epoch", e)
+			return
+		}
 		n.setEpoch((epoch + 1))
 		n.deactivateRing(ringNum)
 		n.getProtocol().Rebuttal(n)
@@ -392,6 +413,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 			}
 			p.setNote(newNote)
 			p.removeAccusations()
+			p.resetPing()
 
 			if !n.livePeerExist(peerKey) {
 				n.addLivePeer(p)

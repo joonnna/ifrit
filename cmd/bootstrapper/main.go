@@ -41,13 +41,13 @@ func createClients(requestChan chan interface{}, exitChan chan bool, arg string,
 
 			clients = append(clients, c.Addr())
 
-			c.RegisterGossipHandler(gossipHandler)
-			c.RegisterResponseHandler(gossipResponseHandler)
-			c.SetGossipContent([]byte("This is a gossip message"))
 			/*
-				c.RegisterMsgHandler(msgHandler)
+				c.RegisterGossipHandler(gossipHandler)
+				c.RegisterResponseHandler(gossipResponseHandler)
+				c.SetGossipContent([]byte("This is a gossip message"))
+					c.RegisterMsgHandler(msgHandler)
 
-				activateSendTo(c)
+					activateSendTo(c)
 			*/
 			/*
 				if test {

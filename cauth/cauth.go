@@ -47,6 +47,9 @@ type group struct {
 	knownCerts      []*x509.Certificate
 	knownCertsMutex sync.RWMutex
 
+	existingIds map[string]bool
+	idMutex     sync.RWMutex
+
 	groupCert *x509.Certificate
 
 	bootNodes     int
@@ -169,13 +172,14 @@ func (c *Ca) NewGroup(ringNum uint32) error {
 		return err
 	}
 
-	bootNodes := 50
+	bootNodes := 10
 
 	g := &group{
-		groupCert:  cert,
-		ringNum:    ringNum,
-		knownCerts: make([]*x509.Certificate, bootNodes),
-		bootNodes:  bootNodes,
+		groupCert:   cert,
+		ringNum:     ringNum,
+		knownCerts:  make([]*x509.Certificate, bootNodes),
+		bootNodes:   bootNodes,
+		existingIds: make(map[string]bool),
 	}
 
 	c.groups = append(c.groups, g)
@@ -252,7 +256,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		log.Error(err.Error())
 		return
 	}
-	id := genId()
+	id := g.genId()
 
 	newCert := &x509.Certificate{
 		SerialNumber:    serialNumber,
@@ -340,9 +344,28 @@ func (g *group) getTrustedNodes() [][]byte {
 	return ret
 }
 
-func genId() []byte {
+func (g *group) genId() []byte {
+	g.idMutex.Lock()
+	defer g.idMutex.Unlock()
+
 	nonce := make([]byte, 32)
-	rand.Read(nonce)
+
+	for {
+		_, err := rand.Read(nonce)
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
+
+		key := string(nonce)
+
+		if _, ok := g.existingIds[key]; !ok {
+			g.existingIds[key] = true
+			break
+		}
+
+	}
+
 	return nonce
 
 }

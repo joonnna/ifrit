@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	log "github.com/inconshreveable/log15"
@@ -22,7 +23,7 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
-	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:", addr[0]))
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:0", addr[0]))
 	if err != nil {
 		return nil, err
 	}
@@ -32,9 +33,11 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
+	port := strings.Split(conn.LocalAddr().String(), ":")[1]
+
 	return &Server{
 		conn: conn,
-		addr: fmt.Sprintf("%s:%d", addr[0], udpAddr.Port),
+		addr: fmt.Sprintf("%s:%s", addr[0], port),
 	}, nil
 }
 

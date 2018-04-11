@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
@@ -53,19 +52,11 @@ func NewServer() (*Server, error) {
 		ip := addr[0]
 	*/
 
-	split := strings.Split(l.Addr().String(), ":")
-	if len(split) < 2 {
-		return nil, errNoPort
-	}
-
-	port, err := strconv.Atoi(split[1])
-	if err != nil {
-		return nil, err
-	}
+	port := strings.Split(l.Addr().String(), ":")[1]
 
 	return &Server{
 		listener: l,
-		addr:     fmt.Sprintf("%s:%d", netutil.GetLocalIP(), port),
+		addr:     fmt.Sprintf("%s:%s", netutil.GetLocalIP(), port),
 	}, nil
 }
 
@@ -111,6 +102,6 @@ func (s *Server) ShutDown() {
 
 func (s *Server) Addr() string {
 	//return s.port
-	return s.listener.Addr().String()
-	//return s.addr
+	//return s.listener.Addr().String()
+	return s.addr
 }

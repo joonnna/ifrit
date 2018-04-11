@@ -89,7 +89,7 @@ func (c *Client) dial(addr string) (gossip.GossipClient, error) {
 
 	conn, err := grpc.Dial(addr, c.dialOptions...)
 	if err != nil {
-		return nil, errReachable
+		return nil, err
 	} else {
 		client = gossip.NewGossipClient(conn)
 		c.addConnection(addr, client)
