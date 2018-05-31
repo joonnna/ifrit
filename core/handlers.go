@@ -159,10 +159,9 @@ func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) 
 		//No solution yet to avoid transferring all accusations
 		//Transferring all notes are avoided by checking epoch numbers
 		accs := p.getAllAccusations()
-		for _, a := range accs {
-			if a != nil {
-				reply.Accusations = append(reply.Accusations, a.toPbMsg())
-			}
+		reply.Accusations = make([]*gossip.Accusation, len(accs))
+		for idx, a := range accs {
+			reply.Accusations[idx] = a.toPbMsg()
 		}
 	}
 

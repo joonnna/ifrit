@@ -12,6 +12,7 @@ import (
 	"github.com/joonnna/ifrit/protobuf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	_ "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 )
 

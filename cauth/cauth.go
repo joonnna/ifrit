@@ -24,10 +24,6 @@ import (
 	log "github.com/inconshreveable/log15"
 )
 
-const (
-	caPort = 8090
-)
-
 var (
 	errNoAddr = errors.New("No network address provided in cert request!")
 )
@@ -58,13 +54,13 @@ type group struct {
 
 // Create and returns  a new certificate authority instance.
 // Generates a private/public keypair for internal use.
-func NewCa() (*Ca, error) {
+func NewCa(port int) (*Ca, error) {
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := netutil.ListenOnPort(caPort)
+	l, err := netutil.ListenOnPort(port)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +111,9 @@ func (c *Ca) Shutdown() {
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
-func (c *Ca) Start(numRings uint32) error {
+func (c *Ca) Start(numRings, bootNodes uint32) error {
 	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
-	err := c.NewGroup(numRings)
+	err := c.NewGroup(numRings, bootNodes)
 	if err != nil {
 		return err
 	}
@@ -131,7 +127,7 @@ func (c Ca) Addr() string {
 }
 
 // NewGroup creates a new Ifrit group.
-func (c *Ca) NewGroup(ringNum uint32) error {
+func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 	serialNumber, err := genSerialNumber()
 	if err != nil {
 		log.Error(err.Error())
@@ -172,13 +168,11 @@ func (c *Ca) NewGroup(ringNum uint32) error {
 		return err
 	}
 
-	bootNodes := 10
-
 	g := &group{
 		groupCert:   cert,
 		ringNum:     ringNum,
 		knownCerts:  make([]*x509.Certificate, bootNodes),
-		bootNodes:   bootNodes,
+		bootNodes:   int(bootNodes),
 		existingIds: make(map[string]bool),
 	}
 

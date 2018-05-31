@@ -95,6 +95,7 @@ type Node struct {
 	httpAddr         string
 	viz              bool
 	vizAddr          string
+	vizAppAddr       string
 	vizUpdateTimeout uint32
 }
 
@@ -136,6 +137,7 @@ type Config struct {
 	ViewRemovalTimeout uint32
 	Visualizer         bool
 	VisAddr            string
+	VisAppAddr         string
 	VisUpdateTimeout   uint32
 	MaxConc            uint32
 	Ca                 bool
@@ -151,10 +153,10 @@ func (n *Node) gossipLoop() {
 			n.wg.Done()
 			return
 		case <-time.After(n.getGossipTimeout()):
-			n.getProtocol().Gossip(n)
 			if n.isGossipRecording() {
 				n.incrementGossipRounds()
 			}
+			n.getProtocol().Gossip(n)
 		}
 	}
 }
@@ -283,6 +285,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		viz:              conf.Visualizer,
 		vizUpdateTimeout: conf.VisUpdateTimeout,
 		vizAddr:          conf.VisAddr,
+		vizAppAddr:       conf.VisAppAddr,
 		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
 		entryAddrs:       conf.EntryAddrs,
 		httpListener:     l,
@@ -362,6 +365,15 @@ func (n *Node) Verify(r, s, content []byte, id string) bool {
 	valid, _ := validateSignature(r, s, content, p.publicKey)
 
 	return valid
+}
+
+func (n *Node) IdToAddr(id []byte) (string, error) {
+	p := n.getViewPeer(string(id))
+	if p == nil {
+		return "", errors.New("Could not find peer with specified id")
+	}
+
+	return p.addr, nil
 }
 
 func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {

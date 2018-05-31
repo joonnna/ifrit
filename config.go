@@ -43,6 +43,8 @@ type Config struct {
 	// Address where the visualizer can be contacted (ip:port)
 	VisAddr string
 
+	VisAppAddr string
+
 	// How often ifrit should check if it has gained any new neighbours
 	VisUpdateTimeout uint32
 
@@ -81,6 +83,7 @@ func parseConfig(conf *Config) (*core.Config, error) {
 		}
 	}
 
+	nodeConf.VisAppAddr = conf.VisAppAddr
 	nodeConf.EntryAddrs = conf.EntryAddrs
 	nodeConf.Ca = conf.Ca
 	nodeConf.CaAddr = conf.CaAddr

@@ -108,6 +108,21 @@ func (c *Client) SendTo(dest string, data []byte) chan []byte {
 	return ch
 }
 
+// Same as SendTo, but destination is now the Ifrit id of the receiver.
+// Returns an error if no observed peer has the specified  destination id.
+func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
+	addr, err := c.node.IdToAddr(destId)
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan []byte, 1)
+
+	go c.node.SendMessage(addr, ch, data)
+
+	return ch, err
+}
+
 // Sends the given data to all members of the network belivied to be alive.
 // The returned channel functions as described in SendTo().
 // The returned integer represents the amount of members the message was sent to.

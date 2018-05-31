@@ -50,7 +50,7 @@ func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher,
 		return nil, err
 	}
 
-	c, err := cauth.NewCa()
+	c, err := cauth.NewCa(8300)
 	if err != nil {
 		listener.Close()
 		return nil, err
@@ -69,7 +69,7 @@ func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher,
 }
 
 func (l *Launcher) Start() {
-	go l.ca.Start(l.numRings)
+	go l.ca.Start(l.numRings, 5)
 	if l.worm != nil {
 		log.Info("Starting worm")
 		l.worm.Start()

@@ -43,14 +43,15 @@ func saveState(ca *cauth.Ca) {
 }
 
 func main() {
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	var port, bootNodes int
 
 	configor.New(&configor.Config{ENVPrefix: "CA"}).Load(&CAConfig, "/etc/ifrit/ca/config.yml", "config.yml")
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.UintVar(&CAConfig.NumRings, "numRings", CAConfig.NumRings, "Number of gossip rings to be used")
-	args.StringVar(&CAConfig.LogFile, "logfile", "", "Log to file.")
+	args.IntVar(&port, "port", 8300, "Log to file.")
+	args.IntVar(&bootNodes, "bootnodes", 50, "Log to file.")
 
 	args.Parse(os.Args[1:])
 
@@ -64,7 +65,7 @@ func main() {
 		r.SetHandler(h)
 	}
 
-	ca, err := cauth.NewCa()
+	ca, err := cauth.NewCa(port)
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +73,7 @@ func main() {
 	saveState(ca)
 	defer saveState(ca)
 
-	go ca.Start(uint32(CAConfig.NumRings))
+	go ca.Start(uint32(CAConfig.NumRings), uint32(bootNodes))
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

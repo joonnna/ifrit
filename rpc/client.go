@@ -10,6 +10,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/encoding/gzip"
 )
 
 var (
@@ -38,6 +39,7 @@ func (c *Client) Init(config *tls.Config) {
 	//c.dialOptions = append(c.dialOptions, grpc.WithCompressor(comp))
 	//c.dialOptions = append(c.dialOptions, grpc.WithDecompressor(decomp))
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
+	c.dialOptions = append(c.dialOptions, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
 }
 
 func (c *Client) Dos(addr string, args *gossip.State) (*gossip.StateResponse, error) {

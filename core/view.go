@@ -57,7 +57,6 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 		numRings:          numRings,
 		local:             id,
 		maxByz:            uint32(maxByz),
-		deactivatedRings:  0,
 		currGossipRing:    1,
 		currMonitorRing:   1,
 	}
@@ -76,7 +75,7 @@ func (v *view) getViewAddrs() []string {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
 
-	ret := make([]string, len(v.viewMap))
+	ret := make([]string, 0, len(v.viewMap))
 
 	for _, v := range v.viewMap {
 		ret = append(ret, v.addr)
@@ -88,14 +87,13 @@ func (v *view) getViewAddrs() []string {
 func (v *view) getView() []*peer {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
-	idx := 0
+
 	ret := make([]*peer, len(v.viewMap))
+	idx := 0
 
 	for _, v := range v.viewMap {
-		if v != nil {
-			ret[idx] = v
-			idx++
-		}
+		ret[idx] = v
+		idx++
 	}
 
 	return ret
@@ -188,14 +186,13 @@ func (v *view) livePeerExist(key string) bool {
 func (v *view) getLivePeers() []*peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
+
 	idx := 0
 	ret := make([]*peer, len(v.liveMap))
 
 	for _, p := range v.liveMap {
-		if p != nil {
-			ret[idx] = p
-			idx++
-		}
+		ret[idx] = p
+		idx++
 	}
 
 	return ret
@@ -365,13 +362,11 @@ func (v *view) getTimeout(key string) *timeout {
 	v.timeoutMutex.RLock()
 	defer v.timeoutMutex.RUnlock()
 
-	t, ok := v.timeoutMap[key]
-
-	if !ok {
+	if t, ok := v.timeoutMap[key]; !ok {
 		return nil
+	} else {
+		return t
 	}
-
-	return t
 }
 
 func (v *view) getAllTimeouts() map[string]*timeout {
@@ -413,7 +408,7 @@ func (v *view) shouldBeNeighbours(id *peerId) bool {
 }
 
 func (v *view) findNeighbours(id *peerId) []string {
-	keys := make([]string, 0)
+	var keys []string
 	exist := make(map[string]bool)
 
 	for _, r := range v.ringMap {

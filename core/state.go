@@ -29,6 +29,7 @@ type state struct {
 	Prev     string
 	HttpAddr string
 	Trusted  bool
+	AppAddr  string
 }
 
 type expArgs struct {
@@ -322,6 +323,7 @@ func (n *Node) newState(ringId uint32) *state {
 		Prev:     prevId,
 		HttpAddr: n.vizId,
 		Trusted:  n.trustedBootNode,
+		AppAddr:  n.vizAppAddr,
 	}
 }
 

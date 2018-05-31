@@ -209,10 +209,12 @@ func (p *peer) getAllAccusations() []*accusation {
 	p.accuseMutex.RLock()
 	defer p.accuseMutex.RUnlock()
 
-	ret := make([]*accusation, len(p.accusations))
+	ret := make([]*accusation, 0, len(p.accusations))
 
 	for _, v := range p.accusations {
-		ret = append(ret, v)
+		if v != nil {
+			ret = append(ret, v)
+		}
 	}
 
 	return ret
@@ -250,7 +252,6 @@ func (p *peer) getNote() *note {
 func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
 	var c *gossip.Certificate
 	var n *gossip.Note
-	var a []*gossip.Accusation
 
 	c = &gossip.Certificate{
 		Raw: p.cert.Raw,
@@ -262,10 +263,10 @@ func (p *peer) createPbInfo() (*gossip.Certificate, *gossip.Note, []*gossip.Accu
 	}
 
 	accs := p.getAllAccusations()
-	for _, acc := range accs {
-		if acc != nil {
-			a = append(a, acc.toPbMsg())
-		}
+	a := make([]*gossip.Accusation, len(accs))
+
+	for idx, acc := range accs {
+		a[idx] = acc.toPbMsg()
 	}
 
 	return c, n, a
