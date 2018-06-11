@@ -5,12 +5,7 @@ Applications can send messages directly to their destination due to the full mem
 provided by the Fireflies protocol.
 
 Docs: https://godoc.org/github.com/joonnna/ifrit
-
-## Client and Certificate authority
-```go
-import github.com/joonnna/ifrit
-import github.com/joonnna/ifrit/cauth
-```
+[![GoDoc](https://godoc.org/github.com/joonnna/ifrit?status.svg)](https://godoc.org/github.com/joonnna/ifrit)
 
 ## Starting up a client and certificate authority
 ```go
