@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -21,7 +20,7 @@ var (
 	clients []string
 )
 
-func createClients(requestChan chan interface{}, exitChan chan bool, arg string, vizAddr string) {
+func createClients(requestChan chan interface{}, exitChan chan bool) {
 	//test := true
 	for {
 		select {
@@ -32,10 +31,9 @@ func createClients(requestChan chan interface{}, exitChan chan bool, arg string,
 				addrs = append(addrs, clients[idx])
 				log.Info(addrs[0])
 			}
-			conf := &ifrit.Config{Visualizer: true, VisAddr: vizAddr, Ca: true, CaAddr: arg}
-			c, err := ifrit.NewClient(conf)
+			c, err := ifrit.NewClient()
 			if err != nil {
-				fmt.Println(err)
+				log.Error(err.Error())
 				continue
 			}
 
@@ -99,18 +97,8 @@ func msgHandler(data []byte) ([]byte, error) {
 }
 
 func main() {
-	var numRings uint
-	var vizAddr string
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	args := flag.NewFlagSet("args", flag.ExitOnError)
-	args.UintVar(&numRings, "numRings", 3, "Number of gossip rings to be used")
-	args.StringVar(&vizAddr, "vizAddr", "127.0.0.1:8095", "Address of the visualizer (ip:port)")
-
-	args.Parse(os.Args[1:])
-
-	ch := make(chan interface{})
 	exitChan := make(chan bool)
 
 	r := log.Root()
@@ -119,13 +107,14 @@ func main() {
 
 	r.SetHandler(h)
 
-	l, err := bootstrap.NewLauncher(uint32(numRings), ch, nil)
+	ch := make(chan interface{})
+	l, err := bootstrap.NewLauncher(ch, nil)
 	if err != nil {
 		panic(err)
 	}
 
-	go createClients(ch, exitChan, l.EntryAddr, vizAddr)
 	go l.Start()
+	go createClients(ch, exitChan)
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)

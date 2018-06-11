@@ -28,9 +28,6 @@ type Launcher struct {
 
 	listener net.Listener
 
-	EntryAddr string
-	numRings  uint32
-
 	// TODO naming things...
 	worm *worm.Worm
 
@@ -44,32 +41,30 @@ type application interface {
 	HttpAddr() string
 }
 
-func NewLauncher(numRings uint32, ch chan interface{}, w *worm.Worm) (*Launcher, error) {
+func NewLauncher(ch chan interface{}, w *worm.Worm) (*Launcher, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {
 		return nil, err
 	}
 
-	c, err := cauth.NewCa(8300)
+	c, err := cauth.NewCa()
 	if err != nil {
 		listener.Close()
 		return nil, err
 	}
 
 	l := &Launcher{
-		numRings:  numRings,
-		EntryAddr: c.Addr(),
-		ca:        c,
-		ch:        ch,
-		listener:  listener,
-		worm:      w,
+		ca:       c,
+		ch:       ch,
+		listener: listener,
+		worm:     w,
 	}
 
 	return l, nil
 }
 
 func (l *Launcher) Start() {
-	go l.ca.Start(l.numRings, 5)
+	go l.ca.Start()
 	if l.worm != nil {
 		log.Info("Starting worm")
 		l.worm.Start()

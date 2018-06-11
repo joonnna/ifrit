@@ -8,64 +8,43 @@ import (
 	"syscall"
 
 	log "github.com/inconshreveable/log15"
-	"github.com/jinzhu/configor"
 	"github.com/joonnna/ifrit/cauth"
-)
-
-var (
-	logger = log.New("module", "ca/main")
 )
 
 // saveState saves ca private key and public certificates to disk.
 func saveState(ca *cauth.Ca) {
-
-	f, err := os.Create(CAConfig.KeyFile)
+	err := ca.SavePrivateKey()
 	if err != nil {
-		logger.Error("Cannot create CA private key file.", "file", CAConfig.KeyFile)
 		panic(err)
 	}
 
-	logger.Info("Save CA private key.", "file", CAConfig.KeyFile)
-	ca.SavePrivateKey(f)
-
-	f, err = os.Create(CAConfig.CertificateFile)
-	if err != nil {
-		logger.Error("Cannot create CA file.", "file", CAConfig.CertificateFile)
-		panic(err)
-	}
-
-	logger.Info("Save CA certificate.", "file", CAConfig.CertificateFile)
-	err = ca.SaveCertificate(f)
-
+	err = ca.SaveCertificate()
 	if err != nil {
 		panic(err)
 	}
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	var port, bootNodes int
+	var logfile string
+	var h log.Handler
 
-	configor.New(&configor.Config{ENVPrefix: "CA"}).Load(&CAConfig, "/etc/ifrit/ca/config.yml", "config.yml")
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	args := flag.NewFlagSet("args", flag.ExitOnError)
-	args.UintVar(&CAConfig.NumRings, "numRings", CAConfig.NumRings, "Number of gossip rings to be used")
-	args.IntVar(&port, "port", 8300, "Log to file.")
-	args.IntVar(&bootNodes, "bootnodes", 50, "Log to file.")
-
+	args.StringVar(&logfile, "logfile", "", "Log to file.")
 	args.Parse(os.Args[1:])
 
 	r := log.Root()
 
-	if CAConfig.LogFile != "" {
-		h := log.CallerFileHandler(log.Must.FileHandler(CAConfig.LogFile, log.LogfmtFormat()))
-		r.SetHandler(h)
+	if logfile != "" {
+		h = log.CallerFileHandler(log.Must.FileHandler(logfile, log.LogfmtFormat()))
 	} else {
-		h := log.CallerFileHandler(log.Must.FileHandler("calog", log.TerminalFormat()))
-		r.SetHandler(h)
+		h = log.StreamHandler(os.Stdout, log.LogfmtFormat())
 	}
 
-	ca, err := cauth.NewCa(port)
+	r.SetHandler(h)
+
+	ca, err := cauth.NewCa()
 	if err != nil {
 		panic(err)
 	}
@@ -73,7 +52,7 @@ func main() {
 	saveState(ca)
 	defer saveState(ca)
 
-	go ca.Start(uint32(CAConfig.NumRings), uint32(bootNodes))
+	go ca.Start()
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
