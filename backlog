@@ -1,6 +1,10 @@
-- Configuration rework
+- Configuration rework (done)
 
 - Documentation
+
+- API cleanup
+    - Remove recording feature (?)
+    - Remove SendAll
 
 - Code overhaul
     - View interface overhaul
@@ -10,13 +14,9 @@
     - Full behavior tests
     - Change test setup
 
-- Persistence
+- Persistence (Client)
     - Certificates (peers and CA)
     - View state
-
-- API cleanup
-    - Remove recording feature
-    - Remove SendAll
 
 
 Do seperate pull requests for all (for tracking)
