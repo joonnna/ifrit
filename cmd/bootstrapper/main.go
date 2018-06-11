@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
-	"time"
 
 	_ "net/http/pprof"
 
@@ -60,20 +59,6 @@ func createClients(requestChan chan interface{}, exitChan chan bool) {
 		}
 
 	}
-}
-
-func activateSendTo(c *ifrit.Client) {
-	go func() {
-		data := []byte("Application message boys!")
-		for {
-			time.Sleep(time.Second * 10)
-			ch, num := c.SendToAll(data)
-			for i := 0; i < num; i++ {
-				r := <-ch
-				fmt.Println(string(r))
-			}
-		}
-	}()
 }
 
 func gossipHandler(data []byte) ([]byte, error) {
