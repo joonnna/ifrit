@@ -112,30 +112,6 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 	return ch, err
 }
 
-/*
-// Sends the given data to all members of the network belivied to be alive.
-// The returned channel functions as described in SendTo().
-// The returned integer represents the amount of members the message was sent to.
-func (c *Client) SendToAll(data []byte) (chan []byte, int) {
-	members := c.node.LiveMembers()
-
-	numMembers := len(members)
-
-	//Don't want channel to be too big.
-	chSize := int(float32(numMembers) * 0.10)
-
-	if chSize <= 0 {
-		chSize = 1
-	}
-
-	ch := make(chan []byte, chSize)
-
-	go c.node.SendMessages(members, ch, data)
-
-	return ch, numMembers
-}
-*/
-
 // Replaces the gossip set with the given data.
 // This data will be exchanged with neighbors in each gossip interaction.
 // Recipients will receive it through the message handler callback.
@@ -161,27 +137,17 @@ func (c *Client) Addr() string {
 	return c.node.Addr()
 }
 
-// Returns the address(ip:port) of the ifrit http endpoint.
+// Returns the address (ip:port) of the ifrit http endpoint.
 // Only used for debuging, populated if visualizer is enabled..
 func (c *Client) HttpAddr() string {
 	return c.node.HttpAddr()
 }
 
-// Returns the address(ip:port, http endpoint) of all members of the fireflies
+// Returns the address (ip:port, http endpoint) of all members of the Ifrit
 // network believed to be alive.
 // Only used for debuging, populated if visualizer is enabled.
 func (c *Client) MembersHttp() []string {
 	return c.node.LiveMembersHttp()
-}
-
-// Starts recording amount of gossip rounds, used for experiments.
-func (c *Client) RecordGossipRounds() {
-	c.node.StartGossipRecording()
-}
-
-// Returns the amount of gossip rounds since recording started.
-func (c *Client) GetGossipRounds() uint32 {
-	return c.node.GetGossipRounds()
 }
 
 // Signs the provided content with the internal private key of ifrit.
