@@ -426,7 +426,7 @@ func genSerialNumber() (*big.Int, error) {
 
 func readConfig() error {
 	viper.SetConfigName("ca_config")
-	viper.AddConfigPath("/var/tmp/ifrit")
+	viper.AddConfigPath("/var/tmp")
 	viper.AddConfigPath(".")
 
 	viper.SetConfigType("yaml")
