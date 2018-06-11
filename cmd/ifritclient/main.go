@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -11,7 +10,6 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/jinzhu/configor"
 	"github.com/joonnna/ifrit"
 
 	log "github.com/inconshreveable/log15"
@@ -23,32 +21,27 @@ var (
 )
 
 func main() {
-	var caAddr string
+	var logfile string
+	var h log.Handler
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	configor.New(&configor.Config{ENVPrefix: "IFRIT"}).Load(&ClientConfig, "/etc/ifrit/client/config.yml", "config.yml")
-
 	args := flag.NewFlagSet("args", flag.ExitOnError)
-	args.StringVar(&caAddr, "addr", ClientConfig.Host, "address(ip:port) of certificate authority")
-	args.StringVar(&ClientConfig.LogFile, "logfile", ClientConfig.LogFile, "Log to file.")
-
+	args.StringVar(&logfile, "logfile", "", "Log to file.")
 	args.Parse(os.Args[1:])
-	/*
-		if caAddr == "" {
-			panic(errNoAddr)
-		}
-	*/
 
-	if ClientConfig.LogFile != "" {
-		r := log.Root()
-		h := log.CallerFileHandler(log.Must.FileHandler(ClientConfig.LogFile, log.LogfmtFormat()))
-		r.SetHandler(h)
+	r := log.Root()
+
+	if logfile != "" {
+		h = log.CallerFileHandler(log.Must.FileHandler(logfile, log.LogfmtFormat()))
+	} else {
+		h = log.StreamHandler(os.Stdout, log.LogfmtFormat())
 	}
 
-	c, err := ifrit.NewClient(nil) //&ifrit.Config{Ca: true, CaAddr: caAddr})
+	r.SetHandler(h)
+
+	c, err := ifrit.NewClient()
 	if err != nil {
-		fmt.Println(err)
 		panic(err)
 	}
 

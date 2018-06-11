@@ -15,22 +15,33 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/joonnna/ifrit/netutil"
+	"github.com/spf13/viper"
 
 	log "github.com/inconshreveable/log15"
 )
 
 var (
-	errNoAddr = errors.New("No network address provided in cert request!")
+	errNoAddr         = errors.New("No network address provided in cert request.")
+	errNoPort         = errors.New("No port number specified in config.")
+	errNoCertFilepath = errors.New("Tried to save public group certificates with no filepath set in config")
+	errNoKeyFilepath  = errors.New("Tried to save private key with no filepath set in config")
 )
 
 type Ca struct {
 	privKey *rsa.PrivateKey
 	pubKey  crypto.PublicKey
+
+	keyFilePath  string
+	certFilePath string
+
+	numRings  uint32
+	bootNodes uint32
 
 	groups []*group
 
@@ -38,8 +49,6 @@ type Ca struct {
 }
 
 type group struct {
-	ringNum uint32
-
 	knownCerts      []*x509.Certificate
 	knownCertsMutex sync.RWMutex
 
@@ -48,34 +57,60 @@ type group struct {
 
 	groupCert *x509.Certificate
 
-	bootNodes     int
-	currBootNodes int
+	bootNodes     uint32
+	currBootNodes uint32
+
+	numRings uint32
 }
 
 // Create and returns  a new certificate authority instance.
 // Generates a private/public keypair for internal use.
-func NewCa(port int) (*Ca, error) {
+func NewCa() (*Ca, error) {
+	err := readConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := netutil.ListenOnPort(port)
+	if exists := viper.IsSet("port"); !exists {
+		return nil, errNoPort
+	}
+
+	l, err := netutil.ListenOnPort(viper.GetInt("port"))
 	if err != nil {
 		return nil, err
 	}
 
 	c := &Ca{
-		privKey:  privKey,
-		pubKey:   privKey.Public(),
-		listener: l,
+		privKey:      privKey,
+		pubKey:       privKey.Public(),
+		listener:     l,
+		keyFilePath:  viper.GetString("key_filepath"),
+		certFilePath: viper.GetString("certificate_filepath"),
+		numRings:     uint32(viper.GetInt32("num_rings")),
+		bootNodes:    uint32(viper.GetInt32("boot_nodes")),
 	}
 
 	return c, nil
 }
 
 // SavePrivateKey writes the CA private key to the given io object.
-func (c *Ca) SavePrivateKey(out io.Writer) {
+func (c *Ca) SavePrivateKey() error {
+	if c.keyFilePath == "" {
+		return errNoKeyFilepath
+	}
+
+	f, err := os.Create(c.keyFilePath)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	log.Info("Save CA private key.", "file", c.keyFilePath)
 
 	b := x509.MarshalPKCS1PrivateKey(c.privKey)
 
@@ -84,11 +119,22 @@ func (c *Ca) SavePrivateKey(out io.Writer) {
 		Bytes: b,
 	}
 
-	pem.Encode(out, block)
+	return pem.Encode(f, block)
 }
 
 // SaveCertificate Public key / certifiace to the given io object.
-func (c *Ca) SaveCertificate(out io.Writer) error {
+func (c *Ca) SaveCertificate() error {
+	if c.certFilePath == "" {
+		return errNoCertFilepath
+	}
+
+	f, err := os.Create(c.certFilePath)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	log.Info("Save CA certificate.", "file", c.certFilePath)
 
 	for _, j := range c.groups {
 		b := j.groupCert.Raw
@@ -97,7 +143,10 @@ func (c *Ca) SaveCertificate(out io.Writer) error {
 			Type:  "CERTIFICATE",
 			Bytes: b,
 		}
-		pem.Encode(out, block)
+		err := pem.Encode(f, block)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -111,12 +160,14 @@ func (c *Ca) Shutdown() {
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
-func (c *Ca) Start(numRings, bootNodes uint32) error {
-	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
-	err := c.NewGroup(numRings, bootNodes)
+func (c *Ca) Start() error {
+	err := c.NewGroup(c.numRings, c.bootNodes)
 	if err != nil {
 		return err
 	}
+
+	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
+
 	return c.httpHandler()
 }
 
@@ -170,9 +221,9 @@ func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 
 	g := &group{
 		groupCert:   cert,
-		ringNum:     ringNum,
+		numRings:    ringNum,
 		knownCerts:  make([]*x509.Certificate, bootNodes),
-		bootNodes:   int(bootNodes),
+		bootNodes:   bootNodes,
 		existingIds: make(map[string]bool),
 	}
 
@@ -193,7 +244,7 @@ func genKeys() (*rsa.PrivateKey, error) {
 }
 
 func (c *Ca) httpHandler() error {
-	http.HandleFunc("/downloadGroupCertificate", c.downloadHandler)
+	//http.HandleFunc("/downloadGroupCertificate", c.downloadHandler)
 	http.HandleFunc("/certificateRequest", c.certRequestHandler)
 
 	err := http.Serve(c.listener, nil)
@@ -226,7 +277,7 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 	//var oidExtensionSubjectAltName = []int{2, 5, 29, 17}
 
 	ringBytes := make([]byte, 4)
-	binary.LittleEndian.PutUint32(ringBytes[0:], g.ringNum)
+	binary.LittleEndian.PutUint32(ringBytes[0:], g.numRings)
 
 	ext := pkix.Extension{
 		Id:       []int{2, 5, 13, 37},
@@ -290,6 +341,8 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		Trusted:    trusted,
 	}
 
+	log.Info("Including known certificates in response", "amount", len(respStruct.KnownCerts))
+
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(respStruct)
 
@@ -298,9 +351,6 @@ func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
 		log.Error(err.Error())
 		return
 	}
-}
-
-func (c *Ca) downloadHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *group) addKnownCert(new *x509.Certificate) bool {
@@ -319,20 +369,20 @@ func (g *group) addKnownCert(new *x509.Certificate) bool {
 func (g *group) getTrustedNodes() [][]byte {
 	g.knownCertsMutex.RLock()
 	defer g.knownCertsMutex.RUnlock()
-	var ret [][]byte
 
-	certs := make([]*x509.Certificate, len(g.knownCerts))
+	var ret [][]byte
+	var certs []*x509.Certificate
 
 	if g.currBootNodes >= g.bootNodes {
+		certs = make([]*x509.Certificate, g.bootNodes)
 		copy(certs, g.knownCerts)
 	} else {
+		certs = make([]*x509.Certificate, g.currBootNodes)
 		copy(certs, g.knownCerts[:g.currBootNodes])
 	}
 
 	for _, c := range certs {
-		if c != nil {
-			ret = append(ret, c.Raw)
-		}
+		ret = append(ret, c.Raw)
 	}
 
 	return ret
@@ -372,4 +422,25 @@ func genSerialNumber() (*big.Int, error) {
 	}
 
 	return s, nil
+}
+
+func readConfig() error {
+	viper.SetConfigName("ca_config")
+	viper.AddConfigPath("/var/tmp/ifrit")
+	viper.AddConfigPath(".")
+
+	viper.SetConfigType("yaml")
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	viper.SetDefault("num_rings", 3)
+	viper.SetDefault("boot_nodes", 10)
+
+	viper.WriteConfig()
+
+	return nil
 }

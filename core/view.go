@@ -7,6 +7,7 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -53,7 +54,7 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
 		timeoutMap:        make(map[string]*timeout),
-		viewUpdateTimeout: time.Second * 10,
+		viewUpdateTimeout: time.Second * time.Duration(viper.GetInt32("view_check_interval")),
 		numRings:          numRings,
 		local:             id,
 		maxByz:            uint32(maxByz),

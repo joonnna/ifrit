@@ -5,6 +5,7 @@ import (
 
 	"github.com/joonnna/ifrit/core"
 	"github.com/joonnna/ifrit/rpc"
+	"github.com/spf13/viper"
 )
 
 type Client struct {
@@ -17,18 +18,18 @@ var (
 )
 
 /*
-Alternative to registrating callbacks
-type MsgHandler interface {
-	HandleMsg([]byte) ([]byte, error)
-	HandleGossip([]byte) ([]byte, error)
-	ResponseHandler([]byte) []byte
-}
+	Alternative to registrating callbacks
+	type MsgHandler interface {
+		HandleMsg([]byte) ([]byte, error)
+		HandleGossip([]byte) ([]byte, error)
+		ResponseHandler([]byte) []byte
+	}
 */
 
 // Creates and returns a new ifrit client instance.
 // Passing an empty config struct or nil will result in all defaults, see config documentation for config description.
-func NewClient(conf *Config) (*Client, error) {
-	nodeConf, err := parseConfig(conf)
+func NewClient() (*Client, error) {
+	err := readConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +41,7 @@ func NewClient(conf *Config) (*Client, error) {
 		return nil, err
 	}
 
-	n, err := core.NewNode(nodeConf, c, s)
+	n, err := core.NewNode(c, s)
 	if err != nil {
 		return nil, err
 	}
@@ -205,4 +206,31 @@ func (c *Client) Sign(content []byte) ([]byte, []byte, error) {
 // is not recongnized false is returned.
 func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
 	return c.node.Verify(r, s, content, id)
+}
+
+func readConfig() error {
+	viper.SetConfigName("ifrit_config")
+	viper.AddConfigPath("/var/tmp/ifrit")
+	viper.AddConfigPath(".")
+
+	viper.SetConfigType("yaml")
+
+	err := viper.ReadInConfig()
+	if err != nil {
+		return err
+	}
+
+	// Behavior variables
+	viper.SetDefault("gossip_interval", 10)
+	viper.SetDefault("monitor_interval", 10)
+	viper.SetDefault("ping_limit", 3)
+	viper.SetDefault("removal_timeout", 60)
+	viper.SetDefault("max_concurrent_messages", 50)
+
+	// Visualizer specific
+	viper.SetDefault("viz_update_interval", 10)
+
+	viper.SafeWriteConfig()
+
+	return nil
 }

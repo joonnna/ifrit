@@ -1,0 +1,23 @@
+- Configuration rework
+
+- Documentation
+
+- Code overhaul
+    - View interface overhaul
+    - Accusations from dead members
+
+- Testing overhaul
+    - Full behavior tests
+    - Change test setup
+
+- Persistence
+    - Certificates (peers and CA)
+    - View state
+
+- API cleanup
+    - Remove recording feature
+    - Remove SendAll
+
+
+Do seperate pull requests for all (for tracking)
+

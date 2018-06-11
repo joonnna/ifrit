@@ -277,7 +277,7 @@ func (n *Node) updateState() {
 			n.wg.Done()
 			return
 
-		case <-time.After(time.Second * time.Duration(n.vizUpdateTimeout)):
+		case <-time.After(n.vizUpdateTimeout):
 			for _, r := range n.ringMap {
 				s := n.newState(r.ringNum)
 

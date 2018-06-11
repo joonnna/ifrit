@@ -18,12 +18,15 @@ import (
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
 	"github.com/joonnna/workerpool"
+	"github.com/spf13/viper"
 )
 
 var (
-	errNoRingNum = errors.New("No ringnumber present in received certificate")
-	errNoId      = errors.New("No id present in received certificate")
-	errNoData    = errors.New("Gossip data has zero length")
+	errNoRingNum    = errors.New("No ringnumber present in received certificate")
+	errNoId         = errors.New("No id present in received certificate")
+	errNoData       = errors.New("Gossip data has zero length")
+	errNoCaAddr     = errors.New("No ca addr set in config with use_ca enabled")
+	errNoEntryAddrs = errors.New("No entry_addrs set in config with use_ca disabled")
 )
 
 /*
@@ -96,7 +99,7 @@ type Node struct {
 	viz              bool
 	vizAddr          string
 	vizAppAddr       string
-	vizUpdateTimeout uint32
+	vizUpdateTimeout time.Duration
 }
 
 type client interface {
@@ -127,22 +130,6 @@ type timeout struct {
 
 	//For debugging
 	addr string
-}
-
-type Config struct {
-	EntryAddr          string
-	GossipRate         uint32
-	MonitorRate        uint32
-	MaxFailPings       uint32
-	ViewRemovalTimeout uint32
-	Visualizer         bool
-	VisAddr            string
-	VisAppAddr         string
-	VisUpdateTimeout   uint32
-	MaxConc            uint32
-	Ca                 bool
-	CaAddr             string
-	EntryAddrs         []string
 }
 
 func (n *Node) gossipLoop() {
@@ -187,7 +174,7 @@ func (n *Node) checkTimeouts() {
 	}
 }
 
-func NewNode(conf *Config, c client, s server) (*Node, error) {
+func NewNode(c client, s server) (*Node, error) {
 	var i, mask uint32
 	var extValue []byte
 	var certs *certSet
@@ -206,7 +193,7 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		return nil, err
 	}
 
-	if conf.Visualizer {
+	if useViz := viper.GetBool("use_viz"); useViz {
 		l, err = initHttp()
 		if err != nil {
 			log.Error(err.Error())
@@ -216,15 +203,22 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		http = fmt.Sprintf("%s:%s", netutil.GetLocalIP(), httpPort)
 	}
 
-	if conf.Ca {
-		addr := fmt.Sprintf("http://%s/certificateRequest", conf.CaAddr)
+	if useCa := viper.GetBool("use_ca"); useCa {
+		if exists := viper.IsSet("ca_addr"); !exists {
+			return nil, errNoCaAddr
+		}
+
+		addr := fmt.Sprintf("http://%s/certificateRequest", viper.GetString("ca_addr"))
 		certs, err = sendCertRequest(privKey, addr, s.Addr(), udpServer.Addr(), http)
 		if err != nil {
 			log.Error(err.Error())
 			return nil, err
 		}
-
 	} else {
+		if exists := viper.IsSet("entry_addrs"); !exists {
+			return nil, errNoCaAddr
+		}
+
 		// TODO only have numrings in notes and not certificate?
 		certs, err = selfSignedCert(privKey, s.Addr(), udpServer.Addr(), http, uint32(32))
 		if err != nil {
@@ -252,8 +246,6 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	config := genServerConfig(certs, privKey)
-
 	p, err := newPeer(nil, certs.ownCert, numRings)
 	if err != nil {
 		log.Error(err.Error())
@@ -269,11 +261,11 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 	n := &Node{
 		exitChan:         make(chan bool, 1),
 		wg:               &sync.WaitGroup{},
-		gossipTimeout:    time.Second * time.Duration(conf.GossipRate),
-		monitorTimeout:   time.Second * time.Duration(conf.MonitorRate),
-		nodeDeadTimeout:  float64(conf.ViewRemovalTimeout),
+		gossipTimeout:    time.Second * time.Duration(viper.GetInt32("gossip_interval")),
+		monitorTimeout:   time.Second * time.Duration(viper.GetInt32("monitor_interval")),
+		nodeDeadTimeout:  viper.GetFloat64("dead_timeout"),
 		view:             v,
-		pinger:           newPinger(udpServer, conf.MaxFailPings, privKey),
+		pinger:           newPinger(udpServer, uint32(viper.GetInt32("ping_limit")), privKey),
 		privKey:          privKey,
 		client:           c,
 		server:           s,
@@ -282,17 +274,19 @@ func NewNode(conf *Config, c client, s server) (*Node, error) {
 		localCert:        certs.ownCert,
 		caCert:           certs.caCert,
 		trustedBootNode:  certs.trusted,
-		viz:              conf.Visualizer,
-		vizUpdateTimeout: conf.VisUpdateTimeout,
-		vizAddr:          conf.VisAddr,
-		vizAppAddr:       conf.VisAppAddr,
-		dispatcher:       workerpool.NewDispatcher(conf.MaxConc),
-		entryAddrs:       conf.EntryAddrs,
-		httpListener:     l,
-		protocol:         correct{},
+		viz:              viper.GetBool("use_viz"),
+		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
+		vizAddr:          viper.GetString("viz_addr"),
+		////vizAppAddr:       conf.VisAppAddr,
+		dispatcher:   workerpool.NewDispatcher(uint32(viper.GetInt32("max_concurrent_messages"))),
+		entryAddrs:   viper.GetStringSlice("entry_addrs"),
+		httpListener: l,
+		protocol:     correct{},
 	}
 
-	err = n.server.Init(config, n, ((n.numRings * 2) + 20))
+	serverConfig := genServerConfig(certs, privKey)
+
+	err = n.server.Init(serverConfig, n, ((n.numRings * 2) + 20))
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
