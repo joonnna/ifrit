@@ -4,7 +4,6 @@ Ifrit provides a membership, message, and gossip service.
 Applications can send messages directly to their destination due to the full membership view
 provided by the Fireflies protocol.
 
-Docs: https://godoc.org/github.com/joonnna/ifrit
 [![GoDoc](https://godoc.org/github.com/joonnna/ifrit?status.svg)](https://godoc.org/github.com/joonnna/ifrit)
 
 ## Starting up a client and certificate authority
