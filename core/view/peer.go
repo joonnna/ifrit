@@ -37,12 +37,9 @@ type Peer struct {
 	accuseMutex sync.RWMutex
 	accusations map[uint32]*accusation
 
-	*peerId
+	Id        string
 	cert      *x509.Certificate
 	publicKey *ecdsa.PublicKey
-
-	avgLoss      uint64
-	avgLossMutex sync.RWMutex
 
 	nPing      uint32
 	nPingMutex sync.RWMutex
