@@ -1,4 +1,4 @@
-package core
+package view
 
 import (
 	"crypto/x509"
@@ -7,14 +7,14 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
-	"github.com/spf13/viper"
 )
 
 var (
 	errInvalidNeighbours = errors.New("Neighbours are nil ?!")
+	errAlreadyExists     = errors.New("Peer id already exists in the full view")
 )
 
-type view struct {
+type View struct {
 	viewMap   map[string]*peer
 	viewMutex sync.RWMutex
 
@@ -40,7 +40,7 @@ type view struct {
 	local *peerId
 }
 
-func newView(numRings uint32, id *peerId, addr string) (*view, error) {
+func NewView(numRings uint32, id []byte, updateTimeout uint32) (*View, error) {
 	var i uint32
 	var err error
 
@@ -49,12 +49,12 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 		maxByz = 1
 	}
 
-	v := &view{
+	v := &View{
 		ringMap:           make(map[uint32]*ring),
 		viewMap:           make(map[string]*peer),
 		liveMap:           make(map[string]*peer),
 		timeoutMap:        make(map[string]*timeout),
-		viewUpdateTimeout: time.Second * time.Duration(viper.GetInt32("view_check_interval")),
+		viewUpdateTimeout: time.Second * time.Duration(updateTimeout),
 		numRings:          numRings,
 		local:             id,
 		maxByz:            uint32(maxByz),
@@ -63,7 +63,7 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 	}
 
 	for i = 1; i <= numRings; i++ {
-		v.ringMap[i], err = newRing(i, id.id, addr)
+		v.ringMap[i], err = newRing(i, id)
 		if err != nil {
 			return nil, err
 		}
@@ -72,6 +72,271 @@ func newView(numRings uint32, id *peerId, addr string) (*view, error) {
 	return v, nil
 }
 
+func (v *View) Peer(id string) *Peer {
+	if ok, p := v.viewMap[id]; !ok {
+		return nil
+	} else {
+		return p
+	}
+}
+
+func (v *View) FullView() []*Peer {
+	v.viewMutex.RLock()
+	defer v.viewMutex.RUnlock()
+
+	ret := make([]*Peer, 0, len(v.viewMap))
+
+	for _, p := range v.viewMap {
+		ret = append(ret, p)
+	}
+
+	return ret
+}
+
+func (v *View) LiveView() []*Peer {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	ret := make([]*Peer, 0, len(v.liveMap))
+
+	for _, p := range v.liveMap {
+		ret = append(ret, p)
+	}
+
+	return ret
+
+}
+
+func (v *View) AddFull(id string, note *Note, cert *x509.Certificate) error {
+	v.viewMutex.Lock()
+	defer v.viewMutex.Unlock()
+
+	if _, ok := v.viewMap[id]; ok {
+		log.Error("Tried to add peer twice to viewMap")
+		return errAlreadyExists
+	}
+
+	p, err := newPeer(n, cert)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+
+	v.viewMap[p.key] = p
+
+	return nil
+}
+
+func (v *View) Neighbours() []*Peers {
+	neighbours := make([]string, 0, len(v.ringMap)*2)
+
+	for _, ring := range v.ringMap {
+		succ := ring.successor()
+		neighbours = append(neighbours, succ)
+
+		prev := ring.predecessor()
+		neighbours = append(neighbours, prev)
+	}
+
+	return neighbours
+}
+
+func (v *View) GossipPartners() *Peer {
+	defer v.incrementGossipRing()
+
+	partners := make(*Peer, 0, 2)
+
+	ring := v.ringMap[v.currGossipRing]
+
+	succ := ring.successor()
+	partners = append(addrs, succ)
+
+	prev := ring.predecessor()
+
+	if equal := succ.Equal(prev.Id); !equal {
+		partners = append(partners, prev)
+	}
+
+	return partners
+}
+
+func (v *View) MonitorTarget() *Peer {
+	defer v.incrementMonitorRing()
+
+	ring := v.ringMap[v.currMonitorRing]
+
+	return ring.successor()
+}
+
+func (v *view) AddLive(p *Peer) error {
+	err := addToLiveMap(p)
+	if err != nil {
+		return err
+	}
+	//TODO should check if i get a new neighbor, if so, add possibility
+	//to remove rpc connection of old neighbor.
+
+	var prevId *peerId
+
+	for _, ring := range v.ringMap {
+		ring.add(p)
+
+		succ, prev := ring.findNeighbours(p)
+
+		/*
+			Pending removal of these cases (dont need them?)
+
+			//Special case when prev is the local peer
+			//do not care if local peer is succ, will not have accusations about myself
+			if prev != nil {
+				prevId = prev.peerId
+			} else if prevKey == v.local.key {
+				prevId = v.local
+			}
+
+			//Occurs when a fresh node starts up and has no nodes in its view
+			//Or if the local node is either the new succ or prev
+			//TODO handle this differently?
+			if succ == nil || prevId == nil {
+				continue
+			}
+		*/
+		acc := succ.RingAccusation(ring.ringNum)
+		if acc != nil && acc.IsAccuser(prev) {
+			succ.RemoveAccusation(ring.ringNum)
+		}
+	}
+
+	return nil
+}
+
+func (v *View) Timeouts() []*Timeout {
+	v.timeoutMutex.RLock()
+	defer v.timeoutMutex.RUnlock()
+
+	ret := make([]*Timeout, 0, len(v.timeoutMap))
+
+	for _, t := range v.timeoutMap {
+		ret = append(ret, t)
+	}
+
+	return ret
+}
+
+func (v *View) RemoveLive(p *Peer) {
+	v.liveMutex.Lock()
+	defer v.liveMutex.Unlock()
+
+	if peer, ok = v.liveMap[p.Id]; ok {
+		delete(v.liveMap, key)
+
+		for _, ring := range v.ringMap {
+			ring.remove(peer)
+		}
+
+		log.Debug("Removed livePeer", "addr", peer.addr)
+	} else {
+		log.Debug("Tried to remove non-existing peer from live view", "addr", p.addr)
+	}
+}
+
+func (v *View) StartTimer(id string, epoch uint32, observer *Peer) {
+	v.timeoutMutex.Lock()
+	defer v.timeoutMutex.Unlock()
+
+	if t, ok := v.timeoutMap[id]; ok && t.Epoch >= epoch {
+		return
+	}
+
+	newTimeout := &timeout{
+		observer:  observer,
+		epoch:     epoch,
+		timeStamp: time.Now(),
+		addr:      addr,
+	}
+
+	v.timeoutMap[id] = newTimeout
+}
+
+func (v *View) DeleteTimeout(id string) {
+	v.timeoutMutex.Lock()
+	defer v.timeoutMutex.Unlock()
+
+	delete(v.timeoutMap, id)
+}
+
+func (v *View) ShouldBeNeighbour(id []byte) bool {
+	for _, ring := range v.ringMap {
+		if ring.betweenNeighbours(id) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *View) FindNeighbours(id []byte) []string {
+	var keys []string
+	exist := make(map[string]bool)
+
+	for _, r := range v.ringMap {
+		succ, prev := r.findNeighbours(id)
+
+		if _, ok := exist[succ]; !ok {
+			keys = append(keys, succ)
+			exist[succ] = true
+		}
+
+		if _, ok := exist[prev]; !ok {
+			keys = append(keys, prev)
+			exist[prev] = true
+		}
+	}
+	return keys
+}
+
+func (v *View) ValidAccuser(accused, accuser *Peer, ringNum uint32) bool {
+	if r, ok := v.ringMap[ringNum]; !ok {
+		log.Error("checking prev on non-existing ring")
+		return false
+	} else {
+		isPrev, err := r.isPrev(accused.Id, accuser.Id)
+		if err != nil {
+			log.Error(err.Error())
+			return false
+		}
+
+		return isPrev
+	}
+}
+
+func (v *View) addToLiveMap(p *Peer) error {
+	v.liveMutex.Lock()
+	defer v.liveMutex.Unlock()
+
+	if _, ok := v.liveMap[p.Id]; ok {
+		log.Error("Tried to add peer twice to liveMap", "addr", p.addr)
+		return errAlreadyInLive
+	}
+
+	v.liveMap[p.Id] = p
+}
+
+func (v *View) incrementGossipRing() {
+	v.currGossipRing = ((v.currGossipRing + 1) % (v.numRings + 1))
+	if v.currGossipRing == 0 {
+		v.currGossipRing = 1
+	}
+}
+
+func (v *View) incrementMonitorRing() {
+	v.currMonitorRing = ((v.currMonitorRing + 1) % (v.numRings + 1))
+	if v.currMonitorRing == 0 {
+		v.currMonitorRing = 1
+	}
+}
+
+// ########################### OLD BENEATH THIS LINE ###########################
+/*
 func (v *view) getViewAddrs() []string {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
@@ -430,20 +695,6 @@ func (v *view) findNeighbours(id *peerId) []string {
 	return keys
 }
 
-func (v *view) incrementGossipRing() {
-	v.currGossipRing = ((v.currGossipRing + 1) % (v.numRings + 1))
-	if v.currGossipRing == 0 {
-		v.currGossipRing = 1
-	}
-}
-
-func (v *view) incrementMonitorRing() {
-	v.currMonitorRing = ((v.currMonitorRing + 1) % (v.numRings + 1))
-	if v.currMonitorRing == 0 {
-		v.currMonitorRing = 1
-	}
-}
-
 func (v *view) getGossipPartners() ([]string, error) {
 	var addrs []string
 	defer v.incrementGossipRing()
@@ -478,3 +729,4 @@ func (v *view) getMonitorTarget() (string, uint32, error) {
 
 	return succ.key, r.ringNum, nil
 }
+*/
