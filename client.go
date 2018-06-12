@@ -165,7 +165,7 @@ func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
 
 func readConfig() error {
 	viper.SetConfigName("ifrit_config")
-	viper.AddConfigPath("/var/tmp/ifrit")
+	viper.AddConfigPath("/var/tmp")
 	viper.AddConfigPath(".")
 
 	viper.SetConfigType("yaml")
