@@ -49,7 +49,7 @@ Now you'll want to import the library:
 ```
 Now you can create and start a client
 ```go
-c, err := client.NewClient()
+c, err := ifrit.NewClient()
 if err != nil {
     panic(err)
 }
@@ -64,7 +64,7 @@ allNetworkMembers := c.Members()
 
 
 ### Sending a message
-You can send messages to anyone in the network:
+After joining a Ifrit network you can send messages to anyone in it:
 
 ```go
 members := client.Members()
@@ -80,42 +80,51 @@ The response will eventually be propagated through the returned channel.
 
 To receive messages, you can register a message handler:
 ```go
-client.RegisterMsgHandler(youMessageHandler)
+client.RegisterMsgHandler(yourMessageHandler)
 
 // This callback will be invoked on each received message.
 func yourMessageHandler(data []byte) ([]byte, error) {
     // Do message logic
-    return response, error
+    return yourResponse, yourError
 }
 ```
 The response, or error if its non-nil, will be propagated back to the sender.
 
 
 ### Adding gossip
+You can also gossip with neighboring peers in the Ifrit ring mesh. All incoming gossip is from neighbors, and all outgoing gossip is only sent to neighbors.
+To add gossip, you simply attach your message to the client, it will then be sent to a neighboring peer at each gossip interval.
 ```go
-client.RegisterGossipHandler(handleGossip)
-client.RegisterResponseHandler(handleResponse)
-
-gossipMsg := newMsg()
-
-client.SetGossipContent(content)
-
+client.SetGossipContent(yourGossipMsg)
+```
+To receive incoming gossip messages and responses you register two handlers:
+```go
+client.RegisterGossipHandler(yourGossipHandler)
+client.RegisterResponseHandler(yourResponseHandler)
 
 // This callback will be invoked on each received gossip message.
-func handleGossip(data []byte) ([]byte, error) {
-    msg := data.Unmarshal()
-
-    storeMsg(msg)
-
-    return generateResponse(msg), nil
+func yourGossipHandler(data []byte) ([]byte, error) {
+    // Do your stuff
+    return yourResponse, yourError
 }
 
 
 // This callback will be invoked on each received gossip response.
-func handleResponse(data []byte) {
-    resp := data.Unmarshal()
-
-    storeResp(resp)
+func yourResponseHandler(data []byte) {
+    // Do your stuff
 }
-
 ```
+Note that gossip messages has seperate message and response handlers than that of normal messages.
+
+
+### Config details
+Ifrit clients relies on a config file which should either be placed in your current working directory or /var/tmp/ifrit_config.
+Ifrit will generate all default values, but relies on two user inputs as explained earlier.
+We will now present all configuration variables:
+- use_ca (bool): if a ca should be contacted on startup.
+- ca_addr (string): ip:port of the ca, has to be populated if use_ca is set to true.
+- gossip_interval (uint32): How often (in seconds) the ifrit client should gossip with a neighboring peer (default: 10). Ifrit gossips with one neighbor per interval.
+- monitor_interval (uint32): How often (in seconds) the ifrit client should monitor other peers (default: 10).
+- ping_limit (uint32): How many failed pings before peers are considered dead (default: 3).
+- max_concurrent_messages (uint32): The maximum concurrent outgoing messages through the messaging service at any time (default: 50).
+- removal_timeout (uint32): How long (in seconds) the ifrit client waits after discovering an unresponsive peer before removing it from its live view (default: 60).
