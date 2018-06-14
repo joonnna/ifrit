@@ -1,10 +1,9 @@
-package core
+package view
 
 import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"sync"
 
 	log "github.com/inconshreveable/log15"
 )
@@ -15,70 +14,160 @@ var (
 	errRemoveSelf         = errors.New("Tried to remove myself from ring?!")
 	errLostSelf           = errors.New("Lost track of myself within ring")
 	errRingMemberNotFound = errors.New("Ring member not found")
-	errInvalidRingNum     = errors.New("0 is an invalid ring number")
+	errInvalidRingNum     = errors.New("Invalid ring number")
+	errNoSelf             = errors.New("No self id provided")
+	errNoRings            = errors.New("Numrings cant be 0")
 )
 
-type ring struct {
-	sync.RWMutex
+type rings struct {
+	ringMap  map[uint32]*ring
+	numRings uint32
 
-	ringNum uint32
-
-	peerToRing map[string][]byte
-	succList   [][]byte
-
-	selfIdx int
-	self    *Peer
+	self *Peer
 }
 
-func newRing(ringNum uint32, self *Peer) (*ring, error) {
-	h := hashId(ringNum, peer.Id)
+type ring struct {
+	ringNum uint32
 
-	r := &ring{
-		ringNum:   ringNum,
-		self:      self,
-		existsMap: make(map[string]bool),
-		succList:  [][]byte{h},
+	peerToRingId map[string]*ringId
+
+	succList []*ringId
+
+	selfIdx  int
+	selfHash []byte
+}
+
+type ringId struct {
+	p  *Peer
+	id []byte
+}
+
+func createRings(self *Peer, numRings uint32) (*rings, error) {
+	var i uint32
+
+	if self == nil {
+		return errNoSelf, nil
 	}
 
-	r.peerToRing[self.Id] = h
+	if numRings == 0 {
+		return errNoRings, nil
+	}
+
+	rs := &rings{
+		ringMap:  make(map[uint32]*ring),
+		numRings: numRings,
+		self:     self,
+	}
+
+	for i = 1; i <= rs.numRings; i++ {
+		rs.ringMap[i] = newRing(i, self)
+	}
 
 	return r, nil
 }
 
-func (r *ring) add(id string, addr string) {
-	r.Lock()
-	defer r.Unlock()
+func (rs *rings) add(p *Peer) {
+	for num, ring := range rs.ringMap {
+		ring.add(p)
+	}
+}
 
-	if ringId, ok := r.peerToRing[id]; ok {
-		log.Error(errAlreadyExists.Error())
-		return
+func (rs *rings) remove(p *Peer) {
+	for _, r := range rs.ringMap {
+		r.remove(p)
+	}
+}
+
+func (rs rings) isPrev(id, toCheck string, ringNum uint32) bool {
+	if ring, ok := rs.ringMap[ringNum]; !ok {
+		log.Error("Invalid ring number", "ringnum", ringNum)
+		return false
+	} else {
+		return ring.isPrev(id, toCheck)
+	}
+}
+
+func (rs rings) findNeighbours(id string) []*Peer {
+	ret := make([]string, 0, rs.numRings*2)
+	exists := make(map[string]bool)
+
+	for num, r := range rs.ringMap {
+		succ, prev := r.neighbours(id)
+
+		if _, ok := exists[succ.Id]; !ok {
+			ret = append(ret, succ)
+		}
+
+		if _, ok := exists[prev.Id]; !ok {
+			ret = append(ret, prev)
+		}
 	}
 
-	hash := hashId(id, r.ringNum)
+	return ret
+}
 
-	newList, idx := insert(r.succList, hash)
-	r.succList = newList
+func newRing(ringNum uint32, self *Peer) *ring {
+	id := &ringId{
+		p:    self,
+		hash: hashId(ringNum, []byte(self.Id)),
+	}
 
+	r := &ring{
+		ringNum:    ringNum,
+		self:       self,
+		succList:   make([]*ringId{id}),
+		selfHash:   h,
+		peerToRing: make(map[string]*ringId),
+	}
+
+	peerToRing[self.Id] = id
+
+	return r
+}
+
+func (r *ring) add(p *Peer) {
+	var idx int
+	hash := hashId(r.ringNum, p.Id)
+
+	id := &ringId{
+		hash: hash,
+		p:    p,
+	}
+
+	r.succList, idx = insert(r.succList, id)
 	if idx <= r.ownIdx {
 		r.ownIdx += 1
 	}
 
-	r.peerToRing[key] = hash
+	r.peerToRing[p.Id] = id
 
-	selfHash := r.peerToRing[self.Id]
-	if eq := r.succList[r.ownIdx].bytes.Equal(selfHash); eq != 0 {
+	if eq := r.succList[r.ownIdx].bytes.Equal(r.selfHash); eq != 0 {
 		log.Error(errLostSelf.Error())
+	}
+
+	//TODO should check if i get a new neighbor, if so, add possibility
+	//to remove rpc connection of old neighbor.
+
+	len := len(r.succList)
+
+	succIdx := (idx + 1) % len
+
+	prevIdx := (idx - 1) % len
+	if prevIdx < 0 {
+		prevIdx = prevIdx + len
+	}
+
+	succ := r.succList[succIdx]
+	prev := r.succList[prevIdx]
+
+	acc := succ.RingAccusation(r.ringNum)
+	if acc != nil && acc.IsAccuser(prev) {
+		succ.RemoveAccusation(r.ringNum)
 	}
 }
 
-func (r *ring) remove(id string) {
-	r.Lock()
-	defer r.Unlock()
-
-	if ringId, ok := r.existsMap[id]; !ok {
-		log.Error(errNotFound.Error())
-		return
-	}
+func (r *ring) remove(p *Peer) {
+	ringId := r.peerToRing[p.Id]
 
 	idx, err := search(r.succList, ringId)
 	if err != nil {
@@ -93,27 +182,27 @@ func (r *ring) remove(id string) {
 		return
 	}
 
-	delete(r.peerToRing, key)
-
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
 
-	selfHash := r.peerToRing[self.Id]
-	if eq := r.succList[r.ownIdx].bytes.Equal(selfHash); eq != 0 {
+	delete(r.peerToRing, p.Id)
+
+	if eq := r.succList[r.ownIdx].bytes.Equal(r.selfHash); eq != 0 {
 		log.Error(errLostSelf.Error())
 	}
 }
 
-func (r *ring) isPrev(id, toCheck []byte) bool {
-	r.RLock()
-	defer r.RUnlock()
-
-	ringId, ok := r.existsMap[id]
+func (r *ring) isPrev(id, toCheck string) bool {
+	toCheckId, ok := r.peerToRing[toCheck]
 	if !ok {
-		log.Error(errNotFound.Error())
 		return false
 	}
 
-	i, err := search(r.succList, ringId)
+	currId, ok := r.peerToRing[id]
+	if !ok {
+		return false
+	}
+
+	i, err := search(r.succList, currId)
 	if err != nil {
 		log.Error(errNotFound.Error())
 		return false
@@ -126,23 +215,14 @@ func (r *ring) isPrev(id, toCheck []byte) bool {
 		idx = idx + len
 	}
 
-	if eq := r.succList[idx].bytes.Equal(checkId); eq == 0 {
+	if eq := r.succList[idx].equal(checkId); eq {
 		return true
 	}
 
 	return false
 }
 
-func (r *ring) betweenNeighbours(other string) bool {
-	r.RLock()
-	defer r.RUnlock()
-
-	ringId, ok := r.peerToRing[other]
-	if !ok {
-		log.Error(errNotFound.Error())
-		return
-	}
-
+func (r *ring) betweenNeighbours(other []byte) bool {
 	len := len(r.succList)
 
 	if len <= 1 {
@@ -158,32 +238,21 @@ func (r *ring) betweenNeighbours(other string) bool {
 	}
 	prev := r.succList[prevIdx]
 
-	selfHash := r.peerToRing[self.Id]
-
-	if !isBetween(selfHash, succ, ringId) && !isBetween(prev, selfHash, ringId) {
+	if !isBetween(r.selfHash, succ, other) && !isBetween(prev, r.selfHash, other) {
 		return false
 	} else {
 		return true
 	}
 }
 
-func (r *ring) findNeighbours(id string) (string, string) {
-	r.RLock()
-	defer r.RUnlock()
-
+func (r *ring) neighbors(id []byte) (*Peer, *Peer) {
 	len := len(r.succList)
 
 	if len <= 1 {
 		return r.self.Id, r.self.Id
 	}
 
-	ringId, ok := r.peerToRing[other]
-	if !ok {
-		log.Error(errNotFound.Error())
-		return
-	}
-
-	idx, err := search(r.succList, ringId)
+	idx, err := search(r.succList, id)
 	if err != nil {
 		log.Error(errNotFound.Error())
 		return "", ""
@@ -193,18 +262,18 @@ func (r *ring) findNeighbours(id string) (string, string) {
 	if prevIdx < 0 {
 		prevIdx = prevIdx + len
 	}
-	prev := r.succList[prevIdx].key
+	prev := r.succList[prevIdx].p
 
 	succIdx := (idx + 1) % len
-	succ := r.succList[succIdx].key
+	succ := r.succList[succIdx].p
 
 	return succ, prev
 }
 
-func isBetween(start, end, new []byte) bool {
-	startEndCmp := start.bytes.Equal(end)
-	startNewCmp := start.bytes.Equal(new)
-	endNewCmp := end.bytes.Equal(new)
+func isBetween(start, end, new *ringId) bool {
+	startEndCmp := start.bytes.Compare(end)
+	startNewCmp := start.bytes.Compare(new)
+	endNewCmp := end.bytes.Compare(new)
 
 	if endNewCmp == 0 || startNewCmp == 0 {
 		return true
@@ -232,29 +301,19 @@ func isBetween(start, end, new []byte) bool {
 }
 
 func (r *ring) successor() string {
-	r.RLock()
-	defer r.RUnlock()
-
 	idx := (r.ownIdx + 1) % len(r.succList)
 
-	return r.succList[idx]
+	return string(r.succList[idx])
 }
 
-func (r *ring) getRingPrev() (*ringId, error) {
-	r.RLock()
-	defer r.RUnlock()
-
+func (r *ring) predecessor() string {
 	len := len(r.succList)
 
-	if len == 0 {
-		return nil, errNotFound
-	} else {
-		idx := (r.ownIdx - 1) % len
-		if idx < 0 {
-			idx = idx + len
-		}
-		return r.succList[idx], nil
+	idx := (r.ownIdx - 1) % len
+	if idx < 0 {
+		idx = idx + len
 	}
+	return string(r.succList[idx])
 }
 
 func hashId(ringNum uint32, id []byte) []byte {
