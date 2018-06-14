@@ -1,4 +1,4 @@
-package core
+package view
 
 /*
 func TestSort(t *testing.T) {
