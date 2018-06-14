@@ -1,5 +1,6 @@
 package view
 
+/*
 type ViewService interface {
 	Peer()
 	FullView()
@@ -8,11 +9,11 @@ type ViewService interface {
 	RemoveLive()
 	AddFull()
 	Timeouts()
-	GossipPartner()
+	GossipPartners()
 	MonitorTarget()
+	Neighbours()
 }
 
-/*
 type ViewService interface {
 	FullView()
 	AddFull()
@@ -21,7 +22,6 @@ type ViewService interface {
 	AddLive()
 	RemoveLive()
 }
-*/
 
 type Peer struct {
 	IsLive()
@@ -32,6 +32,4 @@ type Peer struct {
 	Accusation()
 
 }
-
-
-
+*/
