@@ -1,4 +1,4 @@
-package core
+package view
 
 import (
 	"crypto/ecdsa"
@@ -32,10 +32,10 @@ type Peer struct {
 	httpAddr string
 
 	noteMutex  sync.RWMutex
-	recentNote *note
+	recentNote *Note
 
 	accuseMutex sync.RWMutex
-	accusations map[uint32]*accusation
+	accusations map[uint32]*Accusation
 
 	Id        string
 	cert      *x509.Certificate
