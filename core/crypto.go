@@ -49,7 +49,7 @@ func signContent(data []byte, privKey *ecdsa.PrivateKey) ([]byte, []byte, error)
 
 	r, s, err := ecdsa.Sign(rand.Reader, privKey, b)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return r.Bytes(), s.Bytes(), nil
