@@ -14,7 +14,6 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
-	"github.com/joonnna/ifrit/core/view"
 	"github.com/joonnna/ifrit/netutil"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
