@@ -11,14 +11,14 @@ import (
 
 var (
 	errInvalidNeighbours = errors.New("Neighbours are nil ?!")
-	errAlreadyExists     = errors.New("Peer id already exists in the full view")
+	errPeerAlreadyExists = errors.New("Peer id already exists in the full view")
 )
 
 type View struct {
-	viewMap   map[string]*peer
+	viewMap   map[string]*Peer
 	viewMutex sync.RWMutex
 
-	liveMap   map[string]*peer
+	liveMap   map[string]*Peer
 	liveMutex sync.RWMutex
 
 	timeoutMap   map[string]*timeout
@@ -32,13 +32,10 @@ type View struct {
 	maxByz           uint32
 	deactivatedRings uint32
 
-	viewUpdateTimeout time.Duration
+	removalTimeout float64
 }
 
-func NewView(numRings uint32, self *Peer, updateTimeout uint32) (*View, error) {
-	var i uint32
-	var err error
-
+func NewView(numRings uint32, self *Peer, removalTimeout uint32) (*View, error) {
 	maxByz := (float64(numRings) / 2.0) - 1
 	if maxByz < 0 {
 		maxByz = 1
@@ -50,14 +47,14 @@ func NewView(numRings uint32, self *Peer, updateTimeout uint32) (*View, error) {
 	}
 
 	v := &View{
-		rings:             rings,
-		viewMap:           make(map[string]*peer),
-		liveMap:           make(map[string]*peer),
-		timeoutMap:        make(map[string]*timeout),
-		viewUpdateTimeout: time.Second * time.Duration(updateTimeout),
-		maxByz:            uint32(maxByz),
-		currGossipRing:    1,
-		currMonitorRing:   1,
+		rings:           rings,
+		viewMap:         make(map[string]*Peer),
+		liveMap:         make(map[string]*Peer),
+		timeoutMap:      make(map[string]*timeout),
+		removalTimeout:  float64(removalTimeout),
+		maxByz:          uint32(maxByz),
+		currGossipRing:  1,
+		currMonitorRing: 1,
 	}
 
 	return v, nil
@@ -67,7 +64,7 @@ func (v *View) Peer(id string) *Peer {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
 
-	if ok, p := v.viewMap[id]; !ok {
+	if p, ok := v.viewMap[id]; !ok {
 		return nil
 	} else {
 		return p
@@ -107,28 +104,28 @@ func (v *View) AddFull(id string, note *Note, cert *x509.Certificate) error {
 
 	if _, ok := v.viewMap[id]; ok {
 		log.Error("Tried to add peer twice to viewMap")
-		return errAlreadyExists
+		return errPeerAlreadyExists
 	}
 
-	p, err := newPeer(n, cert)
+	p, err := NewPeer(note, cert, v.rings.numRings)
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
 
-	v.viewMap[p.key] = p
+	v.viewMap[p.Id] = p
 
 	return nil
 }
 
-func (v *View) Neighbours() []*Peers {
+func (v *View) MyNeighbours() []*Peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 
-	return v.rings.neighbours()
+	return v.rings.allMyNeighbours()
 }
 
-func (v *View) GossipPartners() *Peer {
+func (v *View) GossipPartners() []*Peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 
@@ -136,7 +133,7 @@ func (v *View) GossipPartners() *Peer {
 	// only take read lock for live view.
 	defer v.incrementGossipRing()
 
-	return v.rings.ringNeighbours(v.currGossipRing)
+	return v.rings.myRingNeighbours(v.currGossipRing)
 }
 
 func (v *View) MonitorTarget() *Peer {
@@ -147,10 +144,10 @@ func (v *View) MonitorTarget() *Peer {
 	// only take read lock for live view.
 	defer v.incrementMonitorRing()
 
-	return v.rings.ringSuccessor(v.currMonitorRing)
+	return v.rings.myRingSuccessor(v.currMonitorRing)
 }
 
-func (v *view) AddLive(p *Peer) {
+func (v *View) AddLive(p *Peer) {
 	v.liveMutex.Lock()
 	defer v.liveMutex.Unlock()
 
@@ -163,11 +160,50 @@ func (v *view) AddLive(p *Peer) {
 	v.rings.add(p)
 }
 
-func (v *View) Timeouts() []*Timeout {
+func (v *View) RemoveLive(id string) {
+	v.liveMutex.Lock()
+	defer v.liveMutex.Unlock()
+
+	if peer, ok := v.liveMap[id]; ok {
+		v.rings.remove(peer)
+
+		delete(v.liveMap, peer.Id)
+
+		log.Debug("Removed livePeer", "addr", peer.addr)
+	} else {
+		log.Debug("Tried to remove non-existing peer from live view", "addr", peer.addr)
+	}
+}
+
+func (v *View) StartTimer(id string, n *Note, observer *Peer) {
+	v.timeoutMutex.Lock()
+	defer v.timeoutMutex.Unlock()
+
+	if t, ok := v.timeoutMap[id]; ok && t.lastNote.epoch >= n.epoch {
+		return
+	}
+
+	newTimeout := &timeout{
+		observer:  observer,
+		timeStamp: time.Now(),
+		lastNote:  n,
+	}
+
+	v.timeoutMap[id] = newTimeout
+}
+
+func (v *View) deleteTimeout(id string) {
+	v.timeoutMutex.Lock()
+	defer v.timeoutMutex.Unlock()
+
+	delete(v.timeoutMap, id)
+}
+
+func (v *View) allTimeouts() []*timeout {
 	v.timeoutMutex.RLock()
 	defer v.timeoutMutex.RUnlock()
 
-	ret := make([]*Timeout, 0, len(v.timeoutMap))
+	ret := make([]*timeout, 0, len(v.timeoutMap))
 
 	for _, t := range v.timeoutMap {
 		ret = append(ret, t)
@@ -176,51 +212,24 @@ func (v *View) Timeouts() []*Timeout {
 	return ret
 }
 
-func (v *View) RemoveLive(id string) {
-	v.liveMutex.Lock()
-	defer v.liveMutex.Unlock()
+func (v *View) CheckTimeouts() {
+	timeouts := v.allTimeouts()
+	log.Debug("Have timeouts", "amount", len(timeouts))
 
-	if peer, ok = v.liveMap[id]; ok {
-		v.rings.remove(peer)
-
-		delete(v.liveMap, key)
-
-		log.Debug("Removed livePeer", "addr", peer.addr)
-	} else {
-		log.Debug("Tried to remove non-existing peer from live view", "addr", p.addr)
+	for _, t := range timeouts {
+		if time.Since(t.timeStamp).Seconds() > v.removalTimeout {
+			log.Debug("Timeout expired, removing from live", "id", t.lastNote.id)
+			v.deleteTimeout(t.lastNote.id)
+			v.RemoveLive(t.lastNote.id)
+		}
 	}
-}
-
-func (v *View) StartTimer(id string, epoch uint32, observer *Peer) {
-	v.timeoutMutex.Lock()
-	defer v.timeoutMutex.Unlock()
-
-	if t, ok := v.timeoutMap[id]; ok && t.Epoch >= epoch {
-		return
-	}
-
-	newTimeout := &timeout{
-		observer:  observer,
-		epoch:     epoch,
-		timeStamp: time.Now(),
-		addr:      addr,
-	}
-
-	v.timeoutMap[id] = newTimeout
-}
-
-func (v *View) DeleteTimeout(id string) {
-	v.timeoutMutex.Lock()
-	defer v.timeoutMutex.Unlock()
-
-	delete(v.timeoutMap, id)
 }
 
 func (v *View) ShouldBeNeighbour(id string) bool {
-	return v.rings.isNeighbour(id)
+	return v.rings.shouldBeMyNeighbour(id)
 }
 
-func (v *View) FindNeighbours(id string) []string {
+func (v *View) FindNeighbours(id string) []*Peer {
 	return v.rings.findNeighbours(id)
 }
 
@@ -229,14 +238,14 @@ func (v *View) ValidAccuser(accused, accuser string, ringNum uint32) bool {
 }
 
 func (v *View) incrementGossipRing() {
-	v.currGossipRing = ((v.currGossipRing + 1) % (v.numRings + 1))
+	v.currGossipRing = ((v.currGossipRing + 1) % (v.rings.numRings + 1))
 	if v.currGossipRing == 0 {
 		v.currGossipRing = 1
 	}
 }
 
 func (v *View) incrementMonitorRing() {
-	v.currMonitorRing = ((v.currMonitorRing + 1) % (v.numRings + 1))
+	v.currMonitorRing = ((v.currMonitorRing + 1) % (v.rings.numRings + 1))
 	if v.currMonitorRing == 0 {
 		v.currMonitorRing = 1
 	}

@@ -12,7 +12,7 @@ var (
 
 /*
 type item interface {
-	cmpId(item) int
+	compare(item) int
 }
 */
 
@@ -31,7 +31,7 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int) {
 			slice = append(slice, nil)
 			copy(slice[currIdx+1:], slice[currIdx:])
 
-			if slice[currIdx].cmpId(newId) == -1 {
+			if slice[currIdx].compare(newId) == -1 {
 				currIdx += 1
 			}
 			slice[currIdx] = newId
@@ -40,7 +40,7 @@ func insert(slice []*ringId, newId *ringId) ([]*ringId, int) {
 		}
 		mid := (currIdx + maxIdx) / 2
 
-		if slice[mid].cmpId(newId) == -1 {
+		if slice[mid].compare(newId) == -1 {
 			currIdx = mid + 1
 		} else {
 			maxIdx = mid - 1
@@ -55,7 +55,7 @@ func search(slice []*ringId, searchId *ringId) (int, error) {
 
 	for {
 		if currIdx >= maxIdx {
-			if slice[currIdx].cmpId(searchId) == 0 {
+			if slice[currIdx].compare(searchId) == 0 {
 				return currIdx, nil
 			} else {
 				return -1, errIdNotFound
@@ -64,7 +64,7 @@ func search(slice []*ringId, searchId *ringId) (int, error) {
 		}
 		mid := (currIdx + maxIdx) / 2
 
-		cmp := slice[mid].cmpId(searchId)
+		cmp := slice[mid].compare(searchId)
 
 		if cmp == -1 {
 			currIdx = mid + 1
@@ -87,7 +87,7 @@ func findNeighbourIdx(slice []*ringId, searchId *ringId) int {
 		}
 		mid := (currIdx + maxIdx) / 2
 
-		cmp := slice[mid].cmpId(searchId)
+		cmp := slice[mid].compare(searchId)
 
 		if cmp == -1 {
 			currIdx = mid + 1

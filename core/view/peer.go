@@ -2,10 +2,15 @@ package view
 
 import (
 	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
+	"math/big"
 	"sync"
+	"time"
 
+	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
@@ -61,10 +66,16 @@ type Note struct {
 type Accusation struct {
 	ringNum uint32
 	epoch   uint64
-	accuser *peerId
+	accuser string
 	mask    uint32
-	id      string
+	accused string
 	*signature
+}
+
+type timeout struct {
+	observer  *Peer
+	lastNote  *Note
+	timeStamp time.Time
 }
 
 func NewPeer(note *Note, cert *x509.Certificate, numRings uint32) (*Peer, error) {
@@ -88,23 +99,34 @@ func NewPeer(note *Note, cert *x509.Certificate, numRings uint32) (*Peer, error)
 		return nil, errPubKeyErr
 	}
 
-	accMap := make(map[uint32]*accusation)
+	accMap := make(map[uint32]*Accusation)
 
 	for i = 1; i <= numRings; i++ {
 		accMap[i] = nil
 	}
 
-	return &peer{
+	return &Peer{
 		addr:        cert.Subject.Locality[0],
 		pingAddr:    cert.Subject.Locality[1],
 		httpAddr:    http,
-		recentNote:  recentNote,
+		recentNote:  note,
 		cert:        cert,
-		id:          cert.SubjectKeyId,
+		Id:          string(cert.SubjectKeyId),
 		publicKey:   pb,
 		accusations: accMap,
 	}, nil
 
+}
+
+func (p Peer) ValidateSignature(r, s, data []byte) bool {
+	var rInt, sInt big.Int
+
+	b := hashContent(data)
+
+	rInt.SetBytes(r)
+	sInt.SetBytes(s)
+
+	return ecdsa.Verify(p.publicKey, b, &rInt, &sInt)
 }
 
 func (p *Peer) AddAccusation(a *Accusation) error {
@@ -174,7 +196,7 @@ func (p *Peer) AllAccusations() []*Accusation {
 	p.accuseMutex.RLock()
 	defer p.accuseMutex.RUnlock()
 
-	ret := make([]*accusation, 0, len(p.accusations))
+	ret := make([]*Accusation, 0, len(p.accusations))
 
 	for _, v := range p.accusations {
 		if v != nil {
@@ -216,22 +238,18 @@ func (p *Peer) Note() *Note {
 
 func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
 	var c *gossip.Certificate
-	var n *gossip.Note
 
 	c = &gossip.Certificate{
 		Raw: p.cert.Raw,
 	}
 
-	recentNote := p.getNote()
-	if recentNote != nil {
-		n = recentNote.toPbMsg()
-	}
+	n := p.Note().ToPbMsg()
 
 	accs := p.AllAccusations()
 	a := make([]*gossip.Accusation, 0, len(accs))
 
 	for _, acc := range accs {
-		a = append(acc.toPbMsg())
+		a = append(a, acc.ToPbMsg())
 	}
 
 	return c, n, a
@@ -262,13 +280,189 @@ func (a Accusation) Equal(other *Accusation) bool {
 	if other == nil {
 		return false
 	}
-	if a.id == other.id && a.accuser == other.accuser && a.ringNum == other.ringNum && a.epoch == other.epoch {
+	if a.accused == other.accused && a.accuser == other.accuser && a.ringNum == other.ringNum && a.epoch == other.epoch {
 		return true
 	}
 
 	return false
 }
 
+func (a Accusation) IsAccuser(id string) bool {
+	return a.accuser == id
+}
+
 func (n Note) IsMoreRecent(other *Note) bool {
 	return n.epoch < other.epoch
 }
+
+func (n Note) ToPbMsg() *gossip.Note {
+	return &gossip.Note{
+		Epoch: n.epoch,
+		Id:    []byte(n.id),
+		Mask:  n.mask,
+		Signature: &gossip.Signature{
+			R: n.r,
+			S: n.s,
+		},
+	}
+}
+
+func (a Accusation) ToPbMsg() *gossip.Accusation {
+	return &gossip.Accusation{
+		Epoch:   a.epoch,
+		Accuser: []byte(a.accuser),
+		Accused: []byte(a.accused),
+		Mask:    a.mask,
+		RingNum: a.ringNum,
+		Signature: &gossip.Signature{
+			R: a.r,
+			S: a.s,
+		},
+	}
+}
+
+func (p *Peer) SignNote(privKey *ecdsa.PrivateKey) error {
+	n := p.recentNote
+
+	noteMsg := &gossip.Note{
+		Epoch: n.epoch,
+		Id:    []byte(n.id),
+		Mask:  n.mask,
+	}
+
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		return err
+	}
+
+	hash := hashContent(b)
+
+	r, s, err := ecdsa.Sign(rand.Reader, privKey, hash)
+	if err != nil {
+		return err
+	}
+
+	p.recentNote.signature = &signature{
+		r: r.Bytes(),
+		s: s.Bytes(),
+	}
+
+	return nil
+}
+
+func hashContent(data []byte) []byte {
+	h := sha256.New224()
+	h.Write(data)
+	return h.Sum(nil)
+}
+
+/*
+func (n *Note) AddSignature(r, s []byte) {
+
+}
+
+func (n *Note) Marshal() ([]byte, error) {
+
+}
+
+func (n *Note) sign(privKey *ecdsa.PrivateKey) error {
+	noteMsg := &gossip.Note{
+		Epoch: n.epoch,
+		Id:    []byte(n.id),
+		Mask:  n.mask,
+	}
+
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		return err
+	}
+
+	signature, err := signContent(b, privKey)
+	if err != nil {
+		return err
+	}
+
+	n.signature = signature
+
+	return nil
+}
+
+func (n *Note) signAndMarshal(privKey *ecdsa.PrivateKey) (*gossip.Note, error) {
+	noteMsg := &gossip.Note{
+		Epoch: n.epoch,
+		Id:    []byte(n.id),
+		Mask:  n.mask,
+	}
+
+	b, err := proto.Marshal(noteMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	signature, err := signContent(b, privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	noteMsg.Signature = &gossip.Signature{
+		R: signature.r,
+		S: signature.s,
+	}
+
+	n.signature = signature
+
+	return noteMsg, nil
+}
+
+
+func (a Accusation) signAndMarshal(privKey *ecdsa.PrivateKey) (*gossip.Accusation, error) {
+	acc := &gossip.Accusation{
+		Epoch:   a.epoch,
+		Accuser: []byte(a.accuser),
+		Accused: []byte(a.accused),
+		Mask:    a.mask,
+		RingNum: a.ringNum,
+	}
+
+	b, err := proto.Marshal(acc)
+	if err != nil {
+		return nil, err
+	}
+
+	signature, err := signContent(b, privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	acc.Signature = &gossip.Signature{
+		R: signature.r,
+		S: signature.s,
+	}
+
+	return acc, nil
+}
+
+func (a *Accusation) sign(privKey *ecdsa.PrivateKey) error {
+	acc := &gossip.Accusation{
+		Epoch:   a.epoch,
+		Accuser: []byte(a.accuser),
+		Accused: []byte(a.accused),
+		Mask:    a.mask,
+		RingNum: a.ringNum,
+	}
+
+	b, err := proto.Marshal(acc)
+	if err != nil {
+		return err
+	}
+
+	signature, err := signContent(b, privKey)
+	if err != nil {
+		return err
+	}
+
+	a.signature = signature
+
+	return nil
+}
+*/

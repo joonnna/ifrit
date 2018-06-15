@@ -14,6 +14,7 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/view"
 	"github.com/joonnna/ifrit/netutil"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
@@ -40,10 +41,7 @@ const (
 type processMsg func([]byte) ([]byte, error)
 
 type Node struct {
-	//Local peer representation
-	*peer
-
-	*view
+	view *view.View
 
 	*pinger
 
@@ -123,15 +121,6 @@ type protocol interface {
 	Timeouts(n *Node)
 }
 
-type timeout struct {
-	observer  *peer
-	lastNote  *note
-	timeStamp time.Time
-
-	//For debugging
-	addr string
-}
-
 func (n *Node) gossipLoop() {
 	for {
 		select {
@@ -169,7 +158,7 @@ func (n *Node) checkTimeouts() {
 			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
-			n.getProtocol().Timeouts(n)
+			n.view.CheckTimeouts()
 		}
 	}
 }

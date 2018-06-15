@@ -149,6 +149,7 @@ func (c correct) Monitor(n *Node) {
 	}
 }
 
+/*
 func (c correct) Timeouts(n *Node) {
 	for key, t := range n.getAllTimeouts() {
 		log.Debug("Have timeout", "addr", t.addr)
@@ -160,6 +161,7 @@ func (c correct) Timeouts(n *Node) {
 		}
 	}
 }
+*/
 
 func (sa spamAccusations) Gossip(n *Node) {
 	msg, err := createFalseAccusations(n)

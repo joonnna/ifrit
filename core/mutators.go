@@ -224,3 +224,10 @@ func (n *Node) incrementGossipRounds() {
 
 	n.rounds++
 }
+
+func (n *Node) signLocalNote() {
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
+
+	n.self.SignNote(n.privKey)
+}
