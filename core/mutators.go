@@ -26,7 +26,7 @@ func (n *Node) setEpoch(newEpoch uint64) {
 	}
 }
 
-func (n *Node) getEpoch() uint64 {
+func (n *Node) localEpoch() uint64 {
 	n.noteMutex.RLock()
 	defer n.noteMutex.RUnlock()
 
@@ -109,11 +109,11 @@ func (n *Node) setProtocol(p protocol) {
 	n.protocol = p
 }
 
-func (n *Node) getProtocol() protocol {
+func (n *Node) protocol() protocol {
 	n.protocolMutex.RLock()
 	defer n.protocolMutex.RUnlock()
 
-	return n.protocol
+	return n.proto
 }
 
 func (n *Node) localNoteToPbMsg() *gossip.Note {

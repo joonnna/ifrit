@@ -3,6 +3,7 @@ package discovery
 import (
 	"crypto/x509"
 	"errors"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -38,7 +39,7 @@ type View struct {
 func NewView(numRings uint32, self *Peer, removalTimeout uint32) (*View, error) {
 	maxByz := (float64(numRings) / 2.0) - 1
 	if maxByz < 0 {
-		maxByz = 1
+		maxByz = 0
 	}
 
 	rings, err := createRings(self, numRings)
@@ -71,7 +72,11 @@ func (v *View) Peer(id string) *Peer {
 	}
 }
 
-func (v *View) FullView() []*Peer {
+func (v *View) NumRings() uint32 {
+	return v.rings.numRings
+}
+
+func (v *View) Full() []*Peer {
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
 
@@ -84,7 +89,16 @@ func (v *View) FullView() []*Peer {
 	return ret
 }
 
-func (v *View) LiveView() []*Peer {
+func (v *View) Exists(id string) bool {
+	v.viewMutex.RLock()
+	defer v.viewMutex.RUnlock()
+
+	_, ok := v.viewMap[id]
+
+	return ok
+}
+
+func (v *View) Live() []*Peer {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 
@@ -98,7 +112,7 @@ func (v *View) LiveView() []*Peer {
 
 }
 
-func (v *View) AddFull(id string, note *Note, cert *x509.Certificate) error {
+func (v *View) AddFull(id string, cert *x509.Certificate) error {
 	v.viewMutex.Lock()
 	defer v.viewMutex.Unlock()
 
@@ -107,7 +121,7 @@ func (v *View) AddFull(id string, note *Note, cert *x509.Certificate) error {
 		return errPeerAlreadyExists
 	}
 
-	p, err := NewPeer(note, cert, v.rings.numRings)
+	p, err := NewPeer(cert, v.rings.numRings)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -160,6 +174,13 @@ func (v *View) AddLive(p *Peer) {
 	v.rings.add(p)
 }
 
+func (v *View) LivePeer(id string) *Peer {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	return v.liveMap[id]
+}
+
 func (v *View) RemoveLive(id string) {
 	v.liveMutex.Lock()
 	defer v.liveMutex.Unlock()
@@ -175,11 +196,11 @@ func (v *View) RemoveLive(id string) {
 	}
 }
 
-func (v *View) StartTimer(id string, n *Note, observer *Peer) {
+func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) {
 	v.timeoutMutex.Lock()
 	defer v.timeoutMutex.Unlock()
 
-	if t, ok := v.timeoutMap[id]; ok && t.lastNote.epoch >= n.epoch {
+	if t, ok := v.timeoutMap[accused.Id]; ok && t.lastNote.epoch >= n.epoch {
 		return
 	}
 
@@ -187,12 +208,24 @@ func (v *View) StartTimer(id string, n *Note, observer *Peer) {
 		observer:  observer,
 		timeStamp: time.Now(),
 		lastNote:  n,
+		accused:   accused,
 	}
 
-	v.timeoutMap[id] = newTimeout
+	v.timeoutMap[accused.Id] = newTimeout
+
+	log.Debug("Started timer for: %s", accused.addr)
 }
 
-func (v *View) deleteTimeout(id string) {
+func (v *View) HasTimer(id string) bool {
+	v.timeoutMutex.RLock()
+	defer v.timeoutMutex.RUnlock()
+
+	_, ok := v.timeoutMap[id]
+
+	return ok
+}
+
+func (v *View) DeleteTimeout(id string) {
 	v.timeoutMutex.Lock()
 	defer v.timeoutMutex.Unlock()
 
@@ -218,23 +251,41 @@ func (v *View) CheckTimeouts() {
 
 	for _, t := range timeouts {
 		if time.Since(t.timeStamp).Seconds() > v.removalTimeout {
-			log.Debug("Timeout expired, removing from live", "id", t.lastNote.id)
-			v.deleteTimeout(t.lastNote.id)
-			v.RemoveLive(t.lastNote.id)
+			log.Debug("Timeout expired, removing from live", "addr", t.accused.addr)
+			v.DeleteTimeout(t.accused.Id)
+			v.RemoveLive(t.accused.Id)
 		}
 	}
 }
 
 func (v *View) ShouldBeNeighbour(id string) bool {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
 	return v.rings.shouldBeMyNeighbour(id)
 }
 
 func (v *View) FindNeighbours(id string) []*Peer {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
 	return v.rings.findNeighbours(id)
 }
 
 func (v *View) ValidAccuser(accused, accuser string, ringNum uint32) bool {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
 	return v.rings.isPredecessor(accused, accuser, ringNum)
+}
+
+func (v *View) IsAlive(id string) bool {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	_, ok := v.liveMap[id]
+
+	return ok
 }
 
 func (v *View) incrementGossipRing() {
@@ -249,6 +300,69 @@ func (v *View) incrementMonitorRing() {
 	if v.currMonitorRing == 0 {
 		v.currMonitorRing = 1
 	}
+}
+
+func (v View) ValidMask(mask uint32) bool {
+	err := validMask(mask, v.rings.numRings, v.maxByz)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
+
+	return true
+}
+
+func (v View) IsRingDisabled(mask, ringNum uint32) bool {
+	err := checkDisabledRings(mask, v.rings.numRings, ringNum)
+	if err != nil {
+		log.Error(err.Error())
+		return true
+	}
+
+	return false
+}
+
+func validMask(mask, numRings, maxByz uint32) error {
+	active := bits.OnesCount32(mask)
+	disabled := numRings - uint32(active)
+
+	if disabled > maxByz {
+		return errTooManyDeactivatedRings
+	}
+
+	return nil
+}
+
+func checkDisabledRings(mask, numRings, ringNum uint32) error {
+	idx := ringNum - 1
+
+	maxIdx := uint32(numRings - 1)
+
+	if idx > maxIdx || idx < 0 {
+		return errNonExistingRing
+	}
+
+	if active := hasBit(mask, idx); !active {
+		return errDeactivatedRing
+	}
+
+	return nil
+}
+
+func setBit(n uint32, pos uint32) uint32 {
+	n |= (1 << pos)
+	return n
+}
+
+func clearBit(n uint32, pos uint32) uint32 {
+	mask := uint32(^(1 << pos))
+	n &= mask
+	return n
+}
+
+func hasBit(n uint32, pos uint32) bool {
+	val := n & (1 << pos)
+	return (val > 0)
 }
 
 /*

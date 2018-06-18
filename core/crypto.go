@@ -17,6 +17,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/golang/protobuf/proto"
+	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
+	"github.com/joonnna/ifrit/protobuf"
 )
 
 var (
@@ -247,4 +252,52 @@ func genSerialNumber() (*big.Int, error) {
 	}
 
 	return s, nil
+}
+
+func checkAccusationSignature(a *gossip.Accusation, accuser, accused *discovery.Peer) bool {
+	tmp := &gossip.Accusation{
+		Epoch:   a.GetEpoch(),
+		Accuser: a.GetAccuser(),
+		Accused: a.GetAccused(),
+		Mask:    a.GetMask(),
+		RingNum: a.GetRingNum(),
+	}
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
+
+	sign := a.GetSignature()
+
+	if valid := accused.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
+		log.Debug("Invalid signature on accusation, ignoring")
+		return false
+	}
+
+	return true
+}
+
+func checkNoteSignature(n *gossip.Note, p *discovery.Peer) bool {
+	tmp := &gossip.Note{
+		Epoch: n.GetEpoch(),
+		Mask:  n.GetMask(),
+		Id:    n.GetId(),
+	}
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
+
+	sign := n.GetSignature()
+
+	if valid := p.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
+		log.Debug("Invalid signature on note, ignoring")
+		return false
+	}
+
+	return true
 }

@@ -16,17 +16,20 @@ import (
 )
 
 var (
-	errPeerId      = errors.New("certificate contains no subjectKeyIdentifier")
-	errPeerAddr    = errors.New("certificate contains no address")
-	errNoteId      = errors.New("note id is invalid")
-	errNoteSign    = errors.New("note signature is invalid")
-	errAccusedId   = errors.New("accused id is invalid")
-	errAccuserId   = errors.New("accuser id is invalid")
-	errAccuserSign = errors.New("accusation signature is invalid")
-	errPubKeyErr   = errors.New("Public key type is invalid")
-	errOldEpoch    = errors.New("accusation contains old epoch")
-	errNoNote      = errors.New("no note found for the accused peer")
-	errInvalidRing = errors.New("Tried to set an accusation on a non-existing ring")
+	errPeerId                  = errors.New("certificate contains no subjectKeyIdentifier")
+	errPeerAddr                = errors.New("certificate contains no address")
+	errNoteId                  = errors.New("note id is invalid")
+	errNoteSign                = errors.New("note signature is invalid")
+	errAccusedId               = errors.New("accused id is invalid")
+	errAccuserId               = errors.New("accuser id is invalid")
+	errAccuserSign             = errors.New("accusation signature is invalid")
+	errPubKeyErr               = errors.New("Public key type is invalid")
+	errOldEpoch                = errors.New("accusation contains old epoch")
+	errNoNote                  = errors.New("no note found for the accused peer")
+	errInvalidRing             = errors.New("Tried to set an accusation on a non-existing ring")
+	errTooManyDeactivatedRings = errors.New("Mask contains too many deactivated rings")
+	errNonExistingRing         = errors.New("Accusation specifies non exisiting ring")
+	errDeactivatedRing         = errors.New("Accusation on deactivated ring")
 )
 
 type Peer struct {
@@ -36,8 +39,8 @@ type Peer struct {
 	// Debuging and experiments only.
 	httpAddr string
 
-	noteMutex  sync.RWMutex
-	recentNote *Note
+	noteMutex sync.RWMutex
+	note      *Note
 
 	accuseMutex sync.RWMutex
 	accusations map[uint32]*Accusation
@@ -50,7 +53,7 @@ type Peer struct {
 	nPingMutex sync.RWMutex
 }
 
-//Ecdsa signature values
+// Ecdsa signature values
 type signature struct {
 	r []byte
 	s []byte
@@ -74,11 +77,12 @@ type Accusation struct {
 
 type timeout struct {
 	observer  *Peer
-	lastNote  *Note
 	timeStamp time.Time
+	accused   *Peer
+	lastNote  *Note
 }
 
-func NewPeer(note *Note, cert *x509.Certificate, numRings uint32) (*Peer, error) {
+func NewPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	var ok bool
 	var i uint32
 	var http string
@@ -109,13 +113,20 @@ func NewPeer(note *Note, cert *x509.Certificate, numRings uint32) (*Peer, error)
 		addr:        cert.Subject.Locality[0],
 		pingAddr:    cert.Subject.Locality[1],
 		httpAddr:    http,
-		recentNote:  note,
 		cert:        cert,
 		Id:          string(cert.SubjectKeyId),
 		publicKey:   pb,
 		accusations: accMap,
 	}, nil
 
+}
+
+func (p Peer) Certificate() []byte {
+	return p.cert.Raw
+}
+
+func (p Peer) Addr() string {
+	return p.addr
 }
 
 func (p Peer) ValidateSignature(r, s, data []byte) bool {
@@ -129,21 +140,47 @@ func (p Peer) ValidateSignature(r, s, data []byte) bool {
 	return ecdsa.Verify(p.publicKey, b, &rInt, &sInt)
 }
 
-func (p *Peer) AddAccusation(a *Accusation) error {
+func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNum uint32, r, s []byte) error {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	if p.recentNote != nil && p.recentNote.epoch != a.epoch {
+	if p.note != nil && p.note.epoch != epoch {
 		return errOldEpoch
 	}
 
-	if _, ok := p.accusations[a.ringNum]; !ok {
+	if _, ok := p.accusations[ringNum]; !ok {
 		return errInvalidRing
+	}
+
+	a := &Accusation{
+		accused: accused,
+		accuser: accuser,
+		mask:    mask,
+		epoch:   epoch,
+		ringNum: ringNum,
+		signature: &signature{
+			r: r,
+			s: s,
+		},
 	}
 
 	p.accusations[a.ringNum] = a
 
+	log.Debug("Added accusation", "addr", p.addr, "ring", a.ringNum)
+
 	return nil
+}
+
+func (p *Peer) RemoveAccusation(a *Accusation) {
+	p.accuseMutex.RLock()
+	defer p.accuseMutex.RUnlock()
+
+	if _, ok := p.accusations[a.ringNum]; !ok {
+		log.Debug("Tried to remove accusation from invalid ring number", "ringnum", a.ringNum)
+		return
+	}
+
+	p.accusations[a.ringNum] = nil
 }
 
 func (p *Peer) RemoveRingAccusation(ringNum uint32) {
@@ -220,12 +257,20 @@ func (p *Peer) IsAccused() bool {
 	return false
 }
 
-func (p *Peer) AddNewNote(newNote *Note) {
+func (p *Peer) AddNote(mask uint32, epoch uint64, r, s []byte) {
 	p.noteMutex.Lock()
 	defer p.noteMutex.Unlock()
 
-	if p.recentNote == nil || p.recentNote.epoch < newNote.epoch {
-		p.recentNote = newNote
+	if p.note == nil || p.note.IsMoreRecent(epoch) {
+		p.note = &Note{
+			id:    p.Id,
+			mask:  mask,
+			epoch: epoch,
+			signature: &signature{
+				r: r,
+				s: s,
+			},
+		}
 	}
 }
 
@@ -233,7 +278,11 @@ func (p *Peer) Note() *Note {
 	p.noteMutex.RLock()
 	defer p.noteMutex.RUnlock()
 
-	return p.recentNote
+	return p.note
+}
+
+func (n Note) SameEpoch(epoch uint64) bool {
+	return n.epoch == epoch
 }
 
 func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
@@ -276,6 +325,7 @@ func (p *Peer) NumPing() uint32 {
 	return p.nPing
 }
 
+/*
 func (a Accusation) Equal(other *Accusation) bool {
 	if other == nil {
 		return false
@@ -286,13 +336,26 @@ func (a Accusation) Equal(other *Accusation) bool {
 
 	return false
 }
+*/
+
+func (a Accusation) Equal(accused, accuser string, ringNum uint32, epoch uint64) bool {
+	if a.accused == accused && a.accuser == accuser && a.ringNum == ringNum && a.epoch == epoch {
+		return true
+	}
+
+	return false
+}
+
+func (a Accusation) IsMoreRecent(other uint64) bool {
+	return a.epoch < other
+}
 
 func (a Accusation) IsAccuser(id string) bool {
 	return a.accuser == id
 }
 
-func (n Note) IsMoreRecent(other *Note) bool {
-	return n.epoch < other.epoch
+func (n Note) IsMoreRecent(other uint64) bool {
+	return n.epoch < other
 }
 
 func (n Note) ToPbMsg() *gossip.Note {
@@ -321,8 +384,10 @@ func (a Accusation) ToPbMsg() *gossip.Accusation {
 	}
 }
 
+// Only used for local note.
+// Access regulated by mutex in node structure.
 func (p *Peer) SignNote(privKey *ecdsa.PrivateKey) error {
-	n := p.recentNote
+	n := p.note
 
 	noteMsg := &gossip.Note{
 		Epoch: n.epoch,
@@ -342,7 +407,7 @@ func (p *Peer) SignNote(privKey *ecdsa.PrivateKey) error {
 		return err
 	}
 
-	p.recentNote.signature = &signature{
+	p.note.signature = &signature{
 		r: r.Bytes(),
 		s: s.Bytes(),
 	}

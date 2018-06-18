@@ -14,6 +14,7 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
 	"github.com/joonnna/ifrit/netutil"
 	"github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/ifrit/udp"
@@ -40,11 +41,12 @@ const (
 type processMsg func([]byte) ([]byte, error)
 
 type Node struct {
-	view *view.View
+	view *discovery.View
+	self *discovery.Peer
 
 	*pinger
 
-	protocol
+	proto         protocol
 	protocolMutex sync.RWMutex
 
 	client client
