@@ -4,11 +4,12 @@
 
 - API cleanup
     - Remove recording feature (?)
-    - Remove SendAll
+    - Remove SendAll (done)
 
 - Code overhaul
-    - View interface overhaul
+    - View seperation (done)
     - Accusations from dead members
+    - Rebuttal rework
 
 - Testing overhaul
     - Full behavior tests
