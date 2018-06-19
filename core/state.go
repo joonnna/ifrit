@@ -81,11 +81,12 @@ func (n *Node) httpHandler() {
 	r.HandleFunc("/numrequests", n.numRequestsHandler)
 	r.HandleFunc("/numfailedrequests", n.numFailedRequestsHandler)
 	r.HandleFunc("/latencies", n.latenciesHandler)
-	r.HandleFunc("/dos", n.dosHandler)
 	r.HandleFunc("/neighbors", n.neighborsHandler)
-	r.HandleFunc("/hosts", n.hostsHandler)
-	r.HandleFunc("/state", n.stateHandler)
-
+	/*
+		r.HandleFunc("/hosts", n.hostsHandler)
+		r.HandleFunc("/state", n.stateHandler)
+		r.HandleFunc("/dos", n.dosHandler)
+	*/
 	/*
 		addrs, err := net.LookupHost(hostName)
 		if err != nil {
@@ -108,14 +109,15 @@ func (n *Node) httpHandler() {
 	}
 }
 
+/*
 func (n *Node) hostsHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
 
 	addrs := n.getLivePeerAddrs()
 
-	for _, a := range addrs {
-		w.Write([]byte(fmt.Sprintf("%s\n", a)))
+	for _, p := range n.view.Live() {
+		w.Write([]byte(fmt.Sprintf("%s\n", p.HttpAddr)))
 	}
 }
 
@@ -130,6 +132,7 @@ func (n *Node) stateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
+*/
 
 func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
@@ -161,7 +164,7 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	log.Info("Received crash request, shutting down local comm")
 
 	n.server.ShutDown()
-	n.pinger.Shutdown()
+	n.failureDetector.Shutdown()
 }
 
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +173,7 @@ func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("Received corrupt request, going rogue!")
 
-	n.setProtocol(spamAccusations{})
+	//n.setProtocol(spamAccusations{})
 }
 
 func (n *Node) dosHandler(w http.ResponseWriter, r *http.Request) {
@@ -184,14 +187,14 @@ func (n *Node) dosHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body.Close()
+	/*
+		e := experiment{
+			addr:    args.Addr, // "129.242.19.146:8100",
+			maxConc: args.Conc,
+		}*/
 
-	e := experiment{
-		addr:    args.Addr, // "129.242.19.146:8100",
-		maxConc: args.Conc,
-	}
-
-	n.setGossipTimeout(args.Timeout)
-	n.setProtocol(e)
+	//n.setGossipTimeout(args.Timeout)
+	//n.setProtocol(e)
 }
 
 func (n *Node) recordHandler(w http.ResponseWriter, r *http.Request) {
@@ -229,20 +232,9 @@ func (n *Node) neighborsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var ret string
 
-	for _, r := range n.ringMap {
-		succ, err := r.getRingSucc()
-		if err != nil {
-			continue
-		}
-
-		prev, err := r.getRingPrev()
-		if err != nil {
-			continue
-		}
-
-		ret += fmt.Sprintf("%s\n%s\n", succ.addr, prev.addr)
+	for _, p := range n.view.MyNeighbours() {
+		ret += fmt.Sprintf("%s\n", p.Addr)
 	}
-
 	w.Write([]byte(ret))
 }
 
@@ -261,14 +253,16 @@ func (n *Node) latenciesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp.Bytes())
 }
 
-/* Periodically sends the nodes current state to the state server*/
+/* Periodically sends the nodes current state to the state server */
 func (n *Node) updateState() {
+	var i uint32
 	client := &http.Client{}
 
-	prevStates := make([]*state, n.numRings)
+	rings := n.view.NumRings()
+	prevStates := make([]*state, 0, rings)
 
-	for i := 0; i < len(prevStates); i++ {
-		prevStates[i] = &state{}
+	for i = 0; i < rings; i++ {
+		prevStates = append(prevStates, &state{})
 	}
 
 	for {
@@ -278,10 +272,10 @@ func (n *Node) updateState() {
 			return
 
 		case <-time.After(n.vizUpdateTimeout):
-			for _, r := range n.ringMap {
-				s := n.newState(r.ringNum)
+			for i = 1; i <= rings; i++ {
+				s := n.newState(i)
 
-				idx := r.ringNum - 1
+				idx := i - 1
 				if prevStates[idx].equal(s) {
 					continue
 				}
@@ -290,36 +284,25 @@ func (n *Node) updateState() {
 
 				n.updateReq(s.marshal(), client)
 			}
-
 		}
 	}
 }
 
 /* Creates a new state */
 func (n *Node) newState(ringId uint32) *state {
-	id := fmt.Sprintf("%s|%d", n.addr, ringId)
+	var succId, prevId string
 
-	var nextId, prevId string
-
-	succ, err := n.ringMap[ringId].getRingSucc()
-	if err != nil {
-		nextId = ""
-		log.Error(err.Error())
-	} else {
-		nextId = fmt.Sprintf("%s|%d", succ.addr, ringId)
+	succ, prev := n.view.RingNeighbours(ringId)
+	if succ != nil {
+		succId = fmt.Sprintf("%s|%d", succ.Addr, ringId)
 	}
-
-	prev, err := n.ringMap[ringId].getRingPrev()
-	if err != nil {
-		prevId = ""
-		log.Error(err.Error())
-	} else {
-		prevId = fmt.Sprintf("%s|%d", prev.addr, ringId)
+	if prev != nil {
+		prevId = fmt.Sprintf("%s|%d", prev.Addr, ringId)
 	}
 
 	return &state{
-		ID:       id,
-		Next:     nextId,
+		ID:       fmt.Sprintf("%s|%d", n.self.Addr, ringId),
+		Next:     succId,
 		Prev:     prevId,
 		HttpAddr: n.vizId,
 		Trusted:  n.trustedBootNode,

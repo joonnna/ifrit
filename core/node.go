@@ -44,9 +44,9 @@ type Node struct {
 	view *discovery.View
 	self *discovery.Peer
 
-	*pinger
+	failureDetector *pinger
 
-	proto         protocol
+	protocol      protocol
 	protocolMutex sync.RWMutex
 
 	client client
@@ -57,6 +57,8 @@ type Node struct {
 
 	exitFlag  bool
 	exitMutex sync.RWMutex
+
+	viewUpdateTimeout time.Duration
 
 	gossipTimeout      time.Duration
 	gossipTimeoutMutex sync.RWMutex
@@ -119,15 +121,15 @@ type protocol interface {
 	Monitor(n *Node)
 	Gossip(n *Node)
 	Rebuttal(n *Node)
-	Timeouts(n *Node)
 }
 
 func (n *Node) gossipLoop() {
+	defer n.wg.Done()
+
 	for {
 		select {
 		case <-n.exitChan:
 			log.Info("Exiting gossiping")
-			n.wg.Done()
 			return
 		case <-time.After(n.getGossipTimeout()):
 			if n.isGossipRecording() {
@@ -139,11 +141,12 @@ func (n *Node) gossipLoop() {
 }
 
 func (n *Node) monitor() {
+	defer n.wg.Done()
+
 	for {
 		select {
 		case <-n.exitChan:
 			log.Info("Stopping monitoring")
-			n.wg.Done()
 			return
 		case <-time.After(n.monitorTimeout):
 			n.getProtocol().Monitor(n)
@@ -152,11 +155,12 @@ func (n *Node) monitor() {
 }
 
 func (n *Node) checkTimeouts() {
+	defer n.wg.Done()
+
 	for {
 		select {
 		case <-n.exitChan:
 			log.Info("Stopping view update")
-			n.wg.Done()
 			return
 		case <-time.After(n.viewUpdateTimeout):
 			n.view.CheckTimeouts()
@@ -165,7 +169,6 @@ func (n *Node) checkTimeouts() {
 }
 
 func NewNode(c client, s server) (*Node, error) {
-	var i, mask uint32
 	var extValue []byte
 	var certs *certSet
 	var http string
@@ -217,18 +220,12 @@ func NewNode(c client, s server) (*Node, error) {
 		}
 	}
 
-	extensions := certs.ownCert.Extensions
-
-	if len(certs.ownCert.SubjectKeyId) < 1 {
-		log.Error(errNoId.Error())
-		return nil, errNoId
-	}
-
-	for _, e := range extensions {
+	for _, e := range certs.ownCert.Extensions {
 		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
 			extValue = e.Value
 		}
 	}
+
 	if extValue == nil {
 		log.Error(errNoRingNum.Error())
 		return nil, errNoRingNum
@@ -236,47 +233,42 @@ func NewNode(c client, s server) (*Node, error) {
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	p, err := newPeer(nil, certs.ownCert, numRings)
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
-	}
-
-	v, err := newView(numRings, p.peerId, p.addr)
+	v, err := discovery.NewView(numRings, certs.ownCert, privKey)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
 	}
 
 	n := &Node{
-		exitChan:         make(chan bool, 1),
-		wg:               &sync.WaitGroup{},
-		gossipTimeout:    time.Second * time.Duration(viper.GetInt32("gossip_interval")),
-		monitorTimeout:   time.Second * time.Duration(viper.GetInt32("monitor_interval")),
-		nodeDeadTimeout:  viper.GetFloat64("dead_timeout"),
-		view:             v,
-		pinger:           newPinger(udpServer, uint32(viper.GetInt32("ping_limit")), privKey),
-		privKey:          privKey,
-		client:           c,
-		server:           s,
-		peer:             p,
-		stats:            &recorder{recordDuration: 60},
-		localCert:        certs.ownCert,
-		caCert:           certs.caCert,
-		trustedBootNode:  certs.trusted,
+		exitChan:          make(chan bool, 1),
+		wg:                &sync.WaitGroup{},
+		gossipTimeout:     time.Second * time.Duration(viper.GetInt32("gossip_interval")),
+		monitorTimeout:    time.Second * time.Duration(viper.GetInt32("monitor_interval")),
+		viewUpdateTimeout: time.Second * time.Duration(viper.GetInt32("view_update_interval")),
+		view:              v,
+		failureDetector:   newPinger(udpServer, uint32(viper.GetInt32("ping_limit")), privKey),
+		privKey:           privKey,
+		client:            c,
+		server:            s,
+		stats:             &recorder{recordDuration: 60},
+		localCert:         certs.ownCert,
+		caCert:            certs.caCert,
+		dispatcher:        workerpool.NewDispatcher(uint32(viper.GetInt32("max_concurrent_messages"))),
+		entryAddrs:        viper.GetStringSlice("entry_addrs"),
+		httpListener:      l,
+		protocol:          correct{},
+		self:              v.Self(),
+
+		// Visualizer specific
 		viz:              viper.GetBool("use_viz"),
-		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
 		vizAddr:          viper.GetString("viz_addr"),
-		////vizAppAddr:       conf.VisAppAddr,
-		dispatcher:   workerpool.NewDispatcher(uint32(viper.GetInt32("max_concurrent_messages"))),
-		entryAddrs:   viper.GetStringSlice("entry_addrs"),
-		httpListener: l,
-		protocol:     correct{},
+		trustedBootNode:  certs.trusted,
+		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
 	}
 
 	serverConfig := genServerConfig(certs, privKey)
 
-	err = n.server.Init(serverConfig, n, ((n.numRings * 2) + 20))
+	err = n.server.Init(serverConfig, n, ((numRings * 2) + 20))
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -284,36 +276,18 @@ func NewNode(c client, s server) (*Node, error) {
 
 	n.client.Init(genClientConfig(certs, privKey))
 
-	for i = 0; i < n.numRings; i++ {
-		mask = setBit(mask, i)
-	}
-
-	localNote := &note{
-		epoch:  1,
-		mask:   mask,
-		peerId: n.peerId,
-	}
-
-	err = localNote.sign(n.privKey)
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
-	}
-
-	n.recentNote = localNote
-
 	if n.caCert != nil {
 		for _, c := range certs.knownCerts {
-			if n.peerId.equal(&peerId{id: c.SubjectKeyId}) {
+			if n.self.Id == string(c.SubjectKeyId) {
 				continue
 			}
 			n.evalCertificate(c)
 		}
 
-		view := n.getView()
+		view := n.view.Full()
 
 		for _, p := range view {
-			n.addLivePeer(p)
+			n.view.AddLive(p)
 		}
 	}
 
@@ -331,33 +305,30 @@ func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
 }
 
 func (n *Node) Sign(content []byte) ([]byte, []byte, error) {
-	signature, err := signContent(content, n.privKey)
+	r, s, err := signContent(content, n.privKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return signature.r, signature.s, nil
+	return r, s, nil
 }
 
 func (n *Node) Verify(r, s, content []byte, id string) bool {
-	p := n.getViewPeer(id)
+	p := n.view.Peer(id)
 	if p == nil {
 		return false
 	}
 
-	// TODO Cannot return error, change verifySignature
-	valid, _ := validateSignature(r, s, content, p.publicKey)
-
-	return valid
+	return p.ValidateSignature(r, s, content)
 }
 
 func (n *Node) IdToAddr(id []byte) (string, error) {
-	p := n.getViewPeer(string(id))
+	p := n.view.Peer(string(id))
 	if p == nil {
 		return "", errors.New("Could not find peer with specified id")
 	}
 
-	return p.addr, nil
+	return p.Addr, nil
 }
 
 func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
@@ -384,8 +355,10 @@ func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 
 func (n *Node) ShutDownNode() {
 	if n.viz {
-		for _, r := range n.ringMap {
-			n.remove(r.ringNum)
+		var i uint32
+		rings := n.view.NumRings()
+		for i = 1; i <= rings; i++ {
+			n.remove(i)
 		}
 	}
 
@@ -395,31 +368,43 @@ func (n *Node) ShutDownNode() {
 }
 
 func (n *Node) LiveMembers() []string {
-	return n.getLivePeerAddrs()
+	live := n.view.Live()
+
+	ret := make([]string, 0, len(live))
+
+	for _, p := range n.view.Live() {
+		ret = append(ret, p.Addr)
+	}
+
+	return ret
 }
 
+/*
 func (n *Node) LiveMembersHttp() []string {
 	return n.getLivePeerHttpAddrs()
 }
 
+
+
+*/
+func (n *Node) HttpAddr() string {
+	//return n.httpListener.Addr().String()
+	return n.self.HttpAddr
+}
+
 func (n *Node) Id() string {
-	return n.key
+	return n.self.Id
 }
 
 func (n *Node) Addr() string {
 	return n.server.Addr()
 }
 
-func (n *Node) HttpAddr() string {
-	//return n.httpListener.Addr().String()
-	return n.httpAddr
-}
-
 func (n *Node) Start() {
 	log.Info("Started Node")
 
 	go n.server.Start()
-	go n.pinger.serve()
+	go n.failureDetector.serve()
 
 	routines := 3
 	if n.viz {
@@ -437,21 +422,14 @@ func (n *Node) Start() {
 		go n.updateState()
 		go n.httpHandler()
 
-		for _, r := range n.ringMap {
-			for {
-				err := n.add(r.ringNum)
-				if err == nil {
-					break
-				}
-			}
+		var i uint32
+		rings := n.view.NumRings()
+		for i = 1; i <= rings; i++ {
+			n.add(i)
 		}
 	}
 
-	// can continue even with error, will just send nil msg.
-	msg, err := n.collectGossipContent()
-	if err != nil {
-		log.Error(err.Error())
-	}
+	msg := n.collectGossipContent()
 
 	// With no ca we need to contact existing hosts.
 	// TODO retry if we fail to contact them?
@@ -472,7 +450,7 @@ func (n *Node) Start() {
 	<-n.exitChan
 	n.httpListener.Close()
 	n.server.ShutDown()
-	n.pinger.shutdown()
+	n.failureDetector.shutdown()
 
 	log.Info("Exiting node")
 }

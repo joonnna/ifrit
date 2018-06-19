@@ -1,9 +1,8 @@
 package core
 
 import (
-	"time"
-
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -19,49 +18,33 @@ type experiment struct {
 }
 
 func (c correct) Rebuttal(n *Node) {
-	var err error
-	var neighbours []string
+	neighbours := n.view.GossipPartners()
 
-	for {
-		neighbours, err = n.getGossipPartners()
-		if err != nil {
-			log.Error(err.Error())
-		} else {
-			break
-		}
-	}
-
-	noteMsg := n.localNoteToPbMsg()
+	noteMsg := n.self.Note().ToPbMsg()
 
 	msg := &gossip.State{
 		OwnNote: noteMsg,
 	}
 
-	for _, addr := range neighbours {
-		if addr == n.addr {
+	for _, p := range neighbours {
+		if p.Id == n.self.Id {
 			continue
 		}
-		_, err = n.client.Gossip(addr, msg)
+		_, err := n.client.Gossip(p.Addr, msg)
 		if err != nil {
-			log.Error(err.Error(), "addr", addr)
+			log.Error(err.Error(), "addr", p.Addr)
 			continue
 		}
 	}
 }
 
 func (c correct) Gossip(n *Node) {
-	msg, err := n.collectGossipContent()
-	if err != nil {
-		return
-	}
-	neighbours, err := n.getGossipPartners()
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
+	msg := n.collectGossipContent()
 
-	for _, addr := range neighbours {
-		if addr == n.addr {
+	neighbours := n.view.GossipPartners()
+
+	for _, p := range neighbours {
+		if p.Id == n.self.Id {
 			/*
 				log.Debug("Tried to gossip with myself")
 				log.Debug("Full view", "amount", len(n.getView()))
@@ -70,9 +53,9 @@ func (c correct) Gossip(n *Node) {
 			continue
 		}
 
-		reply, err := n.client.Gossip(addr, msg)
+		reply, err := n.client.Gossip(p.Addr, msg)
 		if err != nil {
-			log.Error(err.Error(), "addr", addr)
+			log.Error(err.Error(), "addr", p.Addr)
 			continue
 		}
 
@@ -91,78 +74,31 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	succ, ringNum, err := n.getMonitorTarget()
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
+	p, ringNum := n.view.MonitorTarget()
 
-	p := n.getLivePeer(succ)
-	if p == nil {
-		return
-	}
-
-	err = n.ping(p)
+	err := n.failureDetector.ping(p)
 	if err == errDead {
-		log.Debug("Successor dead, accusing", "succ", p.addr)
-		peerNote := p.getNote()
-		//Will always have note for a peer in our liveView, except when the peer stems
-		//from the initial contact list of the CA, if it's dead
-		//we should remove it to ensure it doesn't stay in our liveView.
-		//Not possible to accuse a peer without a note.
+		log.Debug("Successor dead, accusing", "succ", p.Addr)
+		peerNote := p.Note()
+		// Will always have note for a peer in our liveView, except when the peer stems
+		// from the initial contact list of the CA, if it's dead
+		// we should remove it to ensure it doesn't stay in our liveView.
+		// Not possible to accuse a peer without a note.
 		if peerNote == nil {
-			n.removeLivePeer(p.key)
+			n.view.RemoveLive(p.Id)
 			return
 		}
 
-		a := &accusation{
-			peerId:  p.peerId,
-			epoch:   peerNote.epoch,
-			accuser: n.peerId,
-			mask:    peerNote.mask,
-			ringNum: ringNum,
-		}
-
-		acc := p.getRingAccusation(ringNum)
-		if a.equal(acc) {
-			log.Debug("Already accused peer on this ring")
-			if !n.timerExist(p.key) {
-				n.startTimer(p.key, peerNote, n.peer, p.addr)
-			}
-			return
-		}
-
-		err = a.sign(n.privKey)
-		if err != nil {
+		err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
+		if err == discovery.ErrAccAlreadyExists {
+			n.view.StartTimer(p, peerNote, n.self)
+		} else if err != nil {
 			log.Error(err.Error())
-			return
-		}
-
-		err = p.setAccusation(a)
-		if err != nil {
-			log.Error(err.Error())
-			return
-		}
-		if !n.timerExist(p.key) {
-			n.startTimer(p.key, peerNote, n.peer, p.addr)
 		}
 	}
 }
 
 /*
-func (c correct) Timeouts(n *Node) {
-	for key, t := range n.getAllTimeouts() {
-		log.Debug("Have timeout", "addr", t.addr)
-		since := time.Since(t.timeStamp)
-		if since.Seconds() > n.nodeDeadTimeout {
-			log.Debug("Timeout expired, removing from live", "addr", t.addr)
-			n.deleteTimeout(key)
-			n.removeLivePeer(key)
-		}
-	}
-}
-*/
-
 func (sa spamAccusations) Gossip(n *Node) {
 	msg, err := createFalseAccusations(n)
 	if err != nil {
@@ -345,12 +281,10 @@ func dos(addr string, msg *gossip.State, n *Node) {
 }
 
 func (e experiment) Gossip(n *Node) {
-	/*
 		msg, err := n.collectGossipContent()
 		if err != nil {
 			return
 		}
-	*/
 
 	msg := &gossip.State{}
 
@@ -436,3 +370,4 @@ func (e experiment) Timeouts(n *Node) {
 		}
 	}
 }
+*/

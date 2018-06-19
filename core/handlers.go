@@ -63,7 +63,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 		n.evalNote(args.GetOwnNote())
 		reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: n.localCert.Raw})
-		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
+		reply.Notes = append(reply.Notes, n.self.Note().ToPbMsg())
 
 		peers := n.view.FindNeighbours(remoteId)
 		for _, p := range peers {
@@ -140,13 +140,15 @@ func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) 
 		// Transferring all notes are avoided by checking epoch numbers.
 		accs := p.AllAccusations()
 		reply.Accusations = make([]*gossip.Accusation, 0, len(accs))
-		for idx, a := range accs {
+		for _, a := range accs {
 			reply.Accusations = append(reply.Accusations, a.ToPbMsg())
 		}
 	}
 
-	if epoch, exists := given[n.self.Id]; !exists || epoch < n.localEpoch() {
-		reply.Notes = append(reply.Notes, n.localNoteToPbMsg())
+	localNote := n.self.Note()
+
+	if epoch, exists := given[n.self.Id]; !exists || localNote.IsMoreRecent(epoch) {
+		reply.Notes = append(reply.Notes, localNote.ToPbMsg())
 	}
 }
 
@@ -205,7 +207,10 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 			n.setEpoch((epoch + 1))
 			n.deactivateRing(ringNum)
 		*/
-		n.protocol().Rebuttal(n)
+
+		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
+			n.getProtocol().Rebuttal(n)
+		}
 		return
 	}
 
@@ -311,7 +316,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 					sign := gossipNote.GetSignature()
 
-					log.Debug("Rebuttal received", "addr", p.Addr())
+					log.Debug("Rebuttal received", "addr", p.Addr)
 
 					n.view.DeleteTimeout(p.Id)
 					p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
@@ -339,13 +344,9 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 		return false
 	}
 
-	if hasAddresses := len(cert.Subject.Locality) == 0; !hasAddresses {
-		return false
-	}
-
 	id := string(cert.SubjectKeyId)
 
-	if len(id) == 0 || n.self.Id == id {
+	if n.self.Id == id {
 		return false
 	}
 
