@@ -220,6 +220,8 @@ func NewNode(c client, s server) (*Node, error) {
 		}
 	}
 
+	log.Debug(http)
+
 	for _, e := range certs.ownCert.Extensions {
 		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
 			extValue = e.Value
@@ -262,8 +264,10 @@ func NewNode(c client, s server) (*Node, error) {
 		// Visualizer specific
 		viz:              viper.GetBool("use_viz"),
 		vizAddr:          viper.GetString("viz_addr"),
+		vizId:            fmt.Sprintf("http://%s", http),
 		trustedBootNode:  certs.trusted,
 		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
+		//httpAddr:         http,
 	}
 
 	serverConfig := genServerConfig(certs, privKey)
@@ -390,6 +394,7 @@ func (n *Node) LiveMembersHttp() []string {
 func (n *Node) HttpAddr() string {
 	//return n.httpListener.Addr().String()
 	return n.self.HttpAddr
+	//return n.httpAddr
 }
 
 func (n *Node) Id() string {
