@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
@@ -30,14 +28,15 @@ var (
 	errTooManyDeactivatedRings = errors.New("Mask contains too many deactivated rings")
 	errNonExistingRing         = errors.New("Accusation specifies non exisiting ring")
 	errDeactivatedRing         = errors.New("Accusation on deactivated ring")
+	ErrAccAlreadyExists        = errors.New("Accusation already exists")
 )
 
 type Peer struct {
-	addr     string
-	pingAddr string
+	Addr     string
+	PingAddr string
 
 	// Debuging and experiments only.
-	httpAddr string
+	HttpAddr string
 
 	noteMutex sync.RWMutex
 	note      *Note
@@ -59,22 +58,6 @@ type signature struct {
 	s []byte
 }
 
-type Note struct {
-	epoch uint64
-	mask  uint32
-	id    string
-	*signature
-}
-
-type Accusation struct {
-	ringNum uint32
-	epoch   uint64
-	accuser string
-	mask    uint32
-	accused string
-	*signature
-}
-
 type timeout struct {
 	observer  *Peer
 	timeStamp time.Time
@@ -82,7 +65,7 @@ type timeout struct {
 	lastNote  *Note
 }
 
-func NewPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
+func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	var ok bool
 	var i uint32
 	var http string
@@ -110,9 +93,9 @@ func NewPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	}
 
 	return &Peer{
-		addr:        cert.Subject.Locality[0],
-		pingAddr:    cert.Subject.Locality[1],
-		httpAddr:    http,
+		Addr:        cert.Subject.Locality[0],
+		PingAddr:    cert.Subject.Locality[1],
+		HttpAddr:    http,
 		cert:        cert,
 		Id:          string(cert.SubjectKeyId),
 		publicKey:   pb,
@@ -125,10 +108,6 @@ func (p Peer) Certificate() []byte {
 	return p.cert.Raw
 }
 
-func (p Peer) Addr() string {
-	return p.addr
-}
-
 func (p Peer) ValidateSignature(r, s, data []byte) bool {
 	var rInt, sInt big.Int
 
@@ -138,6 +117,36 @@ func (p Peer) ValidateSignature(r, s, data []byte) bool {
 	sInt.SetBytes(s)
 
 	return ecdsa.Verify(p.publicKey, b, &rInt, &sInt)
+}
+
+func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv *ecdsa.PrivateKey) error {
+	p.accuseMutex.Lock()
+	defer p.accuseMutex.Unlock()
+
+	if a, ok := p.accusations[ringNum]; !ok {
+		return errInvalidRing
+	} else if eq := a.Equal(accused.id, self.Id, ringNum, accused.epoch); eq {
+		return ErrAccAlreadyExists
+	}
+
+	acc := &Accusation{
+		accused: accused.id,
+		accuser: self.Id,
+		mask:    accused.mask,
+		epoch:   accused.epoch,
+		ringNum: ringNum,
+	}
+
+	err := acc.sign(priv)
+	if err != nil {
+		return err
+	}
+
+	p.accusations[acc.ringNum] = acc
+
+	log.Debug("Added accusation", "addr", p.Addr, "ring", acc.ringNum)
+
+	return nil
 }
 
 func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNum uint32, r, s []byte) error {
@@ -166,7 +175,7 @@ func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNu
 
 	p.accusations[a.ringNum] = a
 
-	log.Debug("Added accusation", "addr", p.addr, "ring", a.ringNum)
+	log.Debug("Added accusation", "addr", p.Addr, "ring", a.ringNum)
 
 	return nil
 }
@@ -281,10 +290,6 @@ func (p *Peer) Note() *Note {
 	return p.note
 }
 
-func (n Note) SameEpoch(epoch uint64) bool {
-	return n.epoch == epoch
-}
-
 func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
 	var c *gossip.Certificate
 
@@ -325,6 +330,12 @@ func (p *Peer) NumPing() uint32 {
 	return p.nPing
 }
 
+func hashContent(data []byte) []byte {
+	h := sha256.New224()
+	h.Write(data)
+	return h.Sum(nil)
+}
+
 /*
 func (a Accusation) Equal(other *Accusation) bool {
 	if other == nil {
@@ -337,89 +348,6 @@ func (a Accusation) Equal(other *Accusation) bool {
 	return false
 }
 */
-
-func (a Accusation) Equal(accused, accuser string, ringNum uint32, epoch uint64) bool {
-	if a.accused == accused && a.accuser == accuser && a.ringNum == ringNum && a.epoch == epoch {
-		return true
-	}
-
-	return false
-}
-
-func (a Accusation) IsMoreRecent(other uint64) bool {
-	return a.epoch < other
-}
-
-func (a Accusation) IsAccuser(id string) bool {
-	return a.accuser == id
-}
-
-func (n Note) IsMoreRecent(other uint64) bool {
-	return n.epoch < other
-}
-
-func (n Note) ToPbMsg() *gossip.Note {
-	return &gossip.Note{
-		Epoch: n.epoch,
-		Id:    []byte(n.id),
-		Mask:  n.mask,
-		Signature: &gossip.Signature{
-			R: n.r,
-			S: n.s,
-		},
-	}
-}
-
-func (a Accusation) ToPbMsg() *gossip.Accusation {
-	return &gossip.Accusation{
-		Epoch:   a.epoch,
-		Accuser: []byte(a.accuser),
-		Accused: []byte(a.accused),
-		Mask:    a.mask,
-		RingNum: a.ringNum,
-		Signature: &gossip.Signature{
-			R: a.r,
-			S: a.s,
-		},
-	}
-}
-
-// Only used for local note.
-// Access regulated by mutex in node structure.
-func (p *Peer) SignNote(privKey *ecdsa.PrivateKey) error {
-	n := p.note
-
-	noteMsg := &gossip.Note{
-		Epoch: n.epoch,
-		Id:    []byte(n.id),
-		Mask:  n.mask,
-	}
-
-	b, err := proto.Marshal(noteMsg)
-	if err != nil {
-		return err
-	}
-
-	hash := hashContent(b)
-
-	r, s, err := ecdsa.Sign(rand.Reader, privKey, hash)
-	if err != nil {
-		return err
-	}
-
-	p.note.signature = &signature{
-		r: r.Bytes(),
-		s: s.Bytes(),
-	}
-
-	return nil
-}
-
-func hashContent(data []byte) []byte {
-	h := sha256.New224()
-	h.Write(data)
-	return h.Sum(nil)
-}
 
 /*
 func (n *Note) AddSignature(r, s []byte) {
