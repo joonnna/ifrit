@@ -260,7 +260,7 @@ func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) {
 
 	v.timeoutMap[accused.Id] = newTimeout
 
-	log.Debug("Started timer for: %s", accused.Addr)
+	log.Debug("Started timer", "addr", accused.Addr)
 }
 
 func (v *View) HasTimer(id string) bool {
