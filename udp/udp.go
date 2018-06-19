@@ -44,13 +44,11 @@ func NewServer() (*Server, error) {
 func (s Server) Send(addr string, data []byte) ([]byte, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		log.Error(err.Error())
 		return nil, err
 	}
 
 	c, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
-		log.Error(err.Error())
 		return nil, err
 	}
 	c.SetDeadline(time.Now().Add(time.Second * 5))
@@ -58,7 +56,6 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 
 	_, err = c.Write(data)
 	if err != nil {
-		log.Error(err.Error())
 		return nil, err
 	}
 
