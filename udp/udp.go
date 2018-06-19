@@ -63,7 +63,6 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 
 	n, err := c.Read(bytes)
 	if err != nil {
-		log.Error(err.Error())
 		return nil, err
 	}
 
