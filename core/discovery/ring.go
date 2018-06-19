@@ -171,6 +171,16 @@ func (rs rings) myRingSuccessor(ringNum uint32) *Peer {
 	return r.successor()
 }
 
+func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
+	r, ok := rs.ringMap[ringNum]
+	if !ok {
+		log.Error(errInvalidRingNum.Error())
+		return nil
+	}
+
+	return r.predecessor()
+}
+
 func (rs rings) shouldBeMyNeighbour(id string) bool {
 	rId := []byte(id)
 
