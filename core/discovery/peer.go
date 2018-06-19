@@ -123,10 +123,12 @@ func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv 
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
-	if a, ok := p.accusations[ringNum]; !ok {
+	if a, ok := p.accusations[ringNum]; ok && a != nil {
+		if eq := a.Equal(accused.id, self.Id, ringNum, accused.epoch); eq {
+			return ErrAccAlreadyExists
+		}
+	} else if !ok {
 		return errInvalidRing
-	} else if eq := a.Equal(accused.id, self.Id, ringNum, accused.epoch); eq {
-		return ErrAccAlreadyExists
 	}
 
 	acc := &Accusation{
