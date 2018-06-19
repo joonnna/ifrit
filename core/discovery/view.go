@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"crypto/ecdsa"
 	"crypto/x509"
 	"errors"
 	"math/bits"
@@ -8,11 +9,15 @@ import (
 	"time"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/protobuf"
+	"github.com/spf13/viper"
 )
 
 var (
-	errInvalidNeighbours = errors.New("Neighbours are nil ?!")
-	errPeerAlreadyExists = errors.New("Peer id already exists in the full view")
+	errInvalidNeighbours  = errors.New("Neighbours are nil ?!")
+	errPeerAlreadyExists  = errors.New("Peer id already exists in the full view")
+	errAlreadyDeactivated = errors.New("Ring was already deactivated")
+	errZeroDeactivate     = errors.New("No ring can be deactivated, maxbyz is 0")
 )
 
 type View struct {
@@ -34,13 +39,40 @@ type View struct {
 	deactivatedRings uint32
 
 	removalTimeout float64
+
+	privKey *ecdsa.PrivateKey
+	self    *Peer
 }
 
-func NewView(numRings uint32, self *Peer, removalTimeout uint32) (*View, error) {
+func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey) (*View, error) {
+	var i, mask uint32
+
 	maxByz := (float64(numRings) / 2.0) - 1
 	if maxByz < 0 {
 		maxByz = 0
 	}
+
+	self, err := newPeer(cert, numRings)
+	if err != nil {
+		return nil, err
+	}
+
+	for i = 0; i < numRings; i++ {
+		mask = setBit(mask, i)
+	}
+
+	localNote := &Note{
+		epoch: 1,
+		mask:  mask,
+		id:    self.Id,
+	}
+
+	err = localNote.sign(privKey)
+	if err != nil {
+		return nil, err
+	}
+
+	self.note = localNote
 
 	rings, err := createRings(self, numRings)
 	if err != nil {
@@ -52,13 +84,23 @@ func NewView(numRings uint32, self *Peer, removalTimeout uint32) (*View, error) 
 		viewMap:         make(map[string]*Peer),
 		liveMap:         make(map[string]*Peer),
 		timeoutMap:      make(map[string]*timeout),
-		removalTimeout:  float64(removalTimeout),
+		removalTimeout:  viper.GetFloat64("dead_timeout"),
 		maxByz:          uint32(maxByz),
 		currGossipRing:  1,
 		currMonitorRing: 1,
+		privKey:         privKey,
+		self:            self,
 	}
 
 	return v, nil
+}
+
+func (v *View) NumRings() uint32 {
+	return v.rings.numRings
+}
+
+func (v *View) Self() *Peer {
+	return v.self
 }
 
 func (v *View) Peer(id string) *Peer {
@@ -70,10 +112,6 @@ func (v *View) Peer(id string) *Peer {
 	} else {
 		return p
 	}
-}
-
-func (v *View) NumRings() uint32 {
-	return v.rings.numRings
 }
 
 func (v *View) Full() []*Peer {
@@ -121,7 +159,7 @@ func (v *View) AddFull(id string, cert *x509.Certificate) error {
 		return errPeerAlreadyExists
 	}
 
-	p, err := NewPeer(cert, v.rings.numRings)
+	p, err := newPeer(cert, v.rings.numRings)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -150,15 +188,17 @@ func (v *View) GossipPartners() []*Peer {
 	return v.rings.myRingNeighbours(v.currGossipRing)
 }
 
-func (v *View) MonitorTarget() *Peer {
+func (v *View) MonitorTarget() (*Peer, uint32) {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
+
+	ringNum := v.currMonitorRing
 
 	// Only one goroutine accesses monitor ring variable,
 	// only take read lock for live view.
 	defer v.incrementMonitorRing()
 
-	return v.rings.myRingSuccessor(v.currMonitorRing)
+	return v.rings.myRingSuccessor(v.currMonitorRing), ringNum
 }
 
 func (v *View) AddLive(p *Peer) {
@@ -166,12 +206,19 @@ func (v *View) AddLive(p *Peer) {
 	defer v.liveMutex.Unlock()
 
 	if _, ok := v.liveMap[p.Id]; ok {
-		log.Error("Tried to add peer twice to liveMap", "addr", p.addr)
+		log.Error("Tried to add peer twice to liveMap", "addr", p.Addr)
 	}
 
 	v.liveMap[p.Id] = p
 
 	v.rings.add(p)
+}
+
+func (v *View) RingNeighbours(ringNum uint32) (*Peer, *Peer) {
+	v.liveMutex.RLock()
+	defer v.liveMutex.RUnlock()
+
+	return v.rings.myRingSuccessor(ringNum), v.rings.myRingPredecessor(ringNum)
 }
 
 func (v *View) LivePeer(id string) *Peer {
@@ -190,9 +237,9 @@ func (v *View) RemoveLive(id string) {
 
 		delete(v.liveMap, peer.Id)
 
-		log.Debug("Removed livePeer", "addr", peer.addr)
+		log.Debug("Removed livePeer", "addr", peer.Addr)
 	} else {
-		log.Debug("Tried to remove non-existing peer from live view", "addr", peer.addr)
+		log.Debug("Tried to remove non-existing peer from live view", "addr", peer.Addr)
 	}
 }
 
@@ -213,7 +260,7 @@ func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) {
 
 	v.timeoutMap[accused.Id] = newTimeout
 
-	log.Debug("Started timer for: %s", accused.addr)
+	log.Debug("Started timer for: %s", accused.Addr)
 }
 
 func (v *View) HasTimer(id string) bool {
@@ -247,14 +294,49 @@ func (v *View) allTimeouts() []*timeout {
 
 func (v *View) CheckTimeouts() {
 	timeouts := v.allTimeouts()
-	log.Debug("Have timeouts", "amount", len(timeouts))
+	if numTimeouts := len(timeouts); numTimeouts > 0 {
+		log.Debug("Have timeouts", "amount", numTimeouts)
+	}
 
 	for _, t := range timeouts {
 		if time.Since(t.timeStamp).Seconds() > v.removalTimeout {
-			log.Debug("Timeout expired, removing from live", "addr", t.accused.addr)
+			log.Debug("Timeout expired, removing from live", "addr", t.accused.Addr)
 			v.DeleteTimeout(t.accused.Id)
 			v.RemoveLive(t.accused.Id)
 		}
+	}
+}
+
+func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
+	v.self.noteMutex.Lock()
+	defer v.self.noteMutex.Unlock()
+
+	if eq := v.self.note.SameEpoch(epoch); eq {
+		newMask := v.self.note.mask
+
+		mask, err := v.deactivateRing(ringNum)
+		if err != nil {
+			log.Error(err.Error())
+		} else {
+			newMask = mask
+		}
+
+		newNote := &Note{
+			id:    v.self.Id,
+			epoch: v.self.note.epoch + 1,
+			mask:  newMask,
+		}
+
+		err = newNote.sign(v.privKey)
+		if err != nil {
+			log.Error(err.Error())
+		}
+
+		v.self.note = newNote
+
+		return true
+	} else {
+		return false
 	}
 }
 
@@ -302,6 +384,35 @@ func (v *View) incrementMonitorRing() {
 	}
 }
 
+func (v *View) selfNote() *gossip.Note {
+	v.self.noteMutex.RLock()
+	defer v.self.noteMutex.RUnlock()
+
+	return v.self.note.ToPbMsg()
+}
+
+func (v *View) State() *gossip.State {
+	ownNote := v.selfNote()
+
+	v.viewMutex.RLock()
+	defer v.viewMutex.RUnlock()
+
+	ret := &gossip.State{
+		ExistingHosts: make(map[string]uint64),
+		OwnNote:       ownNote,
+	}
+
+	for _, p := range v.viewMap {
+		if note := p.Note(); note != nil {
+			ret.ExistingHosts[p.Id] = note.epoch
+		} else {
+			ret.ExistingHosts[p.Id] = 0
+		}
+	}
+
+	return ret
+}
+
 func (v View) ValidMask(mask uint32) bool {
 	err := validMask(mask, v.rings.numRings, v.maxByz)
 	if err != nil {
@@ -320,6 +431,39 @@ func (v View) IsRingDisabled(mask, ringNum uint32) bool {
 	}
 
 	return false
+}
+
+func (v *View) deactivateRing(ringNumber uint32) (uint32, error) {
+	if v.maxByz == 0 {
+		return 0, errZeroDeactivate
+	}
+
+	ringIdx := ringNumber - 1
+
+	maxIdx := v.rings.numRings - 1
+
+	if ringIdx > maxIdx || ringNumber < 0 {
+		return 0, errNonExistingRing
+	}
+
+	currMask := v.self.note.mask
+	if active := hasBit(currMask, ringIdx); !active {
+		return 0, errAlreadyDeactivated
+	}
+
+	if v.deactivatedRings == v.maxByz {
+		var idx uint32
+		for idx = 0; idx < maxIdx; idx++ {
+			if idx != ringIdx && !hasBit(currMask, idx) {
+				break
+			}
+		}
+		currMask = setBit(currMask, idx)
+	} else {
+		v.deactivatedRings++
+	}
+
+	return clearBit(currMask, ringIdx), nil
 }
 
 func validMask(mask, numRings, maxByz uint32) error {
