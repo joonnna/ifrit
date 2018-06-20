@@ -36,6 +36,10 @@ func (n Note) ToPbMsg() *gossip.Note {
 }
 
 func (n *Note) sign(privKey *ecdsa.PrivateKey) error {
+	if privKey == nil {
+		return errNoPrivKey
+	}
+
 	noteMsg := &gossip.Note{
 		Epoch: n.epoch,
 		Id:    []byte(n.id),
