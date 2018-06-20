@@ -21,7 +21,7 @@ var (
 	errAccusedId               = errors.New("accused id is invalid")
 	errAccuserId               = errors.New("accuser id is invalid")
 	errAccuserSign             = errors.New("accusation signature is invalid")
-	errPubKeyErr               = errors.New("Public key type is invalid")
+	errPubKey                  = errors.New("Public key type is invalid")
 	errOldEpoch                = errors.New("accusation contains old epoch")
 	errNoNote                  = errors.New("no note found for the accused peer")
 	errInvalidRing             = errors.New("Tried to set an accusation on a non-existing ring")
@@ -70,6 +70,10 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	var i uint32
 	var http string
 
+	if numRings == 0 {
+		return nil, errNoRings
+	}
+
 	if fields := len(cert.Subject.Locality); fields < 2 {
 		return nil, errPeerAddr
 	} else if fields == 3 {
@@ -83,7 +87,7 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	pb := new(ecdsa.PublicKey)
 
 	if pb, ok = cert.PublicKey.(*ecdsa.PublicKey); !ok {
-		return nil, errPubKeyErr
+		return nil, errPubKey
 	}
 
 	accMap := make(map[uint32]*Accusation)
@@ -105,10 +109,20 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 }
 
 func (p Peer) Certificate() []byte {
+	if p.cert == nil {
+		log.Error("Peer had no certificate")
+		return nil
+	}
+
 	return p.cert.Raw
 }
 
 func (p Peer) ValidateSignature(r, s, data []byte) bool {
+	if p.publicKey == nil {
+		log.Error("Peer had no publicKey")
+		return false
+	}
+
 	var rInt, sInt big.Int
 
 	b := hashContent(data)
@@ -161,6 +175,18 @@ func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNu
 
 	if _, ok := p.accusations[ringNum]; !ok {
 		return errInvalidRing
+	}
+
+	if r == nil || s == nil {
+		return errAccuserSign
+	}
+
+	if accused == "" {
+		return errAccusedId
+	}
+
+	if accuser == "" {
+		return errAccuserId
 	}
 
 	a := &Accusation{
@@ -247,6 +273,8 @@ func (p *Peer) AllAccusations() []*Accusation {
 	ret := make([]*Accusation, 0, len(p.accusations))
 
 	for _, v := range p.accusations {
+		// All keys (1-numRings) are always present,
+		// but their values nil if not accused on that ring.
 		if v != nil {
 			ret = append(ret, v)
 		}
@@ -294,12 +322,21 @@ func (p *Peer) Note() *Note {
 
 func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
 	var c *gossip.Certificate
+	var n *gossip.Note
 
-	c = &gossip.Certificate{
-		Raw: p.cert.Raw,
+	if p.cert != nil {
+		c = &gossip.Certificate{
+			Raw: p.cert.Raw,
+		}
+	} else {
+		log.Error("Had no certificate for peer", "addr", p.Addr)
 	}
 
-	n := p.Note().ToPbMsg()
+	if note := p.Note(); note != nil {
+		n = note.ToPbMsg()
+	} else {
+		log.Debug("No note existed for peer", "addr", p.Addr)
+	}
 
 	accs := p.AllAccusations()
 	a := make([]*gossip.Accusation, 0, len(accs))
