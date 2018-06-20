@@ -3,9 +3,14 @@ package discovery
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"errors"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/joonnna/ifrit/protobuf"
+)
+
+var (
+	errNoPrivKey = errors.New("Provided private key was nil")
 )
 
 type Accusation struct {
@@ -44,6 +49,10 @@ func (a Accusation) ToPbMsg() *gossip.Accusation {
 }
 
 func (a *Accusation) sign(privKey *ecdsa.PrivateKey) error {
+	if privKey == nil {
+		return errNoPrivKey
+	}
+
 	accMsg := &gossip.Accusation{
 		Epoch:   a.epoch,
 		Accuser: []byte(a.accuser),
