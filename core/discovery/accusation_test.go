@@ -26,66 +26,53 @@ func TestAccTestSuite(t *testing.T) {
 }
 
 func (suite *AccTestSuite) TestEqual() {
-	id1 := "testid1"
-	id2 := "testid2"
-	var ringNum uint32 = 3
-	var epoch uint64 = 7
-
 	acc := &Accusation{
-		accused: id1,
-		accuser: id2,
-		ringNum: ringNum,
-		epoch:   epoch,
+		accused: "testid1",
+		accuser: "testid2",
+		ringNum: 3,
+		epoch:   5,
 	}
 
-	assert.True(suite.T(), acc.Equal(id1, id2, ringNum, epoch), "accusation compare returns true with 2 equal accusations")
+	assert.True(suite.T(), acc.Equal(acc.accused, acc.accuser, acc.ringNum, acc.epoch), "accusation compare returns true with 2 equal accusations")
 
-	assert.False(suite.T(), acc.Equal(id1, id1, ringNum, epoch), "accusation compare returns true when accuser is wrong")
+	assert.False(suite.T(), acc.Equal(acc.accused, "wrong_accuser", acc.ringNum, acc.epoch), "accusation compare returns true when accuser is wrong")
 
-	assert.False(suite.T(), acc.Equal(id2, id1, ringNum, epoch), "accusation compare returns true when accused is wrong")
+	assert.False(suite.T(), acc.Equal("wrong_accused", acc.accuser, acc.ringNum, acc.epoch), "accusation compare returns true when accused is wrong")
 
-	assert.False(suite.T(), acc.Equal(id1, id2, ringNum-1, epoch), "accusation compare returns true when ringNum is wrong")
+	assert.False(suite.T(), acc.Equal(acc.accused, acc.accuser, acc.ringNum-1, acc.epoch), "accusation compare returns true when ringNum is wrong")
 
-	assert.False(suite.T(), acc.Equal(id1, id2, ringNum, epoch-1), "accusation compare returns true when epoch is wrong")
+	assert.False(suite.T(), acc.Equal(acc.accused, acc.accuser, acc.ringNum, acc.epoch-1), "accusation compare returns true when epoch is wrong")
 }
 
 func (suite *AccTestSuite) TestIsMoreRecent() {
-	var epoch uint64 = 5
-
 	acc := &Accusation{
-		epoch: epoch,
+		epoch: 5,
 	}
 
-	assert.True(suite.T(), acc.IsMoreRecent(epoch+1), "returns false when epoch is higher than accusation epoch")
+	assert.True(suite.T(), acc.IsMoreRecent(acc.epoch+1), "returns false when epoch is higher than accusation epoch")
 
-	assert.False(suite.T(), acc.IsMoreRecent(epoch-1), "returns true when epoch is lower than accusation epoch")
+	assert.False(suite.T(), acc.IsMoreRecent(acc.epoch-1), "returns true when epoch is lower than accusation epoch")
 
-	assert.False(suite.T(), acc.IsMoreRecent(epoch), "returns true when epoch is equal to the accusation epoch")
+	assert.False(suite.T(), acc.IsMoreRecent(acc.epoch), "returns true when epoch is equal to the accusation epoch")
 }
 
 func (suite *AccTestSuite) TestIsAccuser() {
-	testId := "testid1"
-
 	acc := &Accusation{
-		accuser: testId,
+		accuser: "testid1",
 	}
 
-	assert.True(suite.T(), acc.IsAccuser(testId), "returns false when id is the accuser")
+	assert.True(suite.T(), acc.IsAccuser(acc.accuser), "returns false when id is the accuser")
 
-	assert.False(suite.T(), acc.IsAccuser(testId+"test"), "returns true when id is not the accuser")
+	assert.False(suite.T(), acc.IsAccuser(acc.accuser+"test"), "returns true when id is not the accuser")
 }
 
 func (suite *AccTestSuite) TestToPbMsg() {
-	id1 := "testid1"
-	id2 := "testid2"
-	var ringNum uint32 = 3
-	var epoch uint64 = 7
-
 	acc := &Accusation{
-		accused: id1,
-		accuser: id2,
-		ringNum: ringNum,
-		epoch:   epoch,
+		accused: "testid1",
+		accuser: "testid2",
+		ringNum: 3,
+		mask:    1,
+		epoch:   5,
 		signature: &signature{
 			r: []byte("testR"),
 			s: []byte("testS"),
@@ -112,16 +99,11 @@ func (suite *AccTestSuite) TestToPbMsg() {
 }
 
 func (suite *AccTestSuite) TestSign() {
-	id1 := "testid1"
-	id2 := "testid2"
-	var ringNum uint32 = 3
-	var epoch uint64 = 7
-
 	acc := &Accusation{
-		accused: id1,
-		accuser: id2,
-		ringNum: ringNum,
-		epoch:   epoch,
+		accused: "testid1",
+		accuser: "testid2",
+		ringNum: 5,
+		epoch:   3,
 	}
 
 	privKey, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
