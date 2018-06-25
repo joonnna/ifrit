@@ -4,10 +4,13 @@ import (
 	"errors"
 	_ "fmt"
 	_ "math/big"
+
+	log "github.com/inconshreveable/log15"
 )
 
 var (
-	errIdNotFound = errors.New("ring id not found")
+	errIdNotFound = errors.New("ring id not found.")
+	errZeroLength = errors.New("Slice is of zero length.")
 )
 
 /*
@@ -16,41 +19,45 @@ type item interface {
 }
 */
 
-func insert(slice []*ringId, newId *ringId) ([]*ringId, int) {
-	length := len(slice)
-	currIdx := 0
-	maxIdx := length - 1
+func insert(slice []*ringId, newId *ringId, length int) ([]*ringId, int) {
+	var currIdx int
+	maxIdx := int(length) - 1
 
-	if maxIdx == -1 {
-		slice = append(slice, newId)
-		return slice, currIdx
+	if length == 0 {
+		return []*ringId{newId}, 0
 	}
 
 	for {
 		if currIdx >= maxIdx {
-			slice = append(slice, nil)
-			copy(slice[currIdx+1:], slice[currIdx:])
-
 			if slice[currIdx].compare(newId) == -1 {
 				currIdx += 1
 			}
-			slice[currIdx] = newId
 
-			return slice, currIdx
+			ret := append(slice[:currIdx], append([]*ringId{newId}, slice[currIdx:]...)...)
+
+			return ret, currIdx
 		}
 		mid := (currIdx + maxIdx) / 2
 
-		if slice[mid].compare(newId) == -1 {
+		if cmp := slice[mid].compare(newId); cmp == -1 {
 			currIdx = mid + 1
-		} else {
+		} else if cmp == 1 {
 			maxIdx = mid - 1
+		} else {
+			// TODO change this? (handled by higher lvl code)
+			maxIdx = mid - 1
+			log.Error("Found equal ids, system will behave undefined.")
 		}
 	}
 }
 
-func search(slice []*ringId, searchId *ringId) (int, error) {
-	length := len(slice)
-	currIdx := 0
+func search(slice []*ringId, searchId *ringId, length int) (int, error) {
+	var currIdx int
+
+	if length == 0 {
+		return 0, errZeroLength
+	}
+
 	maxIdx := length - 1
 
 	for {
@@ -58,9 +65,8 @@ func search(slice []*ringId, searchId *ringId) (int, error) {
 			if slice[currIdx].compare(searchId) == 0 {
 				return currIdx, nil
 			} else {
-				return -1, errIdNotFound
+				return 0, errIdNotFound
 			}
-
 		}
 		mid := (currIdx + maxIdx) / 2
 
@@ -76,14 +82,26 @@ func search(slice []*ringId, searchId *ringId) (int, error) {
 	}
 }
 
-func findNeighbourIdx(slice []*ringId, searchId *ringId) int {
-	length := len(slice)
-	currIdx := 0
+func findSuccAndPrev(slice []*ringId, searchId *ringId, length int) (*ringId, *ringId) {
+	var currIdx int
+	var successor, predecessor *ringId
+
 	maxIdx := length - 1
 
 	for {
 		if currIdx >= maxIdx {
-			return currIdx
+			if cmp := slice[currIdx].compare(searchId); cmp == -1 {
+				predecessor = slice[currIdx]
+				successor = succ(slice, currIdx, length)
+			} else if cmp == 1 {
+				successor = slice[currIdx]
+				predecessor = prev(slice, currIdx, length)
+			} else {
+				successor = succ(slice, currIdx, length)
+				predecessor = prev(slice, currIdx, length)
+			}
+
+			return successor, predecessor
 		}
 		mid := (currIdx + maxIdx) / 2
 
@@ -94,7 +112,25 @@ func findNeighbourIdx(slice []*ringId, searchId *ringId) int {
 		} else if cmp == 1 {
 			maxIdx = mid - 1
 		} else {
-			return mid
+			successor = succ(slice, mid, length)
+			predecessor = prev(slice, mid, length)
+			return successor, predecessor
 		}
+	}
+}
+
+func succ(slice []*ringId, idx, length int) *ringId {
+	return slice[(idx+1)%length]
+}
+
+func prev(slice []*ringId, idx, length int) *ringId {
+	if idx == 0 {
+		// If length is 0 we will crash,
+		// this should never occur since we always have ourselves in the succList.
+		// If it does occur we would rather crash
+		// to hinder a subtle invalid system state.
+		return slice[length-1]
+	} else {
+		return slice[(idx-1)%length]
 	}
 }
