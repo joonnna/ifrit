@@ -34,8 +34,9 @@ type ring struct {
 	peerToRing map[string]*ringId
 
 	succList []*ringId
+	length   int
 
-	selfIdx int
+	selfIdx uint32
 	selfId  *ringId
 }
 
@@ -55,7 +56,7 @@ func (ri ringId) equal(other *ringId) bool {
 func createRings(self *Peer, numRings uint32) (*rings, error) {
 	var i uint32
 
-	if self == nil {
+	if self == nil || self.Id == "" {
 		return nil, errNoSelf
 	}
 
@@ -90,7 +91,7 @@ func (rs *rings) remove(p *Peer) {
 
 func (rs rings) isPredecessor(id, toCheck string, ringNum uint32) bool {
 	if ring, ok := rs.ringMap[ringNum]; !ok {
-		log.Error("Invalid ring number", "ringnum", ringNum)
+		log.Error("Invalid ring number", "ringNum", ringNum)
 		return false
 	} else {
 		return ring.isPrev(id, toCheck)
@@ -104,16 +105,14 @@ func (rs rings) findNeighbours(id string) []*Peer {
 	for _, r := range rs.ringMap {
 		succ, prev := r.neighbours(id)
 
-		if succ != nil {
-			if _, ok := exists[succ.Id]; !ok {
-				ret = append(ret, succ)
-			}
+		if _, ok := exists[succ.p.Id]; !ok {
+			exists[succ.p.Id] = true
+			ret = append(ret, succ.p)
 		}
 
-		if prev != nil {
-			if _, ok := exists[prev.Id]; !ok {
-				ret = append(ret, prev)
-			}
+		if _, ok := exists[prev.p.Id]; !ok {
+			exists[prev.p.Id] = true
+			ret = append(ret, prev.p)
 		}
 	}
 
@@ -128,12 +127,14 @@ func (rs rings) allMyNeighbours() []*Peer {
 		succ := r.successor()
 		prev := r.predecessor()
 
-		if _, ok := exists[succ.Id]; !ok {
-			ret = append(ret, succ)
+		if _, ok := exists[succ.p.Id]; !ok {
+			exists[succ.p.Id] = true
+			ret = append(ret, succ.p)
 		}
 
-		if _, ok := exists[prev.Id]; !ok {
-			ret = append(ret, prev)
+		if _, ok := exists[prev.p.Id]; !ok {
+			exists[prev.p.Id] = true
+			ret = append(ret, prev.p)
 		}
 	}
 
@@ -149,8 +150,8 @@ func (rs rings) myRingNeighbours(ringNum uint32) []*Peer {
 
 	ret := make([]*Peer, 0, 2)
 
-	succ := r.successor()
-	prev := r.predecessor()
+	succ := r.successor().p
+	prev := r.predecessor().p
 
 	ret = append(ret, succ)
 
@@ -168,7 +169,7 @@ func (rs rings) myRingSuccessor(ringNum uint32) *Peer {
 		return nil
 	}
 
-	return r.successor()
+	return r.successor().p
 }
 
 func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
@@ -178,14 +179,12 @@ func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
 		return nil
 	}
 
-	return r.predecessor()
+	return r.predecessor().p
 }
 
 func (rs rings) shouldBeMyNeighbour(id string) bool {
-	rId := []byte(id)
-
 	for _, r := range rs.ringMap {
-		if isNeighbour := r.betweenNeighbours(rId); isNeighbour {
+		if isNeighbour := r.betweenNeighbours(id); isNeighbour {
 			return true
 		}
 	}
@@ -204,13 +203,22 @@ func newRing(ringNum uint32, self *Peer) *ring {
 		succList:   []*ringId{id},
 		selfId:     id,
 		peerToRing: make(map[string]*ringId),
+		length:     1,
 	}
+
+	r.peerToRing[self.Id] = id
 
 	return r
 }
 
 func (r *ring) add(p *Peer) {
 	var idx int
+
+	if _, ok := r.peerToRing[p.Id]; ok {
+		log.Error("Peer already exists in ring", "ringNum", r.ringNum, "addr", p.Addr)
+		return
+	}
+
 	hash := hashId(r.ringNum, []byte(p.Id))
 
 	id := &ringId{
@@ -218,10 +226,11 @@ func (r *ring) add(p *Peer) {
 		p:    p,
 	}
 
-	r.succList, idx = insert(r.succList, id)
-	if idx <= r.selfIdx {
+	r.succList, idx = insert(r.succList, id, r.length)
+	if uint32(idx) <= r.selfIdx {
 		r.selfIdx += 1
 	}
+	r.length++
 
 	if eq := r.succList[r.selfIdx].equal(r.selfId); !eq {
 		log.Error(errLostSelf.Error())
@@ -232,17 +241,8 @@ func (r *ring) add(p *Peer) {
 	//TODO should check if i get a new neighbor, if so, add possibility
 	//to remove rpc connection of old neighbor.
 
-	len := len(r.succList)
-
-	succIdx := (idx + 1) % len
-
-	prevIdx := (idx - 1) % len
-	if prevIdx < 0 {
-		prevIdx = prevIdx + len
-	}
-
-	succ := r.succList[succIdx].p
-	prev := r.succList[prevIdx].p
+	succ := r.succAtIdx(idx).p
+	prev := r.prevAtIdx(idx).p
 
 	acc := succ.RingAccusation(r.ringNum)
 	if acc != nil && acc.IsAccuser(prev.Id) {
@@ -251,22 +251,34 @@ func (r *ring) add(p *Peer) {
 }
 
 func (r *ring) remove(p *Peer) {
-	ringId := r.peerToRing[p.Id]
+	var rId *ringId
+	var ok bool
 
-	idx, err := search(r.succList, ringId)
+	if rId, ok = r.peerToRing[p.Id]; !ok {
+		log.Error("Peer does not exists in ring", "ringNum", r.ringNum, "addr", p.Addr)
+		return
+	}
+
+	if r.length == 0 {
+		log.Error("Successor list is already empty.")
+		return
+	}
+
+	idx, err := search(r.succList, rId, r.length)
 	if err != nil {
 		log.Error(err.Error())
 		return
 	}
 
-	if idx < r.selfIdx {
+	if uint32(idx) < r.selfIdx {
 		r.selfIdx -= 1
-	} else if idx == r.selfIdx {
+	} else if uint32(idx) == r.selfIdx {
 		log.Error(errRemoveSelf.Error())
 		return
 	}
 
 	r.succList = append(r.succList[:idx], r.succList[idx+1:]...)
+	r.length--
 
 	delete(r.peerToRing, p.Id)
 
@@ -278,95 +290,67 @@ func (r *ring) remove(p *Peer) {
 func (r *ring) isPrev(id, toCheck string) bool {
 	toCheckId, ok := r.peerToRing[toCheck]
 	if !ok {
+		log.Error("Could not find toCheckId")
 		return false
 	}
 
 	currId, ok := r.peerToRing[id]
 	if !ok {
+		log.Error("Could not find currId")
 		return false
 	}
 
-	i, err := search(r.succList, currId)
+	i, err := search(r.succList, currId, r.length)
 	if err != nil {
 		log.Error(errIdNotFound.Error())
 		return false
 	}
 
-	len := len(r.succList)
+	prev := r.prevAtIdx(i)
 
-	idx := (i - 1) % len
-	if idx < 0 {
-		idx = idx + len
-	}
+	return prev.equal(toCheckId)
+}
 
-	if eq := r.succList[idx].equal(toCheckId); eq {
+func (r *ring) betweenNeighbours(other string) bool {
+	var id *ringId
+	var ok bool
+
+	if r.length <= 1 {
 		return true
 	}
 
-	return false
-}
-
-func (r *ring) betweenNeighbours(other []byte) bool {
-	var id *ringId
-
-	exists, ok := r.peerToRing[string(other)]
-	if !ok {
+	if id, ok = r.peerToRing[other]; !ok {
 		// Do not have peer representation
 		// only need hash to perform search.
 		id = &ringId{
-			hash: hashId(r.ringNum, other),
+			hash: hashId(r.ringNum, []byte(other)),
 		}
-	} else {
-		id = exists
 	}
 
-	len := len(r.succList)
-
-	if len <= 1 {
-		return true
-	}
-
-	idx := (r.selfIdx + 1) % len
-	succ := r.succList[idx]
-
-	prevIdx := (r.selfIdx - 1) % len
-	if prevIdx < 0 {
-		prevIdx = prevIdx + len
-	}
-	prev := r.succList[prevIdx]
-
-	if !isBetween(r.selfId, succ, id) && !isBetween(prev, r.selfId, id) {
+	if !isBetween(r.selfId, r.successor(), id) && !isBetween(r.predecessor(), r.selfId, id) {
 		return false
 	} else {
 		return true
 	}
 }
 
-func (r *ring) neighbours(id string) (*Peer, *Peer) {
-	len := len(r.succList)
+func (r *ring) neighbours(id string) (*ringId, *ringId) {
+	var ok bool
+	var rId *ringId
 
-	if len <= 1 {
-		return r.selfId.p, r.selfId.p
+	if r.length <= 1 {
+		return r.selfId, r.selfId
 	}
 
-	ringId := r.peerToRing[id]
-
-	idx, err := search(r.succList, ringId)
-	if err != nil {
-		log.Error(errRingIdNotFound.Error())
-		return nil, nil
+	if rId, ok = r.peerToRing[id]; !ok {
+		// Do not have peer representation
+		// only need hash to perform search.
+		rId = &ringId{
+			hash: hashId(r.ringNum, []byte(id)),
+		}
 	}
 
-	prevIdx := (idx - 1) % len
-	if prevIdx < 0 {
-		prevIdx = prevIdx + len
-	}
-	prev := r.succList[prevIdx].p
-
-	succIdx := (idx + 1) % len
-	succ := r.succList[succIdx].p
-
-	return succ, prev
+	return findSuccAndPrev(r.succList, rId, r.length)
 }
 
 func isBetween(start, end, new *ringId) bool {
@@ -399,20 +383,20 @@ func isBetween(start, end, new *ringId) bool {
 	}
 }
 
-func (r *ring) successor() *Peer {
-	idx := (r.selfIdx + 1) % len(r.succList)
-
-	return r.succList[idx].p
+func (r *ring) successor() *ringId {
+	return succ(r.succList, int(r.selfIdx), r.length)
 }
 
-func (r *ring) predecessor() *Peer {
-	len := len(r.succList)
+func (r *ring) predecessor() *ringId {
+	return prev(r.succList, int(r.selfIdx), r.length)
+}
 
-	idx := (r.selfIdx - 1) % len
-	if idx < 0 {
-		idx = idx + len
-	}
-	return r.succList[idx].p
+func (r *ring) succAtIdx(idx int) *ringId {
+	return succ(r.succList, idx, r.length)
+}
+
+func (r *ring) prevAtIdx(idx int) *ringId {
+	return prev(r.succList, idx, r.length)
 }
 
 func hashId(ringNum uint32, id []byte) []byte {
