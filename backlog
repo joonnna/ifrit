@@ -1,23 +1,34 @@
 - Configuration rework (done)
 
 - Documentation
+    - Document internals
+    - Readme (partly done)
+    - GoDoc (partly done)
+    - More examples
 
 - API cleanup
     - Remove recording feature (?)
     - Remove SendAll (done)
+    - Remove features only required for experiments (?)
 
 - Code overhaul
     - View seperation (done)
     - Accusations from dead members
     - Rebuttal rework
+    - Detach visualizer component from rest of system
+    - Cleanup errors
 
 - Testing overhaul
+    - Re-write all tests after code overhaul
     - Full behavior tests
     - Change test setup
 
 - Persistence (Client)
     - Certificates (peers and CA)
     - View state
+
+- Certificates
+    - Change address placements
 
 
 Do seperate pull requests for all (for tracking)
