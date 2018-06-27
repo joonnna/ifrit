@@ -65,8 +65,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 		reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: n.localCert.Raw})
 		reply.Notes = append(reply.Notes, n.self.Note().ToPbMsg())
 
-		peers := n.view.FindNeighbours(remoteId)
-		for _, p := range peers {
+		for _, p := range n.view.FindNeighbours(remoteId) {
 			reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.Certificate()})
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
@@ -340,7 +339,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 	if cert == nil {
-		log.Debug("Got nil cert")
+		log.Error("Got nil cert")
 		return false
 	}
 

@@ -27,9 +27,6 @@ func (c correct) Rebuttal(n *Node) {
 	}
 
 	for _, p := range neighbours {
-		if p.Id == n.self.Id {
-			continue
-		}
 		_, err := n.client.Gossip(p.Addr, msg)
 		if err != nil {
 			log.Error(err.Error(), "addr", p.Addr)
@@ -44,15 +41,6 @@ func (c correct) Gossip(n *Node) {
 	neighbours := n.view.GossipPartners()
 
 	for _, p := range neighbours {
-		if p.Id == n.self.Id {
-			/*
-				log.Debug("Tried to gossip with myself")
-				log.Debug("Full view", "amount", len(n.getView()))
-				log.Debug("Live view", "amount", len(n.getLivePeers()))
-			*/
-			continue
-		}
-
 		reply, err := n.client.Gossip(p.Addr, msg)
 		if err != nil {
 			log.Error(err.Error(), "addr", p.Addr)
@@ -75,6 +63,10 @@ func (c correct) Gossip(n *Node) {
 
 func (c correct) Monitor(n *Node) {
 	p, ringNum := n.view.MonitorTarget()
+	if p == nil {
+		log.Debug("No peers to monitor, must be alone")
+		return
+	}
 
 	err := n.failureDetector.ping(p)
 	if err == errDead {
