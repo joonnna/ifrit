@@ -23,7 +23,8 @@ var (
 	errAccuserSign             = errors.New("accusation signature is invalid")
 	errPubKey                  = errors.New("Public key type is invalid")
 	errOldEpoch                = errors.New("accusation contains old epoch")
-	errNoNote                  = errors.New("no note found for the accused peer")
+	errFoundNoNote             = errors.New("no note found for the accused peer")
+	errNoCert                  = errors.New("Passed certificate was nil")
 	errInvalidRing             = errors.New("Tried to set an accusation on a non-existing ring")
 	errTooManyDeactivatedRings = errors.New("Mask contains too many deactivated rings")
 	errNonExistingRing         = errors.New("Accusation specifies non exisiting ring")
@@ -72,6 +73,10 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 
 	if numRings == 0 {
 		return nil, errNoRings
+	}
+
+	if cert == nil {
+		return nil, errNoCert
 	}
 
 	if fields := len(cert.Subject.Locality); fields < 2 {
