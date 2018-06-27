@@ -127,12 +127,12 @@ func (rs rings) allMyNeighbours() []*Peer {
 		succ := r.successor()
 		prev := r.predecessor()
 
-		if _, ok := exists[succ.p.Id]; !ok {
+		if _, ok := exists[succ.p.Id]; !ok && succ.p.Id != rs.self.Id {
 			exists[succ.p.Id] = true
 			ret = append(ret, succ.p)
 		}
 
-		if _, ok := exists[prev.p.Id]; !ok {
+		if _, ok := exists[prev.p.Id]; !ok && succ.p.Id != rs.self.Id {
 			exists[prev.p.Id] = true
 			ret = append(ret, prev.p)
 		}
@@ -153,9 +153,11 @@ func (rs rings) myRingNeighbours(ringNum uint32) []*Peer {
 	succ := r.successor().p
 	prev := r.predecessor().p
 
-	ret = append(ret, succ)
+	if succ.Id != rs.self.Id {
+		ret = append(ret, succ)
+	}
 
-	if prev.Id != succ.Id {
+	if prev.Id != succ.Id && prev.Id != rs.self.Id {
 		ret = append(ret, prev)
 	}
 
@@ -169,7 +171,13 @@ func (rs rings) myRingSuccessor(ringNum uint32) *Peer {
 		return nil
 	}
 
-	return r.successor().p
+	succ := r.successor().p
+
+	if succ.Id == rs.self.Id {
+		return nil
+	} else {
+		return succ
+	}
 }
 
 func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
@@ -179,7 +187,14 @@ func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
 		return nil
 	}
 
-	return r.predecessor().p
+	prev := r.predecessor().p
+
+	if prev.Id == rs.self.Id {
+		return nil
+	} else {
+		return prev
+	}
+
 }
 
 func (rs rings) shouldBeMyNeighbour(id string) bool {

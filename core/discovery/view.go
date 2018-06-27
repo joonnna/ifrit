@@ -18,6 +18,10 @@ var (
 	errPeerAlreadyExists  = errors.New("Peer id already exists in the full view")
 	errAlreadyDeactivated = errors.New("Ring was already deactivated")
 	errZeroDeactivate     = errors.New("No ring can be deactivated, maxbyz is 0")
+	errNoNote             = errors.New("Note was nil.")
+	errAccusedIsNil       = errors.New("Accused was nil.")
+	errObsIsNil           = errors.New("Observer was nil")
+	errWrongNote          = errors.New("Note does not belong to accused.")
 )
 
 type View struct {
@@ -207,6 +211,7 @@ func (v *View) AddLive(p *Peer) {
 
 	if _, ok := v.liveMap[p.Id]; ok {
 		log.Error("Tried to add peer twice to liveMap", "addr", p.Addr)
+		return
 	}
 
 	v.liveMap[p.Id] = p
@@ -239,16 +244,32 @@ func (v *View) RemoveLive(id string) {
 
 		log.Debug("Removed livePeer", "addr", peer.Addr)
 	} else {
-		log.Debug("Tried to remove non-existing peer from live view", "addr", peer.Addr)
+		log.Debug("Tried to remove non-existing peer from live view.")
 	}
 }
 
-func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) {
+func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) error {
 	v.timeoutMutex.Lock()
 	defer v.timeoutMutex.Unlock()
 
+	if accused == nil {
+		return errAccusedIsNil
+	}
+
+	if n == nil {
+		return errNoNote
+	}
+
+	if observer == nil {
+		return errObsIsNil
+	}
+
+	if n.id != accused.Id {
+		return errWrongNote
+	}
+
 	if t, ok := v.timeoutMap[accused.Id]; ok && t.lastNote.epoch >= n.epoch {
-		return
+		return nil
 	}
 
 	newTimeout := &timeout{
@@ -261,6 +282,8 @@ func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) {
 	v.timeoutMap[accused.Id] = newTimeout
 
 	log.Debug("Started timer", "addr", accused.Addr)
+
+	return nil
 }
 
 func (v *View) HasTimer(id string) bool {
@@ -424,16 +447,12 @@ func (v View) ValidMask(mask uint32) bool {
 }
 
 func (v View) IsRingDisabled(mask, ringNum uint32) bool {
-	err := checkDisabledRings(mask, v.rings.numRings, ringNum)
-	if err != nil {
-		log.Error(err.Error())
-		return true
-	}
-
-	return false
+	return isRingDisabled(mask, v.rings.numRings, ringNum)
 }
 
 func (v *View) deactivateRing(ringNumber uint32) (uint32, error) {
+	var idx uint32
+
 	if v.maxByz == 0 {
 		return 0, errZeroDeactivate
 	}
@@ -452,8 +471,7 @@ func (v *View) deactivateRing(ringNumber uint32) (uint32, error) {
 	}
 
 	if v.deactivatedRings == v.maxByz {
-		var idx uint32
-		for idx = 0; idx < maxIdx; idx++ {
+		for idx = 0; idx <= maxIdx; idx++ {
 			if idx != ringIdx && !hasBit(currMask, idx) {
 				break
 			}
@@ -477,20 +495,16 @@ func validMask(mask, numRings, maxByz uint32) error {
 	return nil
 }
 
-func checkDisabledRings(mask, numRings, ringNum uint32) error {
-	idx := ringNum - 1
+func isRingDisabled(mask, numRings, ringNum uint32) bool {
+	idx := int(ringNum) - 1
 
 	maxIdx := uint32(numRings - 1)
 
-	if idx > maxIdx || idx < 0 {
-		return errNonExistingRing
+	if idx > int(maxIdx) || idx < 0 {
+		return false
 	}
 
-	if active := hasBit(mask, idx); !active {
-		return errDeactivatedRing
-	}
-
-	return nil
+	return !hasBit(mask, uint32(idx))
 }
 
 func setBit(n uint32, pos uint32) uint32 {
