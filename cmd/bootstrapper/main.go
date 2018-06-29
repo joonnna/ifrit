@@ -20,7 +20,6 @@ var (
 )
 
 func createClients(requestChan chan interface{}, exitChan chan bool) {
-	//test := true
 	for {
 		select {
 		case <-requestChan:
@@ -38,26 +37,10 @@ func createClients(requestChan chan interface{}, exitChan chan bool) {
 
 			clients = append(clients, c.Addr())
 
-			/*
-				c.RegisterGossipHandler(gossipHandler)
-				c.RegisterResponseHandler(gossipResponseHandler)
-				c.SetGossipContent([]byte("This is a gossip message"))
-					c.RegisterMsgHandler(msgHandler)
-
-					activateSendTo(c)
-			*/
-			/*
-				if test {
-					activateSendTo(c)
-					test = false
-				}
-			*/
-
 			requestChan <- c
 		case <-exitChan:
 			return
 		}
-
 	}
 }
 

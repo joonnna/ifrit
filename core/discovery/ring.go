@@ -77,10 +77,17 @@ func createRings(self *Peer, numRings uint32) (*rings, error) {
 	return rs, nil
 }
 
-func (rs *rings) add(p *Peer) {
+func (rs *rings) add(p *Peer) []string {
+	oldNeighbours := make([]string, 0)
+
 	for _, ring := range rs.ringMap {
-		ring.add(p)
+		old := ring.add(p)
+		if old != nil {
+			oldNeighbours = append(oldNeighbours, old...)
+		}
 	}
+
+	return oldNeighbours
 }
 
 func (rs *rings) remove(p *Peer) {
@@ -132,7 +139,7 @@ func (rs rings) allMyNeighbours() []*Peer {
 			ret = append(ret, succ.p)
 		}
 
-		if _, ok := exists[prev.p.Id]; !ok && succ.p.Id != rs.self.Id {
+		if _, ok := exists[prev.p.Id]; !ok && prev.p.Id != rs.self.Id {
 			exists[prev.p.Id] = true
 			ret = append(ret, prev.p)
 		}
@@ -226,12 +233,13 @@ func newRing(ringNum uint32, self *Peer) *ring {
 	return r
 }
 
-func (r *ring) add(p *Peer) {
+func (r *ring) add(p *Peer) []string {
 	var idx int
+	var oldNeighbours []string
 
 	if _, ok := r.peerToRing[p.Id]; ok {
 		log.Error("Peer already exists in ring", "ringNum", r.ringNum, "addr", p.Addr)
-		return
+		return nil
 	}
 
 	hash := hashId(r.ringNum, []byte(p.Id))
@@ -241,11 +249,22 @@ func (r *ring) add(p *Peer) {
 		p:    p,
 	}
 
+	oldSucc := r.successor()
+	oldPrev := r.predecessor()
+
 	r.succList, idx = insert(r.succList, id, r.length)
 	if uint32(idx) <= r.selfIdx {
 		r.selfIdx += 1
 	}
 	r.length++
+
+	if new := r.successor(); !new.equal(oldSucc) {
+		oldNeighbours = append(oldNeighbours, oldSucc.p.Addr)
+	}
+
+	if new := r.predecessor(); !new.equal(oldPrev) {
+		oldNeighbours = append(oldNeighbours, oldPrev.p.Addr)
+	}
 
 	if eq := r.succList[r.selfIdx].equal(r.selfId); !eq {
 		log.Error(errLostSelf.Error())
@@ -263,6 +282,8 @@ func (r *ring) add(p *Peer) {
 	if acc != nil && acc.IsAccuser(prev.Id) {
 		succ.RemoveRingAccusation(r.ringNum)
 	}
+
+	return oldNeighbours
 }
 
 func (r *ring) remove(p *Peer) {
@@ -321,9 +342,7 @@ func (r *ring) isPrev(id, toCheck string) bool {
 		return false
 	}
 
-	prev := r.prevAtIdx(i)
-
-	return prev.equal(toCheckId)
+	return r.prevAtIdx(i).equal(toCheckId)
 }
 
 func (r *ring) betweenNeighbours(other string) bool {

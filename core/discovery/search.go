@@ -124,13 +124,10 @@ func succ(slice []*ringId, idx, length int) *ringId {
 }
 
 func prev(slice []*ringId, idx, length int) *ringId {
-	if idx == 0 {
-		// If length is 0 we will crash,
-		// this should never occur since we always have ourselves in the succList.
-		// If it does occur we would rather crash
-		// to hinder a subtle invalid system state.
-		return slice[length-1]
+	i := (idx - 1) % length
+	if i < 0 {
+		return slice[i+length]
 	} else {
-		return slice[(idx-1)%length]
+		return slice[i]
 	}
 }

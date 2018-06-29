@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
 	"github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
@@ -23,12 +24,12 @@ var (
 )
 
 func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateResponse, error) {
-	reply := &gossip.StateResponse{}
-
 	cert, err := n.validateCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	reply := &gossip.StateResponse{}
 
 	remoteId := string(cert.SubjectKeyId[:])
 	neighbours := n.view.ShouldBeNeighbour(remoteId)
@@ -46,10 +47,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 
 	// Peers that have already been seen should be rejected
 	if !neighbours && peer != nil {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
-
 		n.evalNote(args.GetOwnNote())
 
 		return nil, errNotMyNeighbour
@@ -70,10 +67,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
 			}
-		}
-
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementCompleted()
 		}
 
 		return reply, nil
@@ -97,10 +90,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if record := n.stats.getRecordFlag(); record {
-		n.stats.incrementCompleted()
 	}
 
 	return reply, nil
@@ -188,39 +177,35 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 }
 
 func (n *Node) evalAccusation(a *gossip.Accusation) {
+	var accuserPeer *discovery.Peer
+
 	sign := a.GetSignature()
 	epoch := a.GetEpoch()
 	mask := a.GetMask()
 	ringNum := a.GetRingNum()
 
-	accusedId := string(a.GetAccuser())
-	accuserId := string(a.GetAccused())
+	accusedId := string(a.GetAccused())
+	accuserId := string(a.GetAccuser())
 
 	if n.self.Id == accusedId {
-		/*
-			Pending removal, must check this in criticial section
-			if e := n.LocalEpoch(); epoch != e {
-				log.Debug("Received accusation for myself on old note", "epoch", epoch, "local epoch", e)
-				return
-			}
-			n.setEpoch((epoch + 1))
-			n.deactivateRing(ringNum)
-		*/
-
 		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
 			n.getProtocol().Rebuttal(n)
 		}
 		return
 	}
 
-	p := n.view.Peer(accusedId)
+	p := n.view.LivePeer(accusedId)
 	if p == nil || p.Note() == nil {
 		return
 	}
 
-	accuserPeer := n.view.LivePeer(accuserId)
-	if accuserPeer == nil || accuserPeer.Note() == nil {
-		return
+	if accuserId == n.self.Id {
+		accuserPeer = n.self
+	} else {
+		accuserPeer = n.view.LivePeer(accuserId)
+		if accuserPeer == nil || accuserPeer.Note() == nil {
+			return
+		}
 	}
 
 	acc := p.RingAccusation(ringNum)
@@ -233,8 +218,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 		return
 	}
 
-	note := p.Note()
-	if note != nil && note.SameEpoch(epoch) {
+	if note := p.Note(); note != nil && note.Equal(epoch) {
 		if valid := n.view.ValidMask(mask); !valid {
 			return
 		}
@@ -244,11 +228,12 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 		}
 
 		if valid := n.view.ValidAccuser(p.Id, accuserPeer.Id, ringNum); !valid {
-			log.Error("Accuser is not pre-decessor of accused on given ring, invalid accusation")
+			log.Error("Accuser is not predecessor of accused on given ring, invalid accusation", "ringNum", ringNum, "accused", p.Addr, "accuser", accuserPeer.Addr)
+
 			return
 		}
 
-		if valid := checkAccusationSignature(a, accuserPeer, p); !valid {
+		if valid := checkAccusationSignature(a, accuserPeer); !valid {
 			return
 		}
 
@@ -265,7 +250,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation) {
 }
 
 func (n *Node) evalNote(gossipNote *gossip.Note) bool {
-	var isRebuttal bool
+	var haveRebuted bool
 
 	if gossipNote == nil {
 		log.Debug("Got nil note")
@@ -280,6 +265,12 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 		return false
 	}
 
+	note := p.Note()
+
+	if note != nil && note.Equal(epoch) {
+		return false
+	}
+
 	if valid := n.view.ValidMask(mask); !valid {
 		return false
 	}
@@ -288,7 +279,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 	// Not accused, only need to check if newnote is more recent
 	if numAccs := len(accusations); numAccs == 0 {
 		// Want to store the most recent note
-		if currNote := p.Note(); currNote == nil || currNote.IsMoreRecent(epoch) {
+		if note == nil || note.IsMoreRecent(epoch) {
 			if valid := checkNoteSignature(gossipNote, p); !valid {
 				return false
 			}
@@ -308,7 +299,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 				// We do not repeat all rebuttal operations for each accusation.
 				// E.g only check signature once, add one new note, only delete timeout once,
 				// etc.
-				if !isRebuttal {
+				if !haveRebuted {
 					if valid := checkNoteSignature(gossipNote, p); !valid {
 						continue
 					}
@@ -321,7 +312,11 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 					p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
 					p.ResetPing()
 
-					isRebuttal = true
+					if alive := n.view.IsAlive(p.Id); !alive {
+						n.view.AddLive(p)
+					}
+
+					haveRebuted = true
 				}
 				p.RemoveAccusation(a)
 			}
@@ -334,7 +329,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 
 	}
 
-	return isRebuttal
+	return haveRebuted
 }
 
 func (n *Node) evalCertificate(cert *x509.Certificate) bool {
@@ -349,13 +344,13 @@ func (n *Node) evalCertificate(cert *x509.Certificate) bool {
 		return false
 	}
 
-	if exists := n.view.Exists(id); !exists {
-		err := checkCertificateSignature(cert, n.caCert)
-		if err != nil {
-			log.Error(err.Error())
-			return false
-		}
+	err := checkCertificateSignature(cert, n.caCert)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
 
+	if exists := n.view.Exists(id); !exists {
 		n.view.AddFull(id, cert)
 	}
 
@@ -368,23 +363,14 @@ func (n *Node) validateCtx(ctx context.Context) (*x509.Certificate, error) {
 
 	p, ok := grpcPeer.FromContext(ctx)
 	if !ok {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
 		return nil, errNoPeerInCtx
 	}
 
 	if tlsInfo, ok = p.AuthInfo.(credentials.TLSInfo); !ok {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
 		return nil, errNoTLSInfo
 	}
 
 	if len(tlsInfo.State.PeerCertificates) < 1 {
-		if record := n.stats.getRecordFlag(); record {
-			n.stats.incrementFailed()
-		}
 		return nil, errNoCert
 	}
 

@@ -1,12 +1,6 @@
 package core
 
 import (
-	"crypto/ecdsa"
-	"os"
-	"testing"
-
-	log "github.com/inconshreveable/log15"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -18,6 +12,7 @@ type NodeTestSuite struct {
 	*Node
 }
 
+/*
 func newTestPeer(id string, numRings uint32, addr string) (*peer, *ecdsa.PrivateKey) {
 	var i, mask uint32
 
@@ -82,3 +77,4 @@ func TestNodeTestSuite(t *testing.T) {
 
 	suite.Run(t, new(NodeTestSuite))
 }
+*/

@@ -47,7 +47,7 @@ func (c correct) Gossip(n *Node) {
 			continue
 		}
 
-		//log.Debug("Gossipied", "addr", addr)
+		//log.Debug("Gossiped", "addr", p.Addr)
 
 		n.mergeCertificates(reply.GetCertificates())
 		n.mergeNotes(reply.GetNotes())
@@ -62,30 +62,40 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	p, ringNum := n.view.MonitorTarget()
-	if p == nil {
-		log.Debug("No peers to monitor, must be alone")
-		return
-	}
+	var i uint32
 
-	err := n.failureDetector.ping(p)
-	if err == errDead {
-		log.Debug("Successor dead, accusing", "succ", p.Addr)
-		peerNote := p.Note()
-		// Will always have note for a peer in our liveView, except when the peer stems
-		// from the initial contact list of the CA, if it's dead
-		// we should remove it to ensure it doesn't stay in our liveView.
-		// Not possible to accuse a peer without a note.
-		if peerNote == nil {
-			n.view.RemoveLive(p.Id)
+	/*
+		p, ringNum := n.view.MonitorTarget()
+		if p == nil {
+			log.Debug("No peers to monitor, must be alone")
 			return
 		}
+	*/
 
-		err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
-		if err == discovery.ErrAccAlreadyExists {
-			n.view.StartTimer(p, peerNote, n.self)
-		} else if err != nil {
-			log.Error(err.Error())
+	for i = 1; i <= n.view.NumRings(); i++ {
+		p, ringNum := n.view.MonitorTarget()
+		if p == nil {
+			continue
+		}
+		err := n.failureDetector.ping(p)
+		if err == errDead {
+			log.Debug("Successor dead, accusing", "succ", p.Addr, "ringNum", ringNum)
+			peerNote := p.Note()
+			// Will always have note for a peer in our liveView, except when the peer stems
+			// from the initial contact list of the CA, if it's dead
+			// we should remove it to ensure it doesn't stay in our liveView.
+			// Not possible to accuse a peer without a note.
+			if peerNote == nil {
+				n.view.RemoveLive(p.Id)
+				continue
+			}
+
+			err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
+			if err == discovery.ErrAccAlreadyExists {
+				n.view.StartTimer(p, peerNote, n.self)
+			} else if err != nil {
+				log.Error(err.Error())
+			}
 		}
 	}
 }

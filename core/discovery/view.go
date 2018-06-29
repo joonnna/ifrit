@@ -46,9 +46,11 @@ type View struct {
 
 	privKey *ecdsa.PrivateKey
 	self    *Peer
+
+	closeConn func(string)
 }
 
-func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey) (*View, error) {
+func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey, closeConn func(string)) (*View, error) {
 	var i, mask uint32
 
 	maxByz := (float64(numRings) / 2.0) - 1
@@ -94,6 +96,7 @@ func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey)
 		currMonitorRing: 1,
 		privKey:         privKey,
 		self:            self,
+		closeConn:       closeConn,
 	}
 
 	return v, nil
@@ -216,10 +219,13 @@ func (v *View) AddLive(p *Peer) {
 
 	v.liveMap[p.Id] = p
 
-	v.rings.add(p)
+	old := v.rings.add(p)
+	for _, addr := range old {
+		v.closeConn(addr)
+	}
 }
 
-func (v *View) RingNeighbours(ringNum uint32) (*Peer, *Peer) {
+func (v *View) MyRingNeighbours(ringNum uint32) (*Peer, *Peer) {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 
@@ -242,6 +248,8 @@ func (v *View) RemoveLive(id string) {
 
 		delete(v.liveMap, peer.Id)
 
+		v.closeConn(peer.Addr)
+
 		log.Debug("Removed livePeer", "addr", peer.Addr)
 	} else {
 		log.Debug("Tried to remove non-existing peer from live view.")
@@ -251,6 +259,8 @@ func (v *View) RemoveLive(id string) {
 func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) error {
 	v.timeoutMutex.Lock()
 	defer v.timeoutMutex.Unlock()
+
+	var newTimeout *timeout
 
 	if accused == nil {
 		return errAccusedIsNil
@@ -268,15 +278,24 @@ func (v *View) StartTimer(accused *Peer, n *Note, observer *Peer) error {
 		return errWrongNote
 	}
 
-	if t, ok := v.timeoutMap[accused.Id]; ok && t.lastNote.epoch >= n.epoch {
-		return nil
-	}
-
-	newTimeout := &timeout{
-		observer:  observer,
-		timeStamp: time.Now(),
-		lastNote:  n,
-		accused:   accused,
+	if t, ok := v.timeoutMap[accused.Id]; ok {
+		if t.lastNote.epoch < n.epoch {
+			newTimeout = &timeout{
+				observer:  observer,
+				timeStamp: t.timeStamp,
+				lastNote:  n,
+				accused:   accused,
+			}
+		} else {
+			return nil
+		}
+	} else {
+		newTimeout = &timeout{
+			observer:  observer,
+			timeStamp: time.Now(),
+			lastNote:  n,
+			accused:   accused,
+		}
 	}
 
 	v.timeoutMap[accused.Id] = newTimeout
@@ -324,8 +343,8 @@ func (v *View) CheckTimeouts() {
 	for _, t := range timeouts {
 		if time.Since(t.timeStamp).Seconds() > v.removalTimeout {
 			log.Debug("Timeout expired, removing from live", "addr", t.accused.Addr)
-			v.DeleteTimeout(t.accused.Id)
 			v.RemoveLive(t.accused.Id)
+			v.DeleteTimeout(t.accused.Id)
 		}
 	}
 }
@@ -334,7 +353,7 @@ func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
 	v.self.noteMutex.Lock()
 	defer v.self.noteMutex.Unlock()
 
-	if eq := v.self.note.SameEpoch(epoch); eq {
+	if eq := v.self.note.Equal(epoch); eq {
 		newMask := v.self.note.mask
 
 		mask, err := v.deactivateRing(ringNum)

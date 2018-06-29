@@ -30,14 +30,6 @@ var (
 	errNoEntryAddrs = errors.New("No entry_addrs set in config with use_ca disabled")
 )
 
-/*
-const (
-	NormalProtocol          = 1
-	SpamAccusationsProtocol = 2
-	DosProtocol             = 3
-)
-*/
-
 type processMsg func([]byte) ([]byte, error)
 
 type Node struct {
@@ -106,8 +98,8 @@ type Node struct {
 type client interface {
 	Init(config *tls.Config)
 	Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error)
-	Dos(addr string, args *gossip.State) (*gossip.StateResponse, error)
 	SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error)
+	CloseConn(addr string)
 }
 
 type server interface {
@@ -132,9 +124,6 @@ func (n *Node) gossipLoop() {
 			log.Info("Exiting gossiping")
 			return
 		case <-time.After(n.getGossipTimeout()):
-			if n.isGossipRecording() {
-				n.incrementGossipRounds()
-			}
 			n.getProtocol().Gossip(n)
 		}
 	}
@@ -190,10 +179,10 @@ func NewNode(c client, s server) (*Node, error) {
 		l, err = initHttp()
 		if err != nil {
 			log.Error(err.Error())
+		} else {
+			httpPort := strings.Split(l.Addr().String(), ":")[1]
+			http = fmt.Sprintf("%s:%s", netutil.GetLocalIP(), httpPort)
 		}
-
-		httpPort := strings.Split(l.Addr().String(), ":")[1]
-		http = fmt.Sprintf("%s:%s", netutil.GetLocalIP(), httpPort)
 	}
 
 	if useCa := viper.GetBool("use_ca"); useCa {
@@ -220,8 +209,6 @@ func NewNode(c client, s server) (*Node, error) {
 		}
 	}
 
-	log.Debug(http)
-
 	for _, e := range certs.ownCert.Extensions {
 		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
 			extValue = e.Value
@@ -235,7 +222,7 @@ func NewNode(c client, s server) (*Node, error) {
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	v, err := discovery.NewView(numRings, certs.ownCert, privKey)
+	v, err := discovery.NewView(numRings, certs.ownCert, privKey, c.CloseConn)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -267,7 +254,6 @@ func NewNode(c client, s server) (*Node, error) {
 		vizId:            fmt.Sprintf("http://%s", http),
 		trustedBootNode:  certs.trusted,
 		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
-		//httpAddr:         http,
 	}
 
 	serverConfig := genServerConfig(certs, privKey)
@@ -288,9 +274,7 @@ func NewNode(c client, s server) (*Node, error) {
 			n.evalCertificate(c)
 		}
 
-		view := n.view.Full()
-
-		for _, p := range view {
+		for _, p := range n.view.Full() {
 			n.view.AddLive(p)
 		}
 	}
@@ -358,10 +342,10 @@ func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 }
 
 func (n *Node) ShutDownNode() {
+	var i uint32
+
 	if n.viz {
-		var i uint32
-		rings := n.view.NumRings()
-		for i = 1; i <= rings; i++ {
+		for i = 1; i <= n.view.NumRings(); i++ {
 			n.remove(i)
 		}
 	}
@@ -383,18 +367,8 @@ func (n *Node) LiveMembers() []string {
 	return ret
 }
 
-/*
-func (n *Node) LiveMembersHttp() []string {
-	return n.getLivePeerHttpAddrs()
-}
-
-
-
-*/
 func (n *Node) HttpAddr() string {
-	//return n.httpListener.Addr().String()
 	return n.self.HttpAddr
-	//return n.httpAddr
 }
 
 func (n *Node) Id() string {
@@ -427,11 +401,7 @@ func (n *Node) Start() {
 		go n.updateState()
 		go n.httpHandler()
 
-		var i uint32
-		rings := n.view.NumRings()
-		for i = 1; i <= rings; i++ {
-			n.add(i)
-		}
+		n.addToViz()
 	}
 
 	msg := n.collectGossipContent()

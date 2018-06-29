@@ -1,14 +1,86 @@
 package core
 
 import (
-	"crypto/ecdsa"
+	"net/rpc"
+	"os"
+	"testing"
 
-	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
-	"github.com/joonnna/ifrit/protobuf"
-	"github.com/stretchr/testify/assert"
+	"github.com/joonnna/ifrit/rpc"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 )
 
+type HandlerTestSuite struct {
+	suite.Suite
+	n *Node
+}
+
+func TestHandlerTestSuite(t *testing.T) {
+	r := log.Root()
+
+	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+
+	suite.Run(t, new(HandlerTestSuite))
+}
+
+func (suite *HandlerTestSuite) SetupTest() {
+	c := rpc.NewClient()
+
+	s, err := rpc.NewServer()
+	require.NoError(suite.T(), err, "Failed to create rpc server.")
+
+	n, err := NewNode(c, s)
+	require.NoError(suite.T(), err, "Failed to create node.")
+
+	suite.n = n
+}
+
+func (suite *HandlerTestSuite) TestSpread() {
+
+}
+
+func (suite *HandlerTestSuite) TestMessenger() {
+
+}
+
+func (suite *HandlerTestSuite) TestMergeViews() {
+
+}
+
+func (suite *HandlerTestSuite) TestMergeNotes() {
+
+}
+
+func (suite *HandlerTestSuite) TestMergeAccusations() {
+
+}
+
+func (suite *HandlerTestSuite) TestMergeCertificates() {
+
+}
+
+func (suite *HandlerTestSuite) TestEvalAccusation() {
+
+}
+
+func (suite *HandlerTestSuite) TestEvalAccusation() {
+
+}
+
+func (suite *HandlerTestSuite) TestEvalNote() {
+
+}
+
+func (suite *HandlerTestSuite) TestEvalCertificate() {
+
+}
+
+func (suite *HandlerTestSuite) TestValidateCtx() {
+
+}
+
+/*
 func newPbNote(n *note, priv *ecdsa.PrivateKey) *gossip.Note {
 	noteMsg := &gossip.Note{
 		Epoch: n.epoch,
@@ -384,3 +456,4 @@ func (suite *NodeTestSuite) TestDeactivateTooManyRings() {
 	}
 
 }
+*/

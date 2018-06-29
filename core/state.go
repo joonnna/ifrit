@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -94,11 +93,6 @@ func (n *Node) httpHandler() {
 			return
 		}
 	*/
-
-	ip := netutil.GetLocalIP()
-	port := strings.Split(n.httpListener.Addr().String(), ":")[1]
-	n.httpAddr = fmt.Sprintf("%s:%d", ip, port)
-	n.vizId = fmt.Sprintf("http://%s", n.httpAddr)
 
 	handler := cors.Default().Handler(r)
 
@@ -292,7 +286,7 @@ func (n *Node) updateState() {
 func (n *Node) newState(ringId uint32) *state {
 	var succId, prevId string
 
-	succ, prev := n.view.RingNeighbours(ringId)
+	succ, prev := n.view.MyRingNeighbours(ringId)
 	if succ != nil {
 		succId = fmt.Sprintf("%s|%d", succ.Addr, ringId)
 	}
@@ -329,27 +323,29 @@ func (n *Node) updateReq(r io.Reader, c *http.Client) {
 }
 
 /* Sends a post request to the state server add endpoint */
-func (n *Node) add(ringId uint32) error {
-	s := n.newState(ringId)
-	bytes := s.marshal()
+func (n *Node) addToViz() {
+	var i uint32
+
 	addr := fmt.Sprintf("http://%s/add", n.vizAddr)
-	req, err := http.NewRequest("POST", addr, bytes)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
 
-	client := &http.Client{}
+	for i = 1; i <= n.view.NumRings(); i++ {
+		s := n.newState(i)
+		req, err := http.NewRequest("POST", addr, s.marshal())
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	} else {
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
+		client := &http.Client{}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Error(err.Error())
+		} else {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+		}
 	}
-	return nil
 }
 
 func (n *Node) remove(ringId uint32) {

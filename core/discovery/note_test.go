@@ -30,9 +30,9 @@ func (suite *NoteTestSuite) TestSameEpoch() {
 		epoch: 3,
 	}
 
-	assert.True(suite.T(), n.SameEpoch(n.epoch), "Returns false when epochs are equal")
+	assert.True(suite.T(), n.Equal(n.epoch), "Returns false when epochs are equal")
 
-	assert.False(suite.T(), n.SameEpoch(n.epoch+1), "Returns true when epochs are not equal")
+	assert.False(suite.T(), n.Equal(n.epoch+1), "Returns true when epochs are not equal")
 }
 
 func (suite *NoteTestSuite) TestIsMoreRecent() {

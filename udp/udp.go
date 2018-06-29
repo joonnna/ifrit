@@ -51,8 +51,8 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.SetDeadline(time.Now().Add(time.Second * 5))
 	defer c.Close()
+	c.SetDeadline(time.Now().Add(time.Second * 5))
 
 	_, err = c.Write(data)
 	if err != nil {

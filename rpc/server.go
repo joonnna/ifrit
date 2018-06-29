@@ -38,20 +38,6 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	/*
-		h, _ := os.Hostname()
-
-		addr, err := net.LookupHost(h)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(addr) < 1 {
-			return nil, errNoAddr
-		}
-
-		ip := addr[0]
-	*/
 
 	port := strings.Split(l.Addr().String(), ":")[1]
 
@@ -70,20 +56,14 @@ func (s *Server) Init(config *tls.Config, n interface{}, maxConcurrent uint32) e
 	}
 
 	keepAlive := keepalive.ServerParameters{
-		MaxConnectionIdle: time.Minute * 20,
-		Time:              time.Minute * 20,
+		MaxConnectionIdle: time.Minute * 5,
+		Time:              time.Minute * 5,
 	}
 
 	creds := credentials.NewTLS(config)
 
-	//comp := grpc.NewGZIPCompressor()
-	//decomp := grpc.NewGZIPDecompressor()
-
 	serverOpts = append(serverOpts, grpc.Creds(creds))
-	//serverOpts = append(serverOpts, grpc.RPCCompressor(comp))
-	//serverOpts = append(serverOpts, grpc.RPCDecompressor(decomp))
 	serverOpts = append(serverOpts, grpc.KeepaliveParams(keepAlive))
-
 	serverOpts = append(serverOpts, grpc.MaxConcurrentStreams(maxConcurrent))
 
 	s.rpcServer = grpc.NewServer(serverOpts...)
@@ -102,7 +82,5 @@ func (s *Server) ShutDown() {
 }
 
 func (s *Server) Addr() string {
-	//return s.port
-	//return s.listener.Addr().String()
 	return s.addr
 }

@@ -24,6 +24,10 @@ type ViewTestSuite struct {
 	v *View
 }
 
+func closeConnStub(addr string) {
+
+}
+
 func TestViewTestSuite(t *testing.T) {
 	r := log.Root()
 
@@ -38,7 +42,7 @@ func (suite *ViewTestSuite) SetupTest() {
 
 	cert := validCert("selfId", privKey.Public())
 
-	v, err := NewView(10, cert, privKey)
+	v, err := NewView(10, cert, privKey, closeConnStub)
 	require.NoError(suite.T(), err, "Failed to create view.")
 
 	suite.v = v
@@ -54,25 +58,25 @@ func (suite *ViewTestSuite) TestNewView() {
 
 	expectedByz := uint32((float64(numRings) / 2.0) - 1)
 
-	v, err := NewView(numRings, cert, privKey)
+	v, err := NewView(numRings, cert, privKey, closeConnStub)
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), expectedByz, v.maxByz, "Max byzantine not set correctly.")
 
-	v2, err := NewView(2, cert, privKey)
+	v2, err := NewView(2, cert, privKey, closeConnStub)
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), uint32(0), v2.maxByz, "Max byzantine should be zero with 2 rings.")
 
-	v3, err := NewView(1, cert, privKey)
+	v3, err := NewView(1, cert, privKey, closeConnStub)
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), uint32(0), v3.maxByz, "Max byzantine should be zero with 1 ring.")
 
-	_, err = NewView(0, cert, privKey)
+	_, err = NewView(0, cert, privKey, closeConnStub)
 	require.Error(suite.T(), err, "Should return error with 0 rings.")
 
-	_, err = NewView(numRings, nil, privKey)
+	_, err = NewView(numRings, nil, privKey, closeConnStub)
 	require.Error(suite.T(), err, "Should return error with no certificate.")
 
-	_, err = NewView(numRings, cert, nil)
+	_, err = NewView(numRings, cert, nil, closeConnStub)
 	require.Error(suite.T(), err, "Should return error with no privateKey.")
 
 }
@@ -318,7 +322,7 @@ func (suite *ViewTestSuite) TestRingNeighbours() {
 	view := suite.v
 
 	for i = 1; i <= view.rings.numRings; i++ {
-		succ, prev := view.RingNeighbours(i)
+		succ, prev := view.MyRingNeighbours(i)
 		require.Nil(suite.T(), succ, "Should return nil successor with empty view.")
 		require.Nil(suite.T(), prev, "Should return nil predecessor with empty view.")
 	}
@@ -332,7 +336,7 @@ func (suite *ViewTestSuite) TestRingNeighbours() {
 	}
 
 	for i = 1; i <= view.rings.numRings; i++ {
-		succ, prev := view.RingNeighbours(i)
+		succ, prev := view.MyRingNeighbours(i)
 		require.NotNil(suite.T(), succ, "Should never return nil successor with non-empty view.")
 		require.NotNil(suite.T(), prev, "Should never return nil predecessor with non-empty view.")
 		require.NotEqual(suite.T(), succ, view.self, "Should never return self as neighbour.")

@@ -374,16 +374,21 @@ func (suite *RingTestSuite) TestRingAdd() {
 
 	for idx, rId := range r.succList {
 		if rId.p.Id == p.Id {
+			require.Equal(suite.T(), rId.p, p, "Wrong peer representation stored.")
 			found = true
 			if idx == 0 {
-				assert.Equal(suite.T(), r.selfIdx, uint32(1), "Self index not incremented.")
+				require.Equal(suite.T(), r.selfIdx, uint32(1), "Self index not incremented.")
 			} else {
-				assert.Equal(suite.T(), r.selfIdx, uint32(0), "Self index should not have been incremented.")
+				require.Equal(suite.T(), r.selfIdx, uint32(0), "Self index should not have been incremented.")
 			}
 		}
 	}
 
-	assert.True(suite.T(), found, "Did not find peerId in succList.")
+	require.True(suite.T(), found, "Did not find peerId in succList.")
+
+	mapPeer, ok := r.peerToRing[p.Id]
+	require.True(suite.T(), ok, "Peer not found in map.")
+	require.Equal(suite.T(), mapPeer.p, p, "Wrong peer representation stored.")
 
 	r.add(p)
 	assert.Equal(suite.T(), 2, len(r.succList), "Adding peer twice should fail.")

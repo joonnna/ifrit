@@ -109,6 +109,10 @@ func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr, serviceAddr, pingAddr, h
 
 	set.trusted = certs.Trusted
 
+	if set.ownCert == nil || set.caCert == nil {
+		return nil, errNoCert
+	}
+
 	return set, nil
 }
 
@@ -254,7 +258,7 @@ func genSerialNumber() (*big.Int, error) {
 	return s, nil
 }
 
-func checkAccusationSignature(a *gossip.Accusation, accuser, accused *discovery.Peer) bool {
+func checkAccusationSignature(a *gossip.Accusation, accuser *discovery.Peer) bool {
 	tmp := &gossip.Accusation{
 		Epoch:   a.GetEpoch(),
 		Accuser: a.GetAccuser(),
@@ -271,7 +275,7 @@ func checkAccusationSignature(a *gossip.Accusation, accuser, accused *discovery.
 
 	sign := a.GetSignature()
 
-	if valid := accused.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
+	if valid := accuser.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
 		log.Debug("Invalid signature on accusation, ignoring")
 		return false
 	}

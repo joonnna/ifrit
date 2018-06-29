@@ -15,7 +15,7 @@ type Note struct {
 	*signature
 }
 
-func (n Note) SameEpoch(epoch uint64) bool {
+func (n Note) Equal(epoch uint64) bool {
 	return n.epoch == epoch
 }
 
