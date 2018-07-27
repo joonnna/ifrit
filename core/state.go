@@ -96,7 +96,11 @@ func (n *Node) httpHandler() {
 
 	handler := cors.Default().Handler(r)
 
-	err := http.Serve(n.httpListener, handler)
+	n.httpServer = &http.Server{
+		Handler: handler,
+	}
+
+	err := n.httpServer.Serve(n.httpListener)
 	if err != nil {
 		log.Error(err.Error())
 		return
@@ -137,13 +141,11 @@ func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if n.setExitFlag() {
-		return
-	}
-
 	log.Info("Received shutdown request!")
 
-	n.ShutDownNode()
+	if n.doShutdown() {
+		go n.ShutDownNode()
+	}
 }
 
 func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
@@ -348,11 +350,19 @@ func (n *Node) addToViz() {
 	}
 }
 
-func (n *Node) remove(ringId uint32) {
-	s := n.newState(ringId)
-	bytes := s.marshal()
+func (n *Node) remove() {
+	removeMsg := struct {
+		HttpAddr string
+	}{
+		n.vizId,
+	}
+
+	buff := new(bytes.Buffer)
+
+	json.NewEncoder(buff).Encode(removeMsg)
+
 	addr := fmt.Sprintf("http://%s/remove", n.vizAddr)
-	req, err := http.NewRequest("POST", addr, bytes)
+	req, err := http.NewRequest("POST", addr, bytes.NewReader(buff.Bytes()))
 	if err != nil {
 		log.Error(err.Error())
 		return
@@ -369,14 +379,14 @@ func (n *Node) remove(ringId uint32) {
 	}
 }
 
-func (n *Node) setExitFlag() bool {
+func (n *Node) doShutdown() bool {
 	n.exitMutex.Lock()
 	defer n.exitMutex.Unlock()
 
 	if n.exitFlag {
-		return true
+		return false
 	}
 
 	n.exitFlag = true
-	return false
+	return true
 }

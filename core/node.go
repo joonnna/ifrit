@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,7 @@ type Node struct {
 	trustedBootNode  bool
 	vizId            string
 	httpListener     net.Listener
+	httpServer       *http.Server
 	httpAddr         string
 	viz              bool
 	vizAddr          string
@@ -197,10 +199,6 @@ func NewNode(c client, s server) (*Node, error) {
 			return nil, err
 		}
 	} else {
-		if exists := viper.IsSet("entry_addrs"); !exists {
-			return nil, errNoCaAddr
-		}
-
 		// TODO only have numrings in notes and not certificate?
 		certs, err = selfSignedCert(privKey, s.Addr(), udpServer.Addr(), http, uint32(32))
 		if err != nil {
@@ -342,15 +340,8 @@ func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 }
 
 func (n *Node) ShutDownNode() {
-	var i uint32
-
-	if n.viz {
-		for i = 1; i <= n.view.NumRings(); i++ {
-			n.remove(i)
-		}
-	}
-
 	close(n.exitChan)
+
 	n.dispatcher.Stop()
 	n.wg.Wait()
 }
@@ -398,10 +389,9 @@ func (n *Node) Start() {
 	n.dispatcher.Start()
 
 	if n.viz {
+		n.addToViz()
 		go n.updateState()
 		go n.httpHandler()
-
-		n.addToViz()
 	}
 
 	msg := n.collectGossipContent()
@@ -423,9 +413,13 @@ func (n *Node) Start() {
 	}
 
 	<-n.exitChan
-	n.httpListener.Close()
+	n.httpServer.Close()
 	n.server.ShutDown()
 	n.failureDetector.shutdown()
 
 	log.Info("Exiting node")
+
+	if n.viz {
+		n.remove()
+	}
 }
