@@ -1,6 +1,7 @@
 package core
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 
@@ -13,17 +14,34 @@ import (
 )
 
 var (
-	errNoPeerInCtx            = errors.New("No peer information found in provided context")
-	errNoTLSInfo              = errors.New("No TLS info provided in peer context")
-	errNoCert                 = errors.New("No local certificate present in request")
-	errNeighbourPeerNotFound  = errors.New("Neighbour peer was  not found")
-	errNotMyNeighbour         = errors.New("Invalid gossip partner, not my neighbour")
-	errInvalidPeerInformation = errors.New("Could not create local peer representation")
-	errNoMask                 = errors.New("No mask provided")
-	errInvalidMaskLength      = errors.New("Mask is of invalid length")
+	errNoPeerInCtx            = errors.New("No peer information found in provided context.")
+	errNoTLSInfo              = errors.New("No TLS info provided in peer context.")
+	errNeighbourPeerNotFound  = errors.New("Neighbour peer was not found.")
+	errNotMyNeighbour         = errors.New("Invalid gossip partner, not my neighbour.")
+	errInvalidPeerInformation = errors.New("Could not create local peer representation.")
+	errInvalidMaskLength      = errors.New("Mask is of invalid length.")
+
+	errAccAlreadyExists      = errors.New("Accusation already existed, discarding.")
+	errNoAccused             = errors.New("Accused peer not found.")
+	errNoAccuser             = errors.New("Accuser peer not found.")
+	errDisabledRing          = errors.New("Ring associated with accusation was disabled.")
+	errInvalidAccuser        = errors.New("Accuser is not predecessor of accused on given ring, invalid accusation.")
+	errInvalidSignature      = errors.New("Accusation signature was invalid.")
+	errInvalidSelfAccusation = errors.New("Received accusation about myself, but it was invalid.")
+	errInvalidEpoch          = errors.New("Accusation epoch did not match note epoch.")
+
+	errInvalidMask = errors.New("Note contaiend invalid mask")
+	errOldNote     = errors.New("Already had the same or a more recent note")
+	errNoPeer      = errors.New("Peer associated with note not found in full view.")
+
+	errNilCert   = errors.New("Certificate was nil.")
+	errSelfCert  = errors.New("Certificate was my own.")
+	errNoCert    = errors.New("No certificate present in tls context.")
+	errInvalidId = errors.New("Id in certificate is of invalid size.")
 )
 
 func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateResponse, error) {
+	var observed bool
 	cert, err := n.validateCtx(ctx)
 	if err != nil {
 		return nil, err
@@ -32,33 +50,62 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 	reply := &gossip.StateResponse{}
 
 	remoteId := string(cert.SubjectKeyId[:])
-	neighbours := n.view.ShouldBeNeighbour(remoteId)
-
 	peer := n.view.Peer(remoteId)
+	if peer != nil {
+		observed = true
+	}
 
-	if !neighbours && peer != nil && peer.IsAccused() {
-		n.evalNote(args.GetOwnNote())
+	if neighbours := n.view.ShouldBeNeighbour(remoteId); neighbours {
+		if err := n.evalCertificate(cert); err != nil {
+			log.Error(err.Error())
+			return nil, err
+		}
+
+		err := n.evalNote(args.GetOwnNote())
+		if err != nil && err != errOldNote {
+			log.Debug(err.Error())
+		}
+
+		extGossip := args.GetExternalGossip()
+		hosts := args.GetExistingHosts()
+
+		// If hosts is nil gossip message was only a rebuttal,
+		// no need to merge views.
+		if hosts != nil {
+			n.mergeViews(hosts, reply)
+		}
+
+		if handler := n.getGossipHandler(); handler != nil && extGossip != nil {
+			reply.ExternalGossip, err = handler(extGossip)
+			if err != nil {
+				log.Error(err.Error())
+			}
+		}
+	} else if observed {
+		if !peer.IsAccused() {
+			return nil, errNotMyNeighbour
+		}
+
+		err := n.evalNote(args.GetOwnNote())
+		if err != nil {
+			log.Debug(err.Error())
+		}
 
 		for _, a := range peer.AllAccusations() {
 			reply.Accusations = append(reply.Accusations, a.ToPbMsg())
 		}
-		return reply, nil
-	}
-
-	// Peers that have already been seen should be rejected
-	if !neighbours && peer != nil {
-		n.evalNote(args.GetOwnNote())
-
-		return nil, errNotMyNeighbour
-	}
-
-	//Help new peer integrate into the network
-	if !neighbours && peer == nil {
-		if valid := n.evalCertificate(cert); !valid {
-			return nil, errNoCert
+	} else {
+		if err := n.evalCertificate(cert); err != nil {
+			log.Error(err.Error())
+			return nil, err
 		}
 
-		n.evalNote(args.GetOwnNote())
+		err := n.evalNote(args.GetOwnNote())
+		if err != nil {
+			log.Debug(err.Error())
+		}
+
+		// Help new peer integrate into the network
 		reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: n.localCert.Raw})
 		reply.Notes = append(reply.Notes, n.self.Note().ToPbMsg())
 
@@ -67,28 +114,6 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
 			}
-		}
-
-		return reply, nil
-	}
-
-	if valid := n.evalCertificate(cert); !valid {
-		return nil, errNoCert
-	}
-
-	extGossip := args.GetExternalGossip()
-
-	// Gossip message was only a rebuttal, no need to merge views
-	if isRebuttal := n.evalNote(args.GetOwnNote()); isRebuttal && extGossip == nil {
-		return reply, nil
-	}
-
-	n.mergeViews(args.GetExistingHosts(), reply)
-
-	if handler := n.getGossipHandler(); handler != nil && extGossip != nil {
-		reply.ExternalGossip, err = handler(extGossip)
-		if err != nil {
-			return nil, err
 		}
 	}
 
@@ -115,8 +140,10 @@ func (n *Node) Messenger(ctx context.Context, args *gossip.Msg) (*gossip.MsgResp
 
 func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) {
 	for _, p := range n.view.Full() {
-		if _, exists := given[p.Id]; !exists {
-			reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.Certificate()})
+		if _, ok := given[p.Id]; !ok {
+			reply.Certificates = append(reply.Certificates,
+				&gossip.Certificate{Raw: p.Certificate()})
+
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
 			}
@@ -127,7 +154,6 @@ func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) 
 		// No solution yet to avoid transferring all accusations.
 		// Transferring all notes are avoided by checking epoch numbers.
 		accs := p.AllAccusations()
-		reply.Accusations = make([]*gossip.Accusation, 0, len(accs))
 		for _, a := range accs {
 			reply.Accusations = append(reply.Accusations, a.ToPbMsg())
 		}
@@ -144,11 +170,16 @@ func (n *Node) mergeNotes(notes []*gossip.Note) {
 	if notes == nil {
 		return
 	}
+
 	for _, newNote := range notes {
 		if n.self.Id == string(newNote.GetId()) {
 			continue
 		}
-		n.evalNote(newNote)
+
+		err := n.evalNote(newNote)
+		if err != nil {
+			log.Debug(err.Error())
+		}
 	}
 }
 
@@ -158,7 +189,32 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 
 	for _, acc := range accusations {
-		n.evalAccusation(acc)
+		accuserId := string(acc.GetAccuser())
+		accuser := n.view.LivePeer(accuserId)
+		if accuserId == n.self.Id {
+			accuser = n.self
+		}
+
+		accusedId := string(acc.GetAccused())
+		accused := n.view.LivePeer(accusedId)
+		if accusedId == n.self.Id {
+			accused = n.self
+		}
+
+		err := n.evalAccusation(acc, accuser, accused)
+		if err != nil {
+			accuserAddr := ""
+			if accuser != nil {
+				accuserAddr = accuser.Addr
+			}
+
+			accusedAddr := ""
+			if accused != nil {
+				accusedAddr = accused.Addr
+			}
+
+			log.Debug(err.Error(), "ringNum", acc.GetRingNum(), "epoch", acc.GetEpoch(), "accused", accusedAddr, "accuser", accuserAddr)
+		}
 	}
 }
 
@@ -169,110 +225,97 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
-			log.Error(err.Error())
+			log.Debug(err.Error())
 			continue
 		}
-		n.evalCertificate(cert)
+
+		err = n.evalCertificate(cert)
+		if err != nil {
+			log.Debug(err.Error())
+		}
 	}
 }
 
-func (n *Node) evalAccusation(a *gossip.Accusation) {
-	var accuserPeer *discovery.Peer
-
+func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Peer) error {
 	sign := a.GetSignature()
 	epoch := a.GetEpoch()
-	mask := a.GetMask()
 	ringNum := a.GetRingNum()
 
-	accusedId := string(a.GetAccused())
-	accuserId := string(a.GetAccuser())
+	if accuserPeer == nil || accuserPeer.Note() == nil {
+		return errNoAccuser
+	}
 
-	if n.self.Id == accusedId {
+	if p == nil || p.Note() == nil {
+		return errNoAccused
+	}
+
+	if n.self.Id == p.Id {
+		// TODO check accuser etc
 		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
 			n.getProtocol().Rebuttal(n)
+			return nil
 		}
-		return
-	}
-
-	p := n.view.LivePeer(accusedId)
-	if p == nil || p.Note() == nil {
-		return
-	}
-
-	if accuserId == n.self.Id {
-		accuserPeer = n.self
-	} else {
-		accuserPeer = n.view.LivePeer(accuserId)
-		if accuserPeer == nil || accuserPeer.Note() == nil {
-			return
-		}
+		return errInvalidSelfAccusation
 	}
 
 	acc := p.RingAccusation(ringNum)
-
 	if acc != nil && acc.Equal(p.Id, accuserPeer.Id, ringNum, epoch) {
-		log.Debug("Already have accusation, discard")
-		if exists := n.view.HasTimer(accusedId); !exists {
+		live := n.view.IsAlive(p.Id)
+		if exists := n.view.HasTimer(p.Id); !exists && live {
 			n.view.StartTimer(p, p.Note(), accuserPeer)
+			log.Debug("Had accusation with no timer, starting timer.")
 		}
-		return
+		return errAccAlreadyExists
 	}
 
 	if note := p.Note(); note != nil && note.Equal(epoch) {
-		if valid := n.view.ValidMask(mask); !valid {
-			return
-		}
+		mask := note.Mask()
 
 		if disabled := n.view.IsRingDisabled(mask, ringNum); disabled {
-			return
+			return errDisabledRing
 		}
 
 		if valid := n.view.ValidAccuser(p.Id, accuserPeer.Id, ringNum); !valid {
-			log.Error("Accuser is not predecessor of accused on given ring, invalid accusation", "ringNum", ringNum, "accused", p.Addr, "accuser", accuserPeer.Addr)
-
-			return
+			return errInvalidAccuser
 		}
 
 		if valid := checkAccusationSignature(a, accuserPeer); !valid {
-			return
+			return errInvalidSignature
 		}
 
 		err := p.AddAccusation(p.Id, accuserPeer.Id, epoch, mask, ringNum, sign.GetR(), sign.GetS())
 		if err != nil {
-			log.Error(err.Error())
-			return
+			return err
 		}
 
-		if exists := n.view.HasTimer(p.Id); !exists {
+		live := n.view.IsAlive(p.Id)
+		if exists := n.view.HasTimer(p.Id); !exists && live {
 			n.view.StartTimer(p, p.Note(), accuserPeer)
 		}
+	} else {
+		return errInvalidEpoch
 	}
+
+	return nil
 }
 
-func (n *Node) evalNote(gossipNote *gossip.Note) bool {
-	var haveRebuted bool
-
-	if gossipNote == nil {
-		log.Debug("Got nil note")
-		return false
-	}
-
+func (n *Node) evalNote(gossipNote *gossip.Note) error {
 	epoch := gossipNote.GetEpoch()
 	mask := gossipNote.GetMask()
 
 	p := n.view.Peer(string(gossipNote.GetId()))
 	if p == nil {
-		return false
+		return errNoPeer
 	}
 
 	note := p.Note()
 
-	if note != nil && note.Equal(epoch) {
-		return false
+	if note != nil && !note.IsMoreRecent(epoch) {
+		return errOldNote
 	}
 
 	if valid := n.view.ValidMask(mask); !valid {
-		return false
+		return errInvalidMask
 	}
 
 	accusations := p.AllAccusations()
@@ -281,7 +324,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 		// Want to store the most recent note
 		if note == nil || note.IsMoreRecent(epoch) {
 			if valid := checkNoteSignature(gossipNote, p); !valid {
-				return false
+				return errInvalidSignature
 			}
 
 			sign := gossipNote.GetSignature()
@@ -293,68 +336,66 @@ func (n *Node) evalNote(gossipNote *gossip.Note) bool {
 			}
 		}
 	} else {
+		if valid := checkNoteSignature(gossipNote, p); !valid {
+			return errInvalidSignature
+		}
+
 		// Peer is accused, need to check if this note invalidates any accusations.
 		for _, a := range accusations {
 			if a.IsMoreRecent(epoch) {
-				// We do not repeat all rebuttal operations for each accusation.
-				// E.g only check signature once, add one new note, only delete timeout once,
-				// etc.
-				if !haveRebuted {
-					if valid := checkNoteSignature(gossipNote, p); !valid {
-						continue
-					}
-
-					sign := gossipNote.GetSignature()
-
-					log.Debug("Rebuttal received", "addr", p.Addr)
-
-					n.view.DeleteTimeout(p.Id)
-					p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
-					p.ResetPing()
-
-					if alive := n.view.IsAlive(p.Id); !alive {
-						n.view.AddLive(p)
-					}
-
-					haveRebuted = true
-				}
 				p.RemoveAccusation(a)
 			}
 		}
 
-		// All accusations has to be invalidated before we add peer back to full view.
-		if accused := p.IsAccused(); !accused {
-			n.view.AddLive(p)
+		if note == nil || note.IsMoreRecent(epoch) {
+			sign := gossipNote.GetSignature()
+			p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
 		}
 
+		// All accusations has to be invalidated before we add peer back to full view.
+		if accused := p.IsAccused(); !accused {
+			p.ResetPing()
+
+			if exists := n.view.HasTimer(p.Id); exists {
+				n.view.DeleteTimeout(p.Id)
+			}
+
+			if alive := n.view.IsAlive(p.Id); !alive {
+				n.view.AddLive(p)
+			}
+
+			log.Debug("Rebuttal received", "epoch", epoch, "addr", p.Addr)
+		}
 	}
 
-	return haveRebuted
+	return nil
 }
 
-func (n *Node) evalCertificate(cert *x509.Certificate) bool {
+func (n *Node) evalCertificate(cert *x509.Certificate) error {
 	if cert == nil {
-		log.Error("Got nil cert")
-		return false
+		return errNilCert
 	}
 
 	id := string(cert.SubjectKeyId)
 
 	if n.self.Id == id {
-		return false
+		return errSelfCert
+	}
+
+	if len(id) != sha256.Size {
+		return errInvalidId
 	}
 
 	err := checkCertificateSignature(cert, n.caCert)
 	if err != nil {
-		log.Error(err.Error())
-		return false
+		return err
 	}
 
 	if exists := n.view.Exists(id); !exists {
 		n.view.AddFull(id, cert)
 	}
 
-	return true
+	return nil
 }
 
 func (n *Node) validateCtx(ctx context.Context) (*x509.Certificate, error) {
