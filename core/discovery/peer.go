@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"errors"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -378,4 +379,35 @@ func hashContent(data []byte) []byte {
 	h := sha256.New224()
 	h.Write(data)
 	return h.Sum(nil)
+}
+
+// ONLY for testing
+func (p *Peer) NewNote(priv *ecdsa.PrivateKey, epoch uint64) {
+	p.note = &Note{
+		id:    p.Id,
+		mask:  math.MaxUint32,
+		epoch: epoch,
+	}
+	p.note.sign(priv)
+}
+
+// ONLY for testing
+func (p *Peer) ClearNote() {
+	p.note = nil
+}
+
+// ONLY for testing
+func (p *Peer) AddTestAccusation(a *gossip.Accusation) {
+	acc := &Accusation{
+		epoch:   a.GetEpoch(),
+		mask:    a.GetMask(),
+		accuser: string(a.GetAccuser()),
+		accused: string(a.GetAccused()),
+		ringNum: a.GetRingNum(),
+		signature: &signature{
+			r: a.GetSignature().GetR(),
+			s: a.GetSignature().GetS(),
+		},
+	}
+	p.accusations[acc.ringNum] = acc
 }

@@ -15,6 +15,10 @@ type Note struct {
 	*signature
 }
 
+func (n Note) Mask() uint32 {
+	return n.mask
+}
+
 func (n Note) Equal(epoch uint64) bool {
 	return n.epoch == epoch
 }
@@ -64,4 +68,32 @@ func (n *Note) sign(privKey *ecdsa.PrivateKey) error {
 	}
 
 	return nil
+}
+
+// ONLY for testing
+func NewNote(id string, epoch uint64, mask uint32, priv *ecdsa.PrivateKey) *gossip.Note {
+	n := &Note{
+		id:    id,
+		epoch: epoch,
+		mask:  mask,
+	}
+
+	err := n.sign(priv)
+	if err != nil {
+		panic(err)
+	}
+
+	return n.ToPbMsg()
+}
+
+// ONLY for testing
+func NewUnsignedNote(id string, epoch uint64, mask uint32) *gossip.Note {
+	n := &Note{
+		id:        id,
+		epoch:     epoch,
+		mask:      mask,
+		signature: &signature{},
+	}
+
+	return n.ToPbMsg()
 }

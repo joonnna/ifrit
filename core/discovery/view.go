@@ -353,6 +353,8 @@ func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
 	v.self.noteMutex.Lock()
 	defer v.self.noteMutex.Unlock()
 
+	// TODO check if accuser is my direct predecessor
+
 	if eq := v.self.note.Equal(epoch); eq {
 		newMask := v.self.note.mask
 
@@ -540,4 +542,9 @@ func clearBit(n uint32, pos uint32) uint32 {
 func hasBit(n uint32, pos uint32) bool {
 	val := n & (1 << pos)
 	return (val > 0)
+}
+
+// ONLY for testing
+func (v *View) RemoveTestFull(id string) {
+	delete(v.viewMap, id)
 }
