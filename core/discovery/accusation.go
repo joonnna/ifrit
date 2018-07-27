@@ -80,3 +80,33 @@ func (a *Accusation) sign(privKey *ecdsa.PrivateKey) error {
 
 	return nil
 }
+
+// ONLY for testing
+func NewAccusation(epoch uint64, accused, accuser string, ringNum uint32, priv *ecdsa.PrivateKey) *gossip.Accusation {
+	a := &Accusation{
+		accused: accused,
+		accuser: accuser,
+		epoch:   epoch,
+		ringNum: ringNum,
+	}
+
+	err := a.sign(priv)
+	if err != nil {
+		panic(err)
+	}
+
+	return a.ToPbMsg()
+}
+
+// ONLY for testing
+func NewUnsignedAccusation(epoch uint64, accused, accuser string, ringNum uint32) *gossip.Accusation {
+	a := &Accusation{
+		accused:   accused,
+		accuser:   accuser,
+		epoch:     epoch,
+		ringNum:   ringNum,
+		signature: &signature{},
+	}
+
+	return a.ToPbMsg()
+}
