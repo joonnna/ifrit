@@ -272,9 +272,6 @@ func (r *ring) add(p *Peer) []string {
 
 	r.peerToRing[p.Id] = id
 
-	//TODO should check if i get a new neighbor, if so, add possibility
-	//to remove rpc connection of old neighbor.
-
 	succ := r.succAtIdx(idx).p
 	prev := r.prevAtIdx(idx).p
 
