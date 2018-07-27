@@ -81,18 +81,22 @@ func (c correct) Monitor(n *Node) {
 		if err == errDead {
 			log.Debug("Successor dead, accusing", "succ", p.Addr, "ringNum", ringNum)
 			peerNote := p.Note()
+
 			// Will always have note for a peer in our liveView, except when the peer stems
 			// from the initial contact list of the CA, if it's dead
 			// we should remove it to ensure it doesn't stay in our liveView.
 			// Not possible to accuse a peer without a note.
 			if peerNote == nil {
 				n.view.RemoveLive(p.Id)
+				log.Debug("Removing live peer due to not having note and being accused", "addr", p.Addr)
 				continue
 			}
 
 			err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
 			if err == discovery.ErrAccAlreadyExists {
-				n.view.StartTimer(p, peerNote, n.self)
+				if exists := n.view.HasTimer(p.Id); !exists {
+					n.view.StartTimer(p, peerNote, n.self)
+				}
 			} else if err != nil {
 				log.Error(err.Error())
 			}
