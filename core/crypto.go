@@ -109,10 +109,6 @@ func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr, serviceAddr, pingAddr, h
 
 	set.trusted = certs.Trusted
 
-	if set.ownCert == nil || set.caCert == nil {
-		return nil, errNoCert
-	}
-
 	return set, nil
 }
 
