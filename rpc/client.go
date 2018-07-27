@@ -18,53 +18,39 @@ var (
 )
 
 type Client struct {
-	allConnections  map[string]gossip.GossipClient
+	allConnections  map[string]*conn
 	connectionMutex sync.RWMutex
 
 	dialOptions []grpc.DialOption
 }
 
+type conn struct {
+	gossip.GossipClient
+	cc *grpc.ClientConn
+}
+
 func NewClient() *Client {
 	return &Client{
-		allConnections: make(map[string]gossip.GossipClient),
+		allConnections: make(map[string]*conn),
 	}
 }
 
 func (c *Client) Init(config *tls.Config) {
-	//comp := grpc.NewGZIPCompressor()
-	//decomp := grpc.NewGZIPDecompressor()
 	creds := credentials.NewTLS(config)
 
 	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
-	//c.dialOptions = append(c.dialOptions, grpc.WithCompressor(comp))
-	//c.dialOptions = append(c.dialOptions, grpc.WithDecompressor(decomp))
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
 	c.dialOptions = append(c.dialOptions, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
 }
 
-func (c *Client) Dos(addr string, args *gossip.State) (*gossip.StateResponse, error) {
-	client, err := c.dial(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	r, err := client.Spread(context.Background(), args)
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
-}
-
 func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
-	client, err := c.getClient(addr)
+	conn, err := c.connection(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := client.Spread(context.Background(), args)
+	r, err := conn.Spread(context.Background(), args)
 	if err != nil {
-		c.removeConnection(addr)
 		return nil, err
 	}
 
@@ -72,81 +58,62 @@ func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse,
 }
 
 func (c *Client) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error) {
-	client, err := c.getClient(addr)
+	conn, err := c.connection(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := client.Messenger(context.Background(), args)
+	r, err := conn.Messenger(context.Background(), args)
 	if err != nil {
-		c.removeConnection(addr)
 		return nil, err
 	}
 
 	return r, nil
 }
 
-func (c *Client) dial(addr string) (gossip.GossipClient, error) {
-	var client gossip.GossipClient
+func (c *Client) CloseConn(addr string) {
+	c.connectionMutex.Lock()
+	defer c.connectionMutex.Unlock()
 
-	conn, err := grpc.Dial(addr, c.dialOptions...)
+	if conn, ok := c.allConnections[addr]; ok {
+		conn.cc.Close()
+		delete(c.allConnections, addr)
+	}
+}
+
+func (c *Client) dial(addr string) (*conn, error) {
+	c.connectionMutex.Lock()
+	defer c.connectionMutex.Unlock()
+
+	if conn, ok := c.allConnections[addr]; ok {
+		return conn, nil
+	}
+
+	cc, err := grpc.Dial(addr, c.dialOptions...)
 	if err != nil {
 		return nil, err
 	} else {
-		client = gossip.NewGossipClient(conn)
-		c.addConnection(addr, client)
-	}
-
-	return client, nil
-}
-
-func (c *Client) getClient(addr string) (gossip.GossipClient, error) {
-	var client gossip.GossipClient
-	var err error
-
-	if !c.existConnection(addr) {
-		client, err = c.dial(addr)
-		if err != nil {
-			return nil, err
+		connection := &conn{
+			GossipClient: gossip.NewGossipClient(cc),
+			cc:           cc,
 		}
-	} else {
-		client = c.getConnection(addr)
+		c.allConnections[addr] = connection
+
+		return connection, nil
 	}
-
-	return client, nil
 }
 
-func (c *Client) existConnection(addr string) bool {
-	c.connectionMutex.RLock()
-	defer c.connectionMutex.RUnlock()
-
-	_, ok := c.allConnections[addr]
-
-	return ok
+func (c *Client) connection(addr string) (*conn, error) {
+	if conn := c.getConnection(addr); conn != nil {
+		return conn, nil
+	} else {
+		return c.dial(addr)
+	}
 }
 
-func (c *Client) getConnection(addr string) gossip.GossipClient {
+func (c *Client) getConnection(addr string) *conn {
 	c.connectionMutex.RLock()
 	defer c.connectionMutex.RUnlock()
 
 	return c.allConnections[addr]
-}
-
-func (c *Client) addConnection(addr string, conn gossip.GossipClient) {
-	c.connectionMutex.Lock()
-	defer c.connectionMutex.Unlock()
-
-	if _, ok := c.allConnections[addr]; ok {
-		return
-	}
-
-	c.allConnections[addr] = conn
-
-}
-
-func (c *Client) removeConnection(addr string) {
-	c.connectionMutex.Lock()
-	defer c.connectionMutex.Unlock()
-
-	delete(c.allConnections, addr)
 }

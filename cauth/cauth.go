@@ -244,7 +244,6 @@ func genKeys() (*rsa.PrivateKey, error) {
 }
 
 func (c *Ca) httpHandler() error {
-	//http.HandleFunc("/downloadGroupCertificate", c.downloadHandler)
 	http.HandleFunc("/certificateRequest", c.certRequestHandler)
 
 	err := http.Serve(c.listener, nil)
@@ -438,7 +437,7 @@ func readConfig() error {
 	}
 
 	viper.SetDefault("num_rings", 3)
-	viper.SetDefault("boot_nodes", 10)
+	viper.SetDefault("boot_nodes", 1)
 
 	viper.WriteConfig()
 

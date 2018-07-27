@@ -1,16 +1,39 @@
 - Configuration rework (done)
 
 - Documentation
+    - Document internals
+    - Readme (partly done)
+    - GoDoc (partly done)
+    - More examples
 
 - API cleanup
     - Remove recording feature (?)
-    - Remove SendAll
+    - Remove SendAll (done)
+    - Remove features only required for experiments (?)
 
 - Code overhaul
-    - View interface overhaul
-    - Accusations from dead members
+    - View seperation (done partly)
+    - Accusations from dead members and on dead members
+    - Rebuttal rework
+    - Detach visualizer component from rest of system
+    - Cleanup errors
+    - ShouldRebuttal rework
+    - NewNode rework (pass certificates, interace for visualizer?)
+    - Client/server interface rework (export?)
+    - Rpc package testing
+    - Udp package testing
+    - Remove mask from accusations
+    - Move mask logic from view to notes
+    - Log more
+    - Context loggers (log15 context loggers)
+    - Change ID's in protobuf to strings?
+    - Ping limit per monitor interval (how many each interval)
+    - Avoid transferring all accusations
+    - Support dead accusers
+    - Rpc client/server overhaul (grpc streams? stream interceptor for neighbour/validation?)
 
 - Testing overhaul
+    - Re-write all tests after code overhaul
     - Full behavior tests
     - Change test setup
 
@@ -18,6 +41,8 @@
     - Certificates (peers and CA)
     - View state
 
+- Certificates
+    - Change address placements
+
 
 Do seperate pull requests for all (for tracking)
-

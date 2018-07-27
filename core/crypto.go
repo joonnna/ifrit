@@ -17,6 +17,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/golang/protobuf/proto"
+	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
+	"github.com/joonnna/ifrit/protobuf"
 )
 
 var (
@@ -40,31 +45,19 @@ type certSet struct {
 
 func hashContent(data []byte) []byte {
 	h := sha256.New224()
-	//h := md5.New()
 	h.Write(data)
 	return h.Sum(nil)
 }
 
-func signContent(data []byte, privKey *ecdsa.PrivateKey) (*signature, error) {
+func signContent(data []byte, privKey *ecdsa.PrivateKey) ([]byte, []byte, error) {
 	b := hashContent(data)
 
 	r, s, err := ecdsa.Sign(rand.Reader, privKey, b)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &signature{r: r.Bytes(), s: s.Bytes()}, nil
-}
-
-func validateSignature(r, s, data []byte, pub *ecdsa.PublicKey) (bool, error) {
-	var rInt, sInt big.Int
-
-	b := hashContent(data)
-
-	rInt.SetBytes(r)
-	sInt.SetBytes(s)
-
-	return ecdsa.Verify(pub, b, &rInt, &sInt), nil
+	return r.Bytes(), s.Bytes(), nil
 }
 
 func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr, serviceAddr, pingAddr, httpAddr string) (*certSet, error) {
@@ -177,7 +170,7 @@ func genNonce() []byte {
 	return nonce
 }
 
-func checkSignature(c *x509.Certificate, ca *x509.Certificate) error {
+func checkCertificateSignature(c *x509.Certificate, ca *x509.Certificate) error {
 	if ca == nil {
 		//return c.CheckSignature(c.SignatureAlgorithm, c.Raw, c.Signature)
 		return c.CheckSignatureFrom(c)
@@ -259,4 +252,52 @@ func genSerialNumber() (*big.Int, error) {
 	}
 
 	return s, nil
+}
+
+func checkAccusationSignature(a *gossip.Accusation, accuser *discovery.Peer) bool {
+	tmp := &gossip.Accusation{
+		Epoch:   a.GetEpoch(),
+		Accuser: a.GetAccuser(),
+		Accused: a.GetAccused(),
+		Mask:    a.GetMask(),
+		RingNum: a.GetRingNum(),
+	}
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
+
+	sign := a.GetSignature()
+
+	if valid := accuser.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
+		log.Debug("Invalid signature on accusation, ignoring")
+		return false
+	}
+
+	return true
+}
+
+func checkNoteSignature(n *gossip.Note, p *discovery.Peer) bool {
+	tmp := &gossip.Note{
+		Epoch: n.GetEpoch(),
+		Mask:  n.GetMask(),
+		Id:    n.GetId(),
+	}
+
+	b, err := proto.Marshal(tmp)
+	if err != nil {
+		log.Error(err.Error())
+		return false
+	}
+
+	sign := n.GetSignature()
+
+	if valid := p.ValidateSignature(sign.GetR(), sign.GetS(), b); !valid {
+		log.Debug("Invalid signature on note, ignoring")
+		return false
+	}
+
+	return true
 }

@@ -143,12 +143,14 @@ func (c *Client) HttpAddr() string {
 	return c.node.HttpAddr()
 }
 
+/*
 // Returns the address (ip:port, http endpoint) of all members of the Ifrit
 // network believed to be alive.
 // Only used for debuging, populated if visualizer is enabled.
 func (c *Client) MembersHttp() []string {
 	return c.node.LiveMembersHttp()
 }
+*/
 
 // Signs the provided content with the internal private key of ifrit.
 func (c *Client) Sign(content []byte) ([]byte, []byte, error) {
@@ -178,9 +180,10 @@ func readConfig() error {
 	// Behavior variables
 	viper.SetDefault("gossip_interval", 10)
 	viper.SetDefault("monitor_interval", 10)
+	viper.SetDefault("view_update_interval", 10)
 	viper.SetDefault("ping_limit", 3)
 	viper.SetDefault("removal_timeout", 60)
-	viper.SetDefault("max_concurrent_messages", 50)
+	viper.SetDefault("max_concurrent_messages", 5)
 
 	// Visualizer specific
 	viper.SetDefault("viz_update_interval", 10)

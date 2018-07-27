@@ -6,6 +6,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
+	"github.com/joonnna/ifrit/core/discovery"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
@@ -36,8 +37,8 @@ func newPinger(t transport, maxPing uint32, priv *ecdsa.PrivateKey) *pinger {
 	}
 }
 
-func (p *pinger) ping(dest *peer) error {
-	if dest.getNPing() >= p.maxFailedPings {
+func (p *pinger) ping(dest *discovery.Peer) error {
+	if dest.NumPing() >= p.maxFailedPings {
 		return errDead
 	}
 
@@ -51,9 +52,9 @@ func (p *pinger) ping(dest *peer) error {
 		return err
 	}
 
-	dest.incrementPing()
+	dest.IncrementPing()
 
-	respBytes, err := p.Send(dest.pingAddr, data)
+	respBytes, err := p.Send(dest.PingAddr, data)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -68,25 +69,18 @@ func (p *pinger) ping(dest *peer) error {
 	}
 	sign := resp.GetSignature()
 
-	valid, err := validateSignature(sign.GetR(), sign.GetS(), resp.GetNonce(), dest.publicKey)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-
-	if !valid {
+	if valid := dest.ValidateSignature(sign.GetR(), sign.GetS(), resp.GetNonce()); !valid {
 		log.Error(errInvalidPongSignature.Error())
 		return errInvalidPongSignature
 	}
 
-	dest.setAvgLoss()
-	dest.resetPing()
+	dest.ResetPing()
 
 	return nil
 }
 
 func (p pinger) signPong(data []byte) ([]byte, error) {
-	sign, err := signContent(data, p.privKey)
+	r, s, err := signContent(data, p.privKey)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -95,20 +89,16 @@ func (p pinger) signPong(data []byte) ([]byte, error) {
 	resp := &gossip.Pong{
 		Nonce: data,
 		Signature: &gossip.Signature{
-			R: sign.r,
-			S: sign.s,
+			R: r,
+			S: s,
 		},
 	}
-
-	//p.log.Debug.Println("sign len : ", (len(sign.r) + len(sign.s)))
 
 	bytes, err := proto.Marshal(resp)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
 	}
-
-	//p.log.Debug.Println("sign len : ", (len(bytes)))
 
 	return bytes, nil
 }

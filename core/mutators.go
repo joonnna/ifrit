@@ -4,102 +4,20 @@ import (
 	"errors"
 	"time"
 
-	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 )
 
 var (
-	errNotFound           = errors.New("No node info found")
-	errPeerNotFound       = errors.New("No peer info found")
-	errAlreadyDeactivated = errors.New("Ring was already deactivated")
+	errNotFound     = errors.New("No node info found")
+	errPeerNotFound = errors.New("No peer info found")
 )
 
-func (n *Node) setEpoch(newEpoch uint64) {
-	n.noteMutex.Lock()
-	defer n.noteMutex.Unlock()
+func (n *Node) collectGossipContent() *gossip.State {
+	msg := n.view.State()
 
-	n.recentNote.epoch = newEpoch
+	msg.ExternalGossip = n.getExternalGossip()
 
-	err := n.recentNote.sign(n.privKey)
-	if err != nil {
-		log.Error(err.Error())
-	}
-}
-
-func (n *Node) getEpoch() uint64 {
-	n.noteMutex.RLock()
-	defer n.noteMutex.RUnlock()
-
-	return n.recentNote.epoch
-}
-
-func (n *Node) deactivateRing(idx uint32) {
-	n.noteMutex.Lock()
-	defer n.noteMutex.Unlock()
-
-	if n.maxByz == 0 {
-		return
-	}
-
-	ringNum := idx - 1
-
-	maxIdx := n.numRings - 1
-
-	if ringNum > maxIdx || ringNum < 0 {
-		log.Error(errNonExistingRing.Error())
-		return
-	}
-
-	if active := hasBit(n.recentNote.mask, ringNum); !active {
-		log.Error(errAlreadyDeactivated.Error())
-		return
-	}
-
-	if n.deactivatedRings == n.maxByz {
-		var idx uint32
-		for idx = 0; idx < maxIdx; idx++ {
-			if idx != ringNum && !hasBit(n.recentNote.mask, idx) {
-				break
-			}
-		}
-		n.recentNote.mask = setBit(n.recentNote.mask, idx)
-	} else {
-		n.deactivatedRings++
-	}
-
-	n.recentNote.mask = clearBit(n.recentNote.mask, ringNum)
-
-	err := n.recentNote.sign(n.privKey)
-	if err != nil {
-		log.Error(err.Error())
-	}
-}
-
-func (n *Node) getMask() uint32 {
-	n.noteMutex.RLock()
-	defer n.noteMutex.RUnlock()
-
-	return n.recentNote.mask
-}
-
-func (n *Node) collectGossipContent() (*gossip.State, error) {
-	msg := &gossip.State{
-		ExistingHosts:  make(map[string]uint64),
-		OwnNote:        n.localNoteToPbMsg(),
-		ExternalGossip: n.getExternalGossip(),
-	}
-
-	for _, p := range n.getView() {
-		peerEpoch := uint64(0)
-
-		if peerNote := p.getNote(); peerNote != nil {
-			peerEpoch = peerNote.epoch
-		}
-
-		msg.ExistingHosts[p.key] = peerEpoch
-	}
-
-	return msg, nil
+	return msg
 }
 
 func (n *Node) setProtocol(p protocol) {
@@ -114,13 +32,6 @@ func (n *Node) getProtocol() protocol {
 	defer n.protocolMutex.RUnlock()
 
 	return n.protocol
-}
-
-func (n *Node) localNoteToPbMsg() *gossip.Note {
-	n.noteMutex.RLock()
-	defer n.noteMutex.RUnlock()
-
-	return n.recentNote.toPbMsg()
 }
 
 func (n *Node) setGossipTimeout(timeout int) {
@@ -211,7 +122,7 @@ func (n *Node) isGossipRecording() bool {
 	return n.recordGossipRounds
 }
 
-func (n *Node) GetGossipRounds() uint32 {
+func (n *Node) GossipRounds() uint32 {
 	n.roundMutex.RLock()
 	defer n.roundMutex.RUnlock()
 
@@ -224,3 +135,90 @@ func (n *Node) incrementGossipRounds() {
 
 	n.rounds++
 }
+
+/*
+func (n *Node) signLocalNote() {
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
+
+	n.self.SignNote(n.privKey)
+}
+
+func (n *Node) localNoteToPbMsg() *gossip.Note {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	return n.recentNote.toPbMsg()
+}
+
+
+func (n *Node) setEpoch(newEpoch uint64) {
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
+
+	n.recentNote.epoch = newEpoch
+
+	err := n.recentNote.sign(n.privKey)
+	if err != nil {
+		log.Error(err.Error())
+	}
+}
+
+func (n *Node) localEpoch() uint64 {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	return n.recentNote.epoch
+}
+
+func (n *Node) deactivateRing(idx uint32) {
+	n.noteMutex.Lock()
+	defer n.noteMutex.Unlock()
+
+	if n.maxByz == 0 {
+		return
+	}
+
+	ringNum := idx - 1
+
+	maxIdx := n.numRings - 1
+
+	if ringNum > maxIdx || ringNum < 0 {
+		log.Error(errNonExistingRing.Error())
+		return
+	}
+
+	if active := hasBit(n.recentNote.mask, ringNum); !active {
+		log.Error(errAlreadyDeactivated.Error())
+		return
+	}
+
+	if n.deactivatedRings == n.maxByz {
+		var idx uint32
+		for idx = 0; idx < maxIdx; idx++ {
+			if idx != ringNum && !hasBit(n.recentNote.mask, idx) {
+				break
+			}
+		}
+		n.recentNote.mask = setBit(n.recentNote.mask, idx)
+	} else {
+		n.deactivatedRings++
+	}
+
+	n.recentNote.mask = clearBit(n.recentNote.mask, ringNum)
+
+	err := n.recentNote.sign(n.privKey)
+	if err != nil {
+		log.Error(err.Error())
+	}
+}
+
+func (n *Node) getMask() uint32 {
+	n.noteMutex.RLock()
+	defer n.noteMutex.RUnlock()
+
+	return n.recentNote.mask
+}
+
+
+*/

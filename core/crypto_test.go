@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -26,14 +25,9 @@ func (suite *CryptoTestSuite) SetupTest() {
 func TestCryptoTestSuite(t *testing.T) {
 	suite.Run(t, new(CryptoTestSuite))
 }
-func (suite *CryptoTestSuite) TestSignAndVerify() {
+func (suite *CryptoTestSuite) TestSignContent() {
 	data := genNonce()
 
-	signature, err := signContent(data, suite.privKey)
+	_, _, err := signContent(data, suite.privKey)
 	require.NoError(suite.T(), err, "Failed to sign")
-
-	valid, err := validateSignature(signature.r, signature.s, data, suite.pubKey)
-	require.NoError(suite.T(), err, "Failed to validate signature")
-
-	assert.True(suite.T(), valid, "signature is invalid")
 }
