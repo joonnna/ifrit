@@ -12,11 +12,25 @@
     - Remove features only required for experiments (?)
 
 - Code overhaul
-    - View seperation (done)
-    - Accusations from dead members
+    - View seperation (done partly)
+    - Accusations from dead members and on dead members
     - Rebuttal rework
     - Detach visualizer component from rest of system
     - Cleanup errors
+    - ShouldRebuttal rework
+    - NewNode rework (pass certificates, interace for visualizer?)
+    - Client/server interface rework (export?)
+    - Rpc package testing
+    - Udp package testing
+    - Remove mask from accusations
+    - Move mask logic from view to notes
+    - Log more
+    - Context loggers (log15 context loggers)
+    - Change ID's in protobuf to strings?
+    - Ping limit per monitor interval (how many each interval)
+    - Avoid transferring all accusations
+    - Support dead accusers
+    - Rpc client/server overhaul (grpc streams? stream interceptor for neighbour/validation?)
 
 - Testing overhaul
     - Re-write all tests after code overhaul
