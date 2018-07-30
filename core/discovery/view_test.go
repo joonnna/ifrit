@@ -616,11 +616,12 @@ func (suite *ViewTestSuite) TestValidAccuser() {
 
 	view.AddLive(p)
 
-	assert.False(suite.T(), view.ValidAccuser(p.Id, view.self.Id, view.rings.numRings+1), "Should return false with invalid ring number.")
-	assert.False(suite.T(), view.ValidAccuser("", view.self.Id, view.rings.numRings), "Should return false with no accused.")
-	assert.False(suite.T(), view.ValidAccuser(p.Id, "", view.rings.numRings), "Should return false with no accuser.")
+	assert.False(suite.T(), view.ValidAccuser(p, view.self, view.rings.numRings+1),
+		"Should return false with invalid ring number.")
 
-	assert.True(suite.T(), view.ValidAccuser(p.Id, view.self.Id, view.rings.numRings), "Should return true with valid parameters.")
+	assert.True(suite.T(), view.ValidAccuser(p, view.self, view.rings.numRings),
+		"Should return true with valid parameters.")
+
 }
 
 func (suite *ViewTestSuite) TestIsAlive() {

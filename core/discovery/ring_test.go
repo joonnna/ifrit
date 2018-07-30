@@ -188,10 +188,10 @@ func (suite *RingsTestSuite) TestIsPredecessor() {
 	suite.rings.add(p)
 
 	for _, r := range suite.rings.ringMap {
-		require.True(suite.T(), suite.rings.isPredecessor(suite.rings.self.Id, p.Id, r.ringNum), "Should be predecessor with only 2 in rings.")
+		require.True(suite.T(), suite.rings.isPredecessor(suite.rings.self, p, r.ringNum), "Should be predecessor with only 2 in rings.")
 	}
 
-	assert.False(suite.T(), suite.rings.isPredecessor(suite.rings.self.Id, p.Id, suite.rings.numRings+1), "Should return false with invalid ringNum.")
+	assert.False(suite.T(), suite.rings.isPredecessor(suite.rings.self, p, suite.rings.numRings+1), "Should return false with invalid ringNum.")
 
 }
 
@@ -432,19 +432,95 @@ func (suite *RingTestSuite) TestRingRemove() {
 }
 
 func (suite *RingTestSuite) TestIsPrev() {
-	p := &Peer{
-		Id: "testId",
-	}
-
 	r := suite.ring
 
-	r.add(p)
+	for i := 0; i < 30; i++ {
+		p := &Peer{
+			Id: fmt.Sprintf("testId%d", i),
+		}
 
-	assert.True(suite.T(), r.isPrev(r.selfId.p.Id, p.Id), "Should be prev with only 2 in rings.")
+		r.add(p)
+	}
 
-	assert.False(suite.T(), r.isPrev("", p.Id), "Should return false with empty id.")
-	assert.False(suite.T(), r.isPrev(r.selfId.p.Id, ""), "Should return false with empty toCheck.")
-	assert.False(suite.T(), r.isPrev("non-existing", p.Id), "Should return false with non-existing id.")
+	p1 := r.succList[0].p
+	p1Succ := r.succList[1].p
+	p1Prev := r.succList[len(r.succList)-1].p
+
+	r.remove(p1)
+
+	p2 := r.succList[3].p
+	p2Succ := r.succList[4].p
+	p2Prev := r.succList[2].p
+
+	r.remove(p2)
+	r.remove(p2Succ)
+	r.remove(p2Prev)
+
+	p3 := r.succList[6]
+	p3Prev := r.succList[5].p
+	r.remove(p3.p)
+	r.peerToRing[p3.p.Id] = p3
+
+	selfPrev := r.predecessor().p
+
+	tests := []struct {
+		acc     *Peer
+		accuser *Peer
+		out     bool
+	}{
+		{
+			acc:     r.succList[r.selfIdx].p,
+			accuser: selfPrev,
+			out:     true,
+		},
+
+		{
+			acc:     p3.p,
+			accuser: p3Prev,
+			out:     false,
+		},
+
+		{
+			acc:     p1,
+			accuser: p1Prev,
+			out:     true,
+		},
+
+		{
+			acc:     p1,
+			accuser: p1Succ,
+			out:     false,
+		},
+
+		{
+			acc:     p1Succ,
+			accuser: p1,
+			out:     true,
+		},
+
+		{
+			acc:     p1Prev,
+			accuser: p1,
+			out:     false,
+		},
+
+		{
+			acc:     p2,
+			accuser: p2Prev,
+			out:     true,
+		},
+
+		{
+			acc:     p2,
+			accuser: p2Succ,
+			out:     false,
+		},
+	}
+
+	for i, t := range tests {
+		require.Equalf(suite.T(), t.out, r.isPrev(t.acc, t.accuser),
+			"Invalid output for test %d.", i)
+	}
 }
 
 func (suite *RingTestSuite) TestBetweenNeighbours() {
