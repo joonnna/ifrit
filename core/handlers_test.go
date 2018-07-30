@@ -399,28 +399,6 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 		},
 
 		{
-			acc: discovery.NewAccusation(1, "Non-existing Id", selfId,
-				1, node.privKey),
-			accuser:   node.self,
-			accused:   nil,
-			out:       errNoAccused,
-			timer:     false,
-			rebuttal:  false,
-			isAccused: false,
-		},
-
-		{
-			acc: discovery.NewAccusation(1, prev.Id, "Non-existing Id",
-				1, node.privKey),
-			accuser:   nil,
-			accused:   prev,
-			out:       errNoAccuser,
-			timer:     false,
-			rebuttal:  false,
-			isAccused: false,
-		},
-
-		{
 			acc: discovery.NewAccusation(1, succ.Id, prev.Id, 1,
 				suite.privMap[prev.Id]),
 			accuser:   prev,
@@ -469,16 +447,6 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 			timer:     true,
 			rebuttal:  false,
 			isAccused: true,
-		},
-
-		{
-			acc:       discovery.NewAccusation(1, randomPeer.Id, selfId, 1, node.privKey),
-			accuser:   node.self,
-			accused:   randomPeer,
-			out:       errNoAccused,
-			timer:     false,
-			rebuttal:  false,
-			isAccused: false,
 		},
 	}
 

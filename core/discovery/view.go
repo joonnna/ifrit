@@ -398,7 +398,7 @@ func (v *View) FindNeighbours(id string) []*Peer {
 	return v.rings.findNeighbours(id)
 }
 
-func (v *View) ValidAccuser(accused, accuser string, ringNum uint32) bool {
+func (v *View) ValidAccuser(accused, accuser *Peer, ringNum uint32) bool {
 	v.liveMutex.RLock()
 	defer v.liveMutex.RUnlock()
 

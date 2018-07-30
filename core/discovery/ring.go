@@ -96,7 +96,7 @@ func (rs *rings) remove(p *Peer) {
 	}
 }
 
-func (rs rings) isPredecessor(id, toCheck string, ringNum uint32) bool {
+func (rs rings) isPredecessor(id, toCheck *Peer, ringNum uint32) bool {
 	if ring, ok := rs.ringMap[ringNum]; !ok {
 		log.Error("Invalid ring number", "ringNum", ringNum)
 		return false
@@ -320,26 +320,57 @@ func (r *ring) remove(p *Peer) {
 	}
 }
 
-func (r *ring) isPrev(id, toCheck string) bool {
-	toCheckId, ok := r.peerToRing[toCheck]
+func (r *ring) isPrev(p, toCheck *Peer) bool {
+	var deadAcc, deadAccuser bool
+
+	toCheckId, ok := r.peerToRing[toCheck.Id]
 	if !ok {
-		log.Error("Could not find toCheckId")
-		return false
+		deadAccuser = true
 	}
 
-	currId, ok := r.peerToRing[id]
+	rId, ok := r.peerToRing[p.Id]
 	if !ok {
-		log.Error("Could not find currId")
-		return false
+		deadAcc = true
 	}
 
-	i, err := search(r.succList, currId, r.length)
-	if err != nil {
-		log.Error(errIdNotFound.Error())
-		return false
-	}
+	if !deadAcc && !deadAccuser {
+		i, err := search(r.succList, rId, r.length)
+		if err != nil {
+			log.Error(err.Error())
+			return false
+		}
 
-	return r.prevAtIdx(i).equal(toCheckId)
+		return r.prevAtIdx(i).equal(toCheckId)
+	} else if deadAcc && !deadAccuser {
+		accId := &ringId{
+			hash: hashId(r.ringNum, []byte(p.Id)),
+		}
+
+		_, prev := findSuccAndPrev(r.succList, accId, r.length)
+
+		return isBetween(prev, accId, toCheckId)
+
+	} else if !deadAcc && deadAccuser {
+		accuserId := &ringId{
+			hash: hashId(r.ringNum, []byte(toCheck.Id)),
+		}
+
+		_, prev := findSuccAndPrev(r.succList, rId, r.length)
+
+		return isBetween(prev, rId, accuserId)
+	} else {
+		accId := &ringId{
+			hash: hashId(r.ringNum, []byte(p.Id)),
+		}
+
+		accuserId := &ringId{
+			hash: hashId(r.ringNum, []byte(toCheck.Id)),
+		}
+
+		_, prev := findSuccAndPrev(r.succList, accId, r.length)
+
+		return isBetween(prev, accId, accuserId)
+	}
 }
 
 func (r *ring) betweenNeighbours(other string) bool {

@@ -22,8 +22,6 @@ var (
 	errInvalidMaskLength      = errors.New("Mask is of invalid length.")
 
 	errAccAlreadyExists      = errors.New("Accusation already existed, discarding.")
-	errNoAccused             = errors.New("Accused peer not found.")
-	errNoAccuser             = errors.New("Accuser peer not found.")
 	errDisabledRing          = errors.New("Ring associated with accusation was disabled.")
 	errInvalidAccuser        = errors.New("Accuser is not predecessor of accused on given ring, invalid accusation.")
 	errInvalidSignature      = errors.New("Accusation signature was invalid.")
@@ -82,13 +80,17 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 			}
 		}
 	} else if observed {
+		if !peer.IsAccused() {
+			err := n.evalNote(args.GetOwnNote())
+			if err != nil {
+				log.Debug(err.Error())
+			}
+			return nil, errNotMyNeighbour
+		}
+
 		err := n.evalNote(args.GetOwnNote())
 		if err != nil {
 			log.Debug(err.Error())
-		}
-
-		if !peer.IsAccused() {
-			return nil, errNotMyNeighbour
 		}
 
 		for _, a := range peer.AllAccusations() {
@@ -189,31 +191,19 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 
 	for _, acc := range accusations {
-		accuserId := string(acc.GetAccuser())
-		accuser := n.view.LivePeer(accuserId)
-		if accuserId == n.self.Id {
-			accuser = n.self
+		accuser := n.view.Peer(string(acc.GetAccuser()))
+		if accuser == nil {
+			continue
 		}
 
-		accusedId := string(acc.GetAccused())
-		accused := n.view.LivePeer(accusedId)
-		if accusedId == n.self.Id {
-			accused = n.self
+		accused := n.view.Peer(string(acc.GetAccused()))
+		if accused == nil || accused.Note() == nil {
+			continue
 		}
 
 		err := n.evalAccusation(acc, accuser, accused)
 		if err != nil {
-			accuserAddr := ""
-			if accuser != nil {
-				accuserAddr = accuser.Addr
-			}
-
-			accusedAddr := ""
-			if accused != nil {
-				accusedAddr = accused.Addr
-			}
-
-			log.Debug(err.Error(), "ringNum", acc.GetRingNum(), "epoch", acc.GetEpoch(), "accused", accusedAddr, "accuser", accuserAddr)
+			log.Debug(err.Error(), "ringNum", acc.GetRingNum(), "epoch", acc.GetEpoch(), "accused", accused.Addr, "accuser", accuser.Addr)
 		}
 	}
 }
@@ -241,14 +231,6 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 	epoch := a.GetEpoch()
 	ringNum := a.GetRingNum()
 
-	if accuserPeer == nil || accuserPeer.Note() == nil {
-		return errNoAccuser
-	}
-
-	if p == nil || p.Note() == nil {
-		return errNoAccused
-	}
-
 	if n.self.Id == p.Id {
 		// TODO check accuser etc
 		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
@@ -275,7 +257,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 			return errDisabledRing
 		}
 
-		if valid := n.view.ValidAccuser(p.Id, accuserPeer.Id, ringNum); !valid {
+		if valid := n.view.ValidAccuser(p, accuserPeer, ringNum); !valid {
 			return errInvalidAccuser
 		}
 
