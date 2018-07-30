@@ -82,13 +82,13 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 			}
 		}
 	} else if observed {
-		if !peer.IsAccused() {
-			return nil, errNotMyNeighbour
-		}
-
 		err := n.evalNote(args.GetOwnNote())
 		if err != nil {
 			log.Debug(err.Error())
+		}
+
+		if !peer.IsAccused() {
+			return nil, errNotMyNeighbour
 		}
 
 		for _, a := range peer.AllAccusations() {
