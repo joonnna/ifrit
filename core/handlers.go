@@ -191,13 +191,20 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 
 	for _, acc := range accusations {
-		accuser := n.view.Peer(string(acc.GetAccuser()))
-		if accuser == nil {
+		accId := string(acc.GetAccused())
+		accuserId := string(acc.GetAccuser())
+
+		accuser := n.view.Peer(accuserId)
+		if accuserId == n.self.Id {
+			accuser = n.self
+		} else if accuser == nil {
 			continue
 		}
 
-		accused := n.view.Peer(string(acc.GetAccused()))
-		if accused == nil || accused.Note() == nil {
+		accused := n.view.Peer(accId)
+		if accId == n.self.Id {
+			accused = n.self
+		} else if accused == nil || accused.Note() == nil {
 			continue
 		}
 
