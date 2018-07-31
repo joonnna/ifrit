@@ -154,7 +154,6 @@ func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv 
 	acc := &Accusation{
 		accused: accused.id,
 		accuser: self.Id,
-		mask:    accused.mask,
 		epoch:   accused.epoch,
 		ringNum: ringNum,
 	}
@@ -171,7 +170,7 @@ func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv 
 	return nil
 }
 
-func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNum uint32, r, s []byte) error {
+func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, ringNum uint32, r, s []byte) error {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
@@ -198,7 +197,6 @@ func (p *Peer) AddAccusation(accused, accuser string, epoch uint64, mask, ringNu
 	a := &Accusation{
 		accused: accused,
 		accuser: accuser,
-		mask:    mask,
 		epoch:   epoch,
 		ringNum: ringNum,
 		signature: &signature{
@@ -400,7 +398,6 @@ func (p *Peer) ClearNote() {
 func (p *Peer) AddTestAccusation(a *gossip.Accusation) {
 	acc := &Accusation{
 		epoch:   a.GetEpoch(),
-		mask:    a.GetMask(),
 		accuser: string(a.GetAccuser()),
 		accused: string(a.GetAccused()),
 		ringNum: a.GetRingNum(),

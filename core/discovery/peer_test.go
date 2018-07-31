@@ -215,22 +215,22 @@ func (suite *PeerTestSuite) TestAddAccusation() {
 	accuserId := "accuserId"
 	accusedId := "accusedId"
 
-	err := p.AddAccusation(accusedId, accuserId, p.note.epoch, p.note.mask, suite.numRings, p.note.signature.r, p.note.signature.s)
+	err := p.AddAccusation(accusedId, accuserId, p.note.epoch, suite.numRings, p.note.signature.r, p.note.signature.s)
 	require.NoError(suite.T(), err, "Failed to add valid accusation")
 
-	err = p.AddAccusation(accusedId, accuserId, p.note.epoch+1, p.note.mask, suite.numRings, p.note.signature.r, p.note.signature.s)
+	err = p.AddAccusation(accusedId, accuserId, p.note.epoch+1, suite.numRings, p.note.signature.r, p.note.signature.s)
 	require.EqualError(suite.T(), err, errOldEpoch.Error(), "Accusation with different epoch compared to note hould return an error.")
 
-	err = p.AddAccusation(accusedId, accuserId, p.note.epoch, p.note.mask, suite.numRings+1, p.note.signature.r, p.note.signature.s)
+	err = p.AddAccusation(accusedId, accuserId, p.note.epoch, suite.numRings+1, p.note.signature.r, p.note.signature.s)
 	require.EqualError(suite.T(), err, errInvalidRing.Error(), "Accusation with invalid ring number returned no error.")
 
-	err = p.AddAccusation(accusedId, accuserId, p.note.epoch, p.note.mask, suite.numRings, nil, nil)
+	err = p.AddAccusation(accusedId, accuserId, p.note.epoch, suite.numRings, nil, nil)
 	require.EqualError(suite.T(), err, errAccuserSign.Error(), "Accusation without signature returned no error.")
 
-	err = p.AddAccusation(accusedId, "", p.note.epoch, p.note.mask, suite.numRings, p.note.signature.r, p.note.signature.s)
+	err = p.AddAccusation(accusedId, "", p.note.epoch, suite.numRings, p.note.signature.r, p.note.signature.s)
 	require.EqualError(suite.T(), err, errAccuserId.Error(), "Accusation without accuser id returned no error.")
 
-	err = p.AddAccusation("", accuserId, p.note.epoch, p.note.mask, suite.numRings, p.note.signature.r, p.note.signature.s)
+	err = p.AddAccusation("", accuserId, p.note.epoch, suite.numRings, p.note.signature.r, p.note.signature.s)
 	require.EqualError(suite.T(), err, errAccusedId.Error(), "Accusation without accused id returned no error.")
 
 }

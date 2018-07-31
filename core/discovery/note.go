@@ -15,9 +15,23 @@ type Note struct {
 	*signature
 }
 
+func (n Note) IsRingDisabled(ringNum, numRings uint32) bool {
+	idx := int(ringNum) - 1
+
+	maxIdx := uint32(numRings - 1)
+
+	if idx > int(maxIdx) || idx < 0 {
+		return false
+	}
+
+	return !hasBit(n.mask, uint32(idx))
+}
+
+/*
 func (n Note) Mask() uint32 {
 	return n.mask
 }
+*/
 
 func (n Note) Equal(epoch uint64) bool {
 	return n.epoch == epoch

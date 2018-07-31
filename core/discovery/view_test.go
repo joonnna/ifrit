@@ -571,7 +571,8 @@ func (suite *ViewTestSuite) TestShouldRebuttal() {
 	assert.True(suite.T(), view.ShouldRebuttal(currentEpoch, accuseRing), "Should return false with invalid epoch.")
 
 	assert.NotEqual(suite.T(), prevNote, view.self.note, "Old note not replaced.")
-	assert.True(suite.T(), view.IsRingDisabled(view.self.note.mask, accuseRing), "Ring not deactivated in mask.")
+	assert.True(suite.T(), view.self.note.IsRingDisabled(accuseRing, view.NumRings()),
+		"Ring not deactivated in mask.")
 	assert.True(suite.T(), view.ValidMask(view.self.note.mask), "Mask is not valid after disabling.")
 }
 
@@ -754,14 +755,15 @@ func (suite *ViewTestSuite) TestIsRingDisabled() {
 	view := suite.v
 
 	for i = 1; i <= view.rings.numRings; i++ {
-		require.False(suite.T(), view.IsRingDisabled(view.self.note.mask, i), "Returned true on an active ring.")
+		require.False(suite.T(), view.self.note.IsRingDisabled(i, view.NumRings()),
+			"Returned true on an active ring.")
 	}
 
 	disableIdx = 0
 
-	m := clearBit(view.self.note.mask, disableIdx)
+	view.self.note.mask = clearBit(view.self.note.mask, disableIdx)
 
-	assert.True(suite.T(), view.IsRingDisabled(m, disableIdx+1), "Returned false on a disabled ring.")
+	assert.True(suite.T(), view.self.note.IsRingDisabled(disableIdx+1, view.NumRings()), "Returned false on a disabled ring.")
 }
 
 func (suite *ViewTestSuite) TestDeactivateRing() {
@@ -836,25 +838,6 @@ func (suite *ViewTestSuite) TestValidMaskInternal() {
 		} else {
 			assert.NoError(suite.T(), validMask(mask, numRings, maxByz), "Should not fail with valid amounts of deactivations.")
 		}
-	}
-}
-
-func (suite *ViewTestSuite) TestIsRingDisabledInternal() {
-	var i uint32
-
-	mask := suite.v.self.note.mask
-	numRings := suite.v.rings.numRings
-
-	require.False(suite.T(), isRingDisabled(mask, numRings, numRings+1), "Should return false on invalid ring.")
-	require.False(suite.T(), isRingDisabled(mask, numRings, 1), "Should return false on invalid ring.")
-
-	for i = 1; i < numRings; i++ {
-		require.False(suite.T(), isRingDisabled(mask, numRings, i), "Should return false on active ring.")
-	}
-
-	for i = 1; i < numRings; i++ {
-		mask = clearBit(mask, i-1)
-		require.True(suite.T(), isRingDisabled(mask, numRings, i), "Should return true on disabled ring.")
 	}
 }
 

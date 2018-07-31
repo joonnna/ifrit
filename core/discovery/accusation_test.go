@@ -71,7 +71,6 @@ func (suite *AccTestSuite) TestToPbMsg() {
 		accused: "testid1",
 		accuser: "testid2",
 		ringNum: 3,
-		mask:    1,
 		epoch:   5,
 		signature: &signature{
 			r: []byte("testR"),
@@ -90,8 +89,6 @@ func (suite *AccTestSuite) TestToPbMsg() {
 	assert.Equal(suite.T(), acc.epoch, gossipAcc.GetEpoch(), "Protobuf message has different epoch field.")
 
 	assert.Equal(suite.T(), acc.ringNum, gossipAcc.GetRingNum(), "Protobuf message has different ringNum field.")
-
-	assert.Equal(suite.T(), acc.mask, gossipAcc.GetMask(), "Protobuf message has different mask field.")
 
 	assert.Equal(suite.T(), acc.signature.r, gossipAcc.Signature.GetR(), "Protobuf message has different signature r field.")
 

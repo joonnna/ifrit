@@ -465,10 +465,6 @@ func (v *View) ValidMask(mask uint32) bool {
 	return true
 }
 
-func (v *View) IsRingDisabled(mask, ringNum uint32) bool {
-	return isRingDisabled(mask, v.rings.numRings, ringNum)
-}
-
 func (v *View) deactivateRing(ringNumber uint32) (uint32, error) {
 	var idx uint32
 
@@ -514,6 +510,11 @@ func validMask(mask, numRings, maxByz uint32) error {
 	return nil
 }
 
+/*
+
+func (v *View) IsRingDisabled(mask, ringNum uint32) bool {
+	return isRingDisabled(mask, v.rings.numRings, ringNum)
+}
 func isRingDisabled(mask, numRings, ringNum uint32) bool {
 	idx := int(ringNum) - 1
 
@@ -525,6 +526,7 @@ func isRingDisabled(mask, numRings, ringNum uint32) bool {
 
 	return !hasBit(mask, uint32(idx))
 }
+*/
 
 func setBit(n uint32, pos uint32) uint32 {
 	n |= (1 << pos)
