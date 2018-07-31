@@ -6,7 +6,6 @@
 
 - API cleanup
     - Remove recording feature (?)
-    - Remove features only required for experiments (?)
 
 - Code overhaul
     - Rebuttal fix (valid accuser)
@@ -44,6 +43,8 @@
     - Accusations from dead members and on dead members
     - Remove SendAll
     - Configuration rework
+    - Fix races detected by go race detector
+    - Remove features only required for experiments
 
 
 Do seperate pull requests for all (for tracking)
