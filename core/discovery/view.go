@@ -353,8 +353,6 @@ func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
 	v.self.noteMutex.Lock()
 	defer v.self.noteMutex.Unlock()
 
-	// TODO check if accuser is my direct predecessor
-
 	if eq := v.self.note.Equal(epoch); eq {
 		newMask := v.self.note.mask
 
