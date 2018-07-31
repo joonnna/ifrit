@@ -62,7 +62,6 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-	var i uint32
 
 	/*
 		p, ringNum := n.view.MonitorTarget()
@@ -72,7 +71,7 @@ func (c correct) Monitor(n *Node) {
 		}
 	*/
 
-	for i = 1; i <= n.view.NumRings(); i++ {
+	for i := 1; i <= n.pingsPerInterval; i++ {
 		p, ringNum := n.view.MonitorTarget()
 		if p == nil {
 			continue
@@ -88,16 +87,18 @@ func (c correct) Monitor(n *Node) {
 			// Not possible to accuse a peer without a note.
 			if peerNote == nil {
 				n.view.RemoveLive(p.Id)
-				log.Debug("Removing live peer due to not having note and being accused", "addr", p.Addr)
+				log.Debug("Removing live peer due to not having note and being accused",
+					"addr", p.Addr)
 				continue
 			}
 
 			err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
-			if err == discovery.ErrAccAlreadyExists {
-				if exists := n.view.HasTimer(p.Id); !exists {
+			if err == discovery.ErrAccAlreadyExists || err == nil {
+				live := n.view.IsAlive(p.Id)
+				if exists := n.view.HasTimer(p.Id); !exists && live {
 					n.view.StartTimer(p, peerNote, n.self)
 				}
-			} else if err != nil {
+			} else {
 				log.Error(err.Error())
 			}
 		}

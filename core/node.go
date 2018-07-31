@@ -52,6 +52,7 @@ type Node struct {
 	exitMutex sync.RWMutex
 
 	viewUpdateTimeout time.Duration
+	pingsPerInterval  int
 
 	gossipTimeout      time.Duration
 	gossipTimeoutMutex sync.RWMutex
@@ -164,6 +165,7 @@ func NewNode(c client, s server) (*Node, error) {
 	var certs *certSet
 	var http string
 	var l net.Listener
+	var perInterval int
 
 	udpServer, err := udp.NewServer()
 	if err != nil {
@@ -226,6 +228,15 @@ func NewNode(c client, s server) (*Node, error) {
 		return nil, err
 	}
 
+	num := viper.GetInt("pings_per_interval")
+	if num == 0 {
+		perInterval = 1
+	} else if rings := int(v.NumRings()); num > rings {
+		perInterval = rings
+	} else {
+		perInterval = num
+	}
+
 	n := &Node{
 		exitChan:          make(chan bool, 1),
 		wg:                &sync.WaitGroup{},
@@ -245,6 +256,7 @@ func NewNode(c client, s server) (*Node, error) {
 		httpListener:      l,
 		protocol:          correct{},
 		self:              v.Self(),
+		pingsPerInterval:  perInterval,
 
 		// Visualizer specific
 		viz:              viper.GetBool("use_viz"),

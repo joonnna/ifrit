@@ -167,6 +167,7 @@ func readConfig() error {
 	viper.SetDefault("monitor_interval", 10)
 	viper.SetDefault("view_update_interval", 10)
 	viper.SetDefault("ping_limit", 3)
+	viper.SetDefault("pings_per_interval", 3)
 	viper.SetDefault("removal_timeout", 60)
 	viper.SetDefault("max_concurrent_messages", 5)
 
