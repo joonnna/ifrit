@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/ecdsa"
 	"errors"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
@@ -16,7 +17,6 @@ var (
 )
 
 type pinger struct {
-	exitChan chan bool
 	transport
 	privKey        *ecdsa.PrivateKey
 	maxFailedPings uint32
@@ -24,39 +24,40 @@ type pinger struct {
 
 type transport interface {
 	Send(addr string, data []byte) ([]byte, error)
-	Serve(func(data []byte) ([]byte, error), chan bool) error
-	Shutdown()
+	Serve(func(data []byte) ([]byte, error)) error
+	Pause(d time.Duration)
+	Stop()
 }
 
 func newPinger(t transport, maxPing uint32, priv *ecdsa.PrivateKey) *pinger {
 	return &pinger{
 		transport:      t,
 		privKey:        priv,
-		exitChan:       make(chan bool),
 		maxFailedPings: maxPing,
 	}
 }
 
-func (p *pinger) ping(dest *discovery.Peer) error {
-	if dest.NumPing() >= p.maxFailedPings {
-		return errDead
-	}
+func (p *pinger) stopServing(d time.Duration) {
+	p.Pause(d)
+}
 
+func (p *pinger) ping(dest *discovery.Peer) error {
 	msg := &gossip.Ping{
 		Nonce: genNonce(),
 	}
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
 
-	dest.IncrementPing()
-
 	respBytes, err := p.Send(dest.PingAddr, data)
 	if err != nil {
-		log.Error(err.Error())
+		dest.IncrementPing()
+		if dest.NumPing() >= p.maxFailedPings {
+			return errDead
+		}
+
 		return err
 	}
 
@@ -64,13 +65,11 @@ func (p *pinger) ping(dest *discovery.Peer) error {
 
 	err = proto.Unmarshal(respBytes, resp)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
 	sign := resp.GetSignature()
 
 	if valid := dest.ValidateSignature(sign.GetR(), sign.GetS(), resp.GetNonce()); !valid {
-		log.Error(errInvalidPongSignature.Error())
 		return errInvalidPongSignature
 	}
 
@@ -79,7 +78,7 @@ func (p *pinger) ping(dest *discovery.Peer) error {
 	return nil
 }
 
-func (p pinger) signPong(data []byte) ([]byte, error) {
+func (p *pinger) signPong(data []byte) ([]byte, error) {
 	r, s, err := signContent(data, p.privKey)
 	if err != nil {
 		log.Error(err.Error())
@@ -103,11 +102,10 @@ func (p pinger) signPong(data []byte) ([]byte, error) {
 	return bytes, nil
 }
 
-func (p pinger) serve() {
-	p.Serve(p.signPong, p.exitChan)
+func (p *pinger) serve() {
+	p.Serve(p.signPong)
 }
 
 func (p *pinger) shutdown() {
-	close(p.exitChan)
-	p.Shutdown()
+	p.Stop()
 }

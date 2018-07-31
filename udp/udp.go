@@ -13,6 +13,9 @@ import (
 type Server struct {
 	conn *net.UDPConn
 	addr string
+
+	exitChan  chan bool
+	pauseChan chan time.Duration
 }
 
 func NewServer() (*Server, error) {
@@ -36,12 +39,14 @@ func NewServer() (*Server, error) {
 	port := strings.Split(conn.LocalAddr().String(), ":")[1]
 
 	return &Server{
-		conn: conn,
-		addr: fmt.Sprintf("%s:%s", addr[0], port),
+		conn:      conn,
+		addr:      fmt.Sprintf("%s:%s", addr[0], port),
+		exitChan:  make(chan bool, 1),
+		pauseChan: make(chan time.Duration, 1),
 	}, nil
 }
 
-func (s Server) Send(addr string, data []byte) ([]byte, error) {
+func (s *Server) Send(addr string, data []byte) ([]byte, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -69,11 +74,13 @@ func (s Server) Send(addr string, data []byte) ([]byte, error) {
 	return bytes[:n], nil
 }
 
-func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool) error {
+func (s *Server) Serve(signMsg func([]byte) ([]byte, error)) error {
 	bytes := make([]byte, 256)
 	for {
 		select {
-		case <-exitChan:
+		case d := <-s.pauseChan:
+			time.Sleep(d)
+		case <-s.exitChan:
 			return nil
 		default:
 			n, addr, err := s.conn.ReadFrom(bytes)
@@ -101,10 +108,15 @@ func (s *Server) Serve(signMsg func([]byte) ([]byte, error), exitChan chan bool)
 	return nil
 }
 
-func (s Server) Addr() string {
+func (s *Server) Addr() string {
 	return s.addr
 }
 
-func (s *Server) Shutdown() {
+func (s *Server) Pause(d time.Duration) {
+	s.pauseChan <- d
+}
+
+func (s *Server) Stop() {
+	close(s.exitChan)
 	s.conn.Close()
 }

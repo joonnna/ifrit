@@ -334,17 +334,23 @@ func (r *ring) isPrev(p, toCheck *Peer) bool {
 	}
 
 	if !deadAcc && !deadAccuser {
-		i, err := search(r.succList, rId, r.length)
-		if err != nil {
-			log.Error(err.Error())
-			return false
-		}
+		if !rId.equal(r.selfId) {
+			i, err := search(r.succList, rId, r.length)
+			if err != nil {
+				log.Error(err.Error())
+				return false
+			}
 
-		return r.prevAtIdx(i).equal(toCheckId)
+			return r.prevAtIdx(i).equal(toCheckId)
+		} else {
+			return r.predecessor().equal(toCheckId)
+		}
 	} else if deadAcc && !deadAccuser {
 		accId := &ringId{
 			hash: hashId(r.ringNum, []byte(p.Id)),
 		}
+
+		// No need for self check, i will never consider myself dead.
 
 		_, prev := findSuccAndPrev(r.succList, accId, r.length)
 
@@ -355,9 +361,13 @@ func (r *ring) isPrev(p, toCheck *Peer) bool {
 			hash: hashId(r.ringNum, []byte(toCheck.Id)),
 		}
 
-		_, prev := findSuccAndPrev(r.succList, rId, r.length)
+		if !rId.equal(r.selfId) {
+			_, prev := findSuccAndPrev(r.succList, rId, r.length)
 
-		return isBetween(prev, rId, accuserId)
+			return isBetween(prev, rId, accuserId)
+		} else {
+			return isBetween(r.predecessor(), rId, accuserId)
+		}
 	} else {
 		accId := &ringId{
 			hash: hashId(r.ringNum, []byte(p.Id)),

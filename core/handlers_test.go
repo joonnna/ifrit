@@ -377,6 +377,26 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 		isAccused bool
 	}{
 		{
+			acc:       discovery.NewAccusation(1, selfId, succ.Id, 1, suite.privMap[succ.Id]),
+			accuser:   succ,
+			accused:   node.self,
+			out:       errInvalidAccuser,
+			timer:     false,
+			rebuttal:  false,
+			isAccused: false,
+		},
+
+		{
+			acc:       discovery.NewUnsignedAccusation(1, selfId, prev.Id, 1),
+			accuser:   prev,
+			accused:   node.self,
+			out:       errInvalidSignature,
+			timer:     false,
+			rebuttal:  false,
+			isAccused: false,
+		},
+
+		{
 			acc:       discovery.NewAccusation(2, selfId, prev.Id, 1, suite.privMap[prev.Id]),
 			accuser:   prev,
 			accused:   node.self,
