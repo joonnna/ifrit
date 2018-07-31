@@ -8,7 +8,6 @@
     - Remove recording feature (?)
 
 - Code overhaul
-    - Rebuttal fix (valid accuser)
     - Detach visualizer component from rest of system
     - Cleanup errors
     - NewNode rework (pass certificates, inteface for visualizer?)
@@ -20,7 +19,6 @@
     - Log more
     - Context loggers (log15 context loggers)
     - Change ID's in protobuf to strings?
-    - Ping limit per monitor interval (how many each interval)
     - Avoid transferring all accusations
     - Rpc client/server overhaul (grpc streams? stream interceptor for neighbour/validation?)
     - Rework old tests according to the new test setup
@@ -45,6 +43,8 @@
     - Configuration rework
     - Fix races detected by go race detector
     - Remove features only required for experiments
+    - Rebuttal fix (valid accuser)
+    - Ping limit per monitor interval (how many each interval)
 
 
 Do seperate pull requests for all (for tracking)
