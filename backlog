@@ -14,8 +14,6 @@
     - Client/server interface rework (export?)
     - Rpc package testing
     - Udp package testing
-    - Remove mask from accusations
-    - Move mask logic from view to notes
     - Log more
     - Context loggers (log15 context loggers)
     - Change ID's in protobuf to strings?
@@ -45,6 +43,8 @@
     - Remove features only required for experiments
     - Rebuttal fix (valid accuser)
     - Ping limit per monitor interval (how many each interval)
+    - Move mask logic from view to notes
+    - Remove mask from accusations
 
 
 Do seperate pull requests for all (for tracking)
