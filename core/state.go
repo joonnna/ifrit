@@ -81,6 +81,7 @@ func (n *Node) httpHandler() {
 	r.HandleFunc("/numfailedrequests", n.numFailedRequestsHandler)
 	r.HandleFunc("/latencies", n.latenciesHandler)
 	r.HandleFunc("/neighbors", n.neighborsHandler)
+	r.HandleFunc("/byzantine", n.byzantineHandler)
 	/*
 		r.HandleFunc("/hosts", n.hostsHandler)
 		r.HandleFunc("/state", n.stateHandler)
@@ -132,6 +133,28 @@ func (n *Node) stateHandler(w http.ResponseWriter, r *http.Request) {
 }
 */
 
+func (n *Node) byzantineHandler(w http.ResponseWriter, r *http.Request) {
+	io.Copy(ioutil.Discard, r.Body)
+	r.Body.Close()
+
+	log.Info("Got byzantine request, periodically not responding to pings!")
+
+	go n.periodicallyPause(time.Second * 20)
+}
+
+func (n *Node) periodicallyPause(d time.Duration) {
+	for {
+		select {
+		case <-n.exitChan:
+			return
+		default:
+			n.failureDetector.stopServing(d)
+		}
+
+		time.Sleep(d * 3)
+	}
+}
+
 func (n *Node) shutdownHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(ioutil.Discard, r.Body)
 	r.Body.Close()
@@ -160,7 +183,7 @@ func (n *Node) crashHandler(w http.ResponseWriter, r *http.Request) {
 	log.Info("Received crash request, shutting down local comm")
 
 	n.server.ShutDown()
-	n.failureDetector.Shutdown()
+	n.failureDetector.shutdown()
 }
 
 func (n *Node) corruptHandler(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/ecdsa"
 	"errors"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
@@ -16,7 +17,6 @@ var (
 )
 
 type pinger struct {
-	exitChan chan bool
 	transport
 	privKey        *ecdsa.PrivateKey
 	maxFailedPings uint32
@@ -65,13 +65,11 @@ func (p *pinger) ping(dest *discovery.Peer) error {
 
 	err = proto.Unmarshal(respBytes, resp)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
 	sign := resp.GetSignature()
 
 	if valid := dest.ValidateSignature(sign.GetR(), sign.GetS(), resp.GetNonce()); !valid {
-		log.Error(errInvalidPongSignature.Error())
 		return errInvalidPongSignature
 	}
 
@@ -80,7 +78,7 @@ func (p *pinger) ping(dest *discovery.Peer) error {
 	return nil
 }
 
-func (p pinger) signPong(data []byte) ([]byte, error) {
+func (p *pinger) signPong(data []byte) ([]byte, error) {
 	r, s, err := signContent(data, p.privKey)
 	if err != nil {
 		log.Error(err.Error())
@@ -104,11 +102,10 @@ func (p pinger) signPong(data []byte) ([]byte, error) {
 	return bytes, nil
 }
 
-func (p pinger) serve() {
-	p.Serve(p.signPong, p.exitChan)
+func (p *pinger) serve() {
+	p.Serve(p.signPong)
 }
 
 func (p *pinger) shutdown() {
-	close(p.exitChan)
-	p.Shutdown()
+	p.Stop()
 }
