@@ -24,39 +24,40 @@ type pinger struct {
 
 type transport interface {
 	Send(addr string, data []byte) ([]byte, error)
-	Serve(func(data []byte) ([]byte, error), chan bool) error
-	Shutdown()
+	Serve(func(data []byte) ([]byte, error)) error
+	Pause(d time.Duration)
+	Stop()
 }
 
 func newPinger(t transport, maxPing uint32, priv *ecdsa.PrivateKey) *pinger {
 	return &pinger{
 		transport:      t,
 		privKey:        priv,
-		exitChan:       make(chan bool),
 		maxFailedPings: maxPing,
 	}
 }
 
-func (p *pinger) ping(dest *discovery.Peer) error {
-	if dest.NumPing() >= p.maxFailedPings {
-		return errDead
-	}
+func (p *pinger) stopServing(d time.Duration) {
+	p.Pause(d)
+}
 
+func (p *pinger) ping(dest *discovery.Peer) error {
 	msg := &gossip.Ping{
 		Nonce: genNonce(),
 	}
 
 	data, err := proto.Marshal(msg)
 	if err != nil {
-		log.Error(err.Error())
 		return err
 	}
 
-	dest.IncrementPing()
-
 	respBytes, err := p.Send(dest.PingAddr, data)
 	if err != nil {
-		log.Error(err.Error())
+		dest.IncrementPing()
+		if dest.NumPing() >= p.maxFailedPings {
+			return errDead
+		}
+
 		return err
 	}
 
