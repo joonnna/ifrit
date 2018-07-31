@@ -259,7 +259,6 @@ func checkAccusationSignature(a *gossip.Accusation, accuser *discovery.Peer) boo
 		Epoch:   a.GetEpoch(),
 		Accuser: a.GetAccuser(),
 		Accused: a.GetAccused(),
-		Mask:    a.GetMask(),
 		RingNum: a.GetRingNum(),
 	}
 

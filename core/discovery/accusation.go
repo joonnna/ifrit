@@ -17,7 +17,6 @@ type Accusation struct {
 	ringNum uint32
 	epoch   uint64
 	accuser string
-	mask    uint32
 	accused string
 	*signature
 }
@@ -39,7 +38,6 @@ func (a Accusation) ToPbMsg() *gossip.Accusation {
 		Epoch:   a.epoch,
 		Accuser: []byte(a.accuser),
 		Accused: []byte(a.accused),
-		Mask:    a.mask,
 		RingNum: a.ringNum,
 		Signature: &gossip.Signature{
 			R: a.r,
@@ -58,7 +56,6 @@ func signAcc(a *Accusation, privKey *ecdsa.PrivateKey) error {
 		Accuser: []byte(a.accuser),
 		Accused: []byte(a.accused),
 		RingNum: a.ringNum,
-		Mask:    a.mask,
 	}
 
 	b, err := proto.Marshal(accMsg)

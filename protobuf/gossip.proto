@@ -50,8 +50,7 @@ message Accusation {
     bytes accuser = 2;
     bytes accused = 3;
     Signature signature = 4;
-    uint32 mask = 5;
-    uint32 ringNum = 6;
+    uint32 ringNum = 5;
 }
 
 message Note {

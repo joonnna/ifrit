@@ -270,9 +270,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 	}
 
 	if note := p.Note(); note != nil && note.Equal(epoch) {
-		mask := note.Mask()
-
-		if disabled := n.view.IsRingDisabled(mask, ringNum); disabled {
+		if disabled := note.IsRingDisabled(ringNum, n.view.NumRings()); disabled {
 			return errDisabledRing
 		}
 
@@ -284,7 +282,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 			return errInvalidSignature
 		}
 
-		err := p.AddAccusation(p.Id, accuserPeer.Id, epoch, mask, ringNum, sign.GetR(), sign.GetS())
+		err := p.AddAccusation(p.Id, accuserPeer.Id, epoch, ringNum, sign.GetR(), sign.GetS())
 		if err != nil {
 			return err
 		}
