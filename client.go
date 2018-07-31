@@ -170,6 +170,7 @@ func readConfig() error {
 	viper.SetDefault("pings_per_interval", 3)
 	viper.SetDefault("removal_timeout", 60)
 	viper.SetDefault("max_concurrent_messages", 5)
+	viper.SetDefault("use_compression", true)
 
 	// Visualizer specific
 	viper.SetDefault("viz_update_interval", 10)

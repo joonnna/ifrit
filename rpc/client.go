@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/joonnna/ifrit/protobuf"
+	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -40,7 +41,10 @@ func (c *Client) Init(config *tls.Config) {
 
 	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
 	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
-	c.dialOptions = append(c.dialOptions, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
+
+	if compress := viper.GetBool("use_compression"); compress {
+		c.dialOptions = append(c.dialOptions, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
+	}
 }
 
 func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
