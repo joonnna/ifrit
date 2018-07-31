@@ -52,7 +52,7 @@ func (suite *PeerTestSuite) SetupTest() {
 		},
 	}
 
-	require.NoError(suite.T(), p.note.sign(suite.priv), "Failed to sign note")
+	require.NoError(suite.T(), signNote(p.note, suite.priv), "Failed to sign note")
 
 	for i = 1; i <= numRings; i++ {
 		p.accusations[i] = nil

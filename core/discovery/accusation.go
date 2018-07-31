@@ -48,7 +48,7 @@ func (a Accusation) ToPbMsg() *gossip.Accusation {
 	}
 }
 
-func (a *Accusation) sign(privKey *ecdsa.PrivateKey) error {
+func signAcc(a *Accusation, privKey *ecdsa.PrivateKey) error {
 	if privKey == nil {
 		return errNoPrivKey
 	}
@@ -90,7 +90,7 @@ func NewAccusation(epoch uint64, accused, accuser string, ringNum uint32, priv *
 		ringNum: ringNum,
 	}
 
-	err := a.sign(priv)
+	err := signAcc(a, priv)
 	if err != nil {
 		panic(err)
 	}
