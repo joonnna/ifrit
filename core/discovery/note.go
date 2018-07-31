@@ -39,7 +39,7 @@ func (n Note) ToPbMsg() *gossip.Note {
 	}
 }
 
-func (n *Note) sign(privKey *ecdsa.PrivateKey) error {
+func signNote(n *Note, privKey *ecdsa.PrivateKey) error {
 	if privKey == nil {
 		return errNoPrivKey
 	}
@@ -78,7 +78,7 @@ func NewNote(id string, epoch uint64, mask uint32, priv *ecdsa.PrivateKey) *goss
 		mask:  mask,
 	}
 
-	err := n.sign(priv)
+	err := signNote(n, priv)
 	if err != nil {
 		panic(err)
 	}

@@ -114,7 +114,7 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 
 }
 
-func (p Peer) Certificate() []byte {
+func (p *Peer) Certificate() []byte {
 	if p.cert == nil {
 		log.Error("Peer had no certificate")
 		return nil
@@ -123,7 +123,7 @@ func (p Peer) Certificate() []byte {
 	return p.cert.Raw
 }
 
-func (p Peer) ValidateSignature(r, s, data []byte) bool {
+func (p *Peer) ValidateSignature(r, s, data []byte) bool {
 	if p.publicKey == nil {
 		log.Error("Peer had no publicKey")
 		return false
@@ -159,7 +159,7 @@ func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv 
 		ringNum: ringNum,
 	}
 
-	err := acc.sign(priv)
+	err := signAcc(acc, priv)
 	if err != nil {
 		return err
 	}
@@ -388,7 +388,7 @@ func (p *Peer) NewNote(priv *ecdsa.PrivateKey, epoch uint64) {
 		mask:  math.MaxUint32,
 		epoch: epoch,
 	}
-	p.note.sign(priv)
+	signNote(p.note, priv)
 }
 
 // ONLY for testing

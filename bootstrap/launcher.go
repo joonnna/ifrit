@@ -26,7 +26,8 @@ type Launcher struct {
 
 	ca *cauth.Ca
 
-	listener net.Listener
+	listener   net.Listener
+	httpServer *http.Server
 
 	// TODO naming things...
 	worm *worm.Worm
@@ -69,9 +70,17 @@ func (l *Launcher) Start() {
 		log.Info("Starting worm")
 		l.worm.Start()
 	}
-	http.HandleFunc("/addApplication", l.addApplicationHandler)
 
-	http.Serve(l.listener, nil)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/addApplication", l.addApplicationHandler)
+
+	s := &http.Server{
+		Handler: mux,
+	}
+
+	l.httpServer = s
+
+	l.httpServer.Serve(l.listener)
 }
 
 func (l *Launcher) ShutDown() {
@@ -79,7 +88,7 @@ func (l *Launcher) ShutDown() {
 	if l.worm != nil {
 		l.worm.Stop()
 	}
-	l.listener.Close()
+	l.httpServer.Close()
 	l.ca.Shutdown()
 }
 

@@ -109,11 +109,11 @@ func (suite *AccTestSuite) TestSign() {
 	privKey, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
 	require.NoError(suite.T(), err, "Failed to generate private key")
 
-	assert.Error(suite.T(), acc.sign(nil), "Returns no error with no private key")
+	assert.Error(suite.T(), signAcc(acc, nil), "Returns no error with no private key")
 
 	assert.Nil(suite.T(), acc.signature, "Signature is not nil before signing")
 
-	assert.NoError(suite.T(), acc.sign(privKey), "Returns error with non-nil private key")
+	assert.NoError(suite.T(), signAcc(acc, privKey), "Returns error with non-nil private key")
 
 	assert.NotNil(suite.T(), acc.signature, "Signature is still nil after signing accusation")
 

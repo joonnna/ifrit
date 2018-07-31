@@ -73,7 +73,7 @@ func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey,
 		id:    self.Id,
 	}
 
-	err = localNote.sign(privKey)
+	err = signNote(localNote, privKey)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,7 @@ func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
 			mask:  newMask,
 		}
 
-		err = newNote.sign(v.privKey)
+		err = signNote(newNote, v.privKey)
 		if err != nil {
 			log.Error(err.Error())
 		}
@@ -457,7 +457,7 @@ func (v *View) State() *gossip.State {
 	return ret
 }
 
-func (v View) ValidMask(mask uint32) bool {
+func (v *View) ValidMask(mask uint32) bool {
 	err := validMask(mask, v.rings.numRings, v.maxByz)
 	if err != nil {
 		log.Error(err.Error())
@@ -467,7 +467,7 @@ func (v View) ValidMask(mask uint32) bool {
 	return true
 }
 
-func (v View) IsRingDisabled(mask, ringNum uint32) bool {
+func (v *View) IsRingDisabled(mask, ringNum uint32) bool {
 	return isRingDisabled(mask, v.rings.numRings, ringNum)
 }
 

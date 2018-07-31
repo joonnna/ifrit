@@ -96,7 +96,7 @@ func (rs *rings) remove(p *Peer) {
 	}
 }
 
-func (rs rings) isPredecessor(id, toCheck *Peer, ringNum uint32) bool {
+func (rs *rings) isPredecessor(id, toCheck *Peer, ringNum uint32) bool {
 	if ring, ok := rs.ringMap[ringNum]; !ok {
 		log.Error("Invalid ring number", "ringNum", ringNum)
 		return false
@@ -105,7 +105,7 @@ func (rs rings) isPredecessor(id, toCheck *Peer, ringNum uint32) bool {
 	}
 }
 
-func (rs rings) findNeighbours(id string) []*Peer {
+func (rs *rings) findNeighbours(id string) []*Peer {
 	ret := make([]*Peer, 0, rs.numRings*2)
 	exists := make(map[string]bool)
 
@@ -126,7 +126,7 @@ func (rs rings) findNeighbours(id string) []*Peer {
 	return ret
 }
 
-func (rs rings) allMyNeighbours() []*Peer {
+func (rs *rings) allMyNeighbours() []*Peer {
 	ret := make([]*Peer, 0, rs.numRings*2)
 	exists := make(map[string]bool)
 
@@ -148,7 +148,7 @@ func (rs rings) allMyNeighbours() []*Peer {
 	return ret
 }
 
-func (rs rings) myRingNeighbours(ringNum uint32) []*Peer {
+func (rs *rings) myRingNeighbours(ringNum uint32) []*Peer {
 	r, ok := rs.ringMap[ringNum]
 	if !ok {
 		log.Error(errInvalidRingNum.Error())
@@ -171,7 +171,7 @@ func (rs rings) myRingNeighbours(ringNum uint32) []*Peer {
 	return ret
 }
 
-func (rs rings) myRingSuccessor(ringNum uint32) *Peer {
+func (rs *rings) myRingSuccessor(ringNum uint32) *Peer {
 	r, ok := rs.ringMap[ringNum]
 	if !ok {
 		log.Error(errInvalidRingNum.Error())
@@ -187,7 +187,7 @@ func (rs rings) myRingSuccessor(ringNum uint32) *Peer {
 	}
 }
 
-func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
+func (rs *rings) myRingPredecessor(ringNum uint32) *Peer {
 	r, ok := rs.ringMap[ringNum]
 	if !ok {
 		log.Error(errInvalidRingNum.Error())
@@ -204,7 +204,7 @@ func (rs rings) myRingPredecessor(ringNum uint32) *Peer {
 
 }
 
-func (rs rings) shouldBeMyNeighbour(id string) bool {
+func (rs *rings) shouldBeMyNeighbour(id string) bool {
 	for _, r := range rs.ringMap {
 		if isNeighbour := r.betweenNeighbours(id); isNeighbour {
 			return true

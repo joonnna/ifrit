@@ -45,7 +45,8 @@ type Ca struct {
 
 	groups []*group
 
-	listener net.Listener
+	listener   net.Listener
+	httpServer *http.Server
 }
 
 type group struct {
@@ -173,7 +174,7 @@ func (c *Ca) Start() error {
 
 // Returns the address(ip:port) of the certificate authority, this can
 // be directly used as input to the ifrit client entry address.
-func (c Ca) Addr() string {
+func (c *Ca) Addr() string {
 	return c.listener.Addr().String()
 }
 
@@ -244,9 +245,14 @@ func genKeys() (*rsa.PrivateKey, error) {
 }
 
 func (c *Ca) httpHandler() error {
-	http.HandleFunc("/certificateRequest", c.certRequestHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/certificateRequest", c.certificateSigning)
 
-	err := http.Serve(c.listener, nil)
+	c.httpServer = &http.Server{
+		Handler: mux,
+	}
+
+	err := c.httpServer.Serve(c.listener)
 	if err != nil {
 		log.Error(err.Error())
 		return err
@@ -255,7 +261,7 @@ func (c *Ca) httpHandler() error {
 	return nil
 }
 
-func (c *Ca) certRequestHandler(w http.ResponseWriter, r *http.Request) {
+func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {
 	var body bytes.Buffer
 	io.Copy(&body, r.Body)
 	r.Body.Close()
