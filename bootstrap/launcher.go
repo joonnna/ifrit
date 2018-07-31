@@ -39,7 +39,6 @@ type application interface {
 	Start()
 	ShutDown()
 	Addr() string
-	HttpAddr() string
 }
 
 func NewLauncher(ch chan interface{}, w *worm.Worm) (*Launcher, error) {
@@ -121,10 +120,6 @@ func (l *Launcher) startApplication() {
 	}
 
 	go client.Start()
-
-	if len(l.applicationList) <= 0 && l.worm != nil {
-		l.worm.AddHost(client.HttpAddr())
-	}
 
 	l.applicationList = append(l.applicationList, client)
 }

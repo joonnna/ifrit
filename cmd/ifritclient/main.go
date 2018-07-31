@@ -51,5 +51,5 @@ func main() {
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
 	<-channel
 
-	c.ShutDown()
+	c.Close()
 }
