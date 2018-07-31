@@ -37,7 +37,7 @@ type Launcher struct {
 
 type application interface {
 	Start()
-	ShutDown()
+	Close()
 	Addr() string
 }
 
@@ -100,7 +100,7 @@ func (l *Launcher) shutDownApplications() {
 	defer l.applicationListMutex.RUnlock()
 
 	for _, n := range l.applicationList {
-		n.ShutDown()
+		n.Close()
 	}
 }
 
