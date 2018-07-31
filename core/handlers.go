@@ -222,7 +222,11 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 	for _, b := range certs {
 		cert, err := x509.ParseCertificate(b.GetRaw())
 		if err != nil {
-			log.Debug(err.Error())
+			log.Error(err.Error())
+			continue
+		}
+
+		if n.self.Id == string(cert.SubjectKeyId) {
 			continue
 		}
 
@@ -239,12 +243,20 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 	ringNum := a.GetRingNum()
 
 	if n.self.Id == p.Id {
-		// TODO check accuser etc
+		if isPrev := n.view.ValidAccuser(n.self, accuserPeer, ringNum); !isPrev {
+			return errInvalidAccuser
+		}
+
+		if valid := checkAccusationSignature(a, accuserPeer); !valid {
+			return errInvalidSignature
+		}
+
 		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
 			n.getProtocol().Rebuttal(n)
 			return nil
+		} else {
+			return errInvalidSelfAccusation
 		}
-		return errInvalidSelfAccusation
 	}
 
 	acc := p.RingAccusation(ringNum)
