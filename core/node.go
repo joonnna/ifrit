@@ -2,29 +2,19 @@ package core
 
 import (
 	"crypto/ecdsa"
-	"crypto/tls"
 	"crypto/x509"
-	"encoding/asn1"
-	"encoding/binary"
 	"errors"
-	"fmt"
-	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/core/discovery"
-	"github.com/joonnna/ifrit/netutil"
-	"github.com/joonnna/ifrit/protobuf"
-	"github.com/joonnna/ifrit/udp"
+	pb "github.com/joonnna/ifrit/protobuf"
 	"github.com/joonnna/workerpool"
 	"github.com/spf13/viper"
 )
 
 var (
-	errNoRingNum    = errors.New("No ringnumber present in received certificate")
 	errNoId         = errors.New("No id present in received certificate")
 	errNoData       = errors.New("Gossip data has zero length")
 	errNoCaAddr     = errors.New("No ca addr set in config with use_ca enabled")
@@ -37,13 +27,8 @@ type Node struct {
 	view *discovery.View
 	self *discovery.Peer
 
-	failureDetector *pinger
-
-	protocol      protocol
+	p             protocol
 	protocolMutex sync.RWMutex
-
-	client client
-	server server
 
 	wg       *sync.WaitGroup
 	exitChan chan bool
@@ -52,19 +37,13 @@ type Node struct {
 	exitMutex sync.RWMutex
 
 	viewUpdateTimeout time.Duration
-	pingsPerInterval  int
 
 	gossipTimeout      time.Duration
 	gossipTimeoutMutex sync.RWMutex
 
-	recordGossipRounds bool
-	recordMutex        sync.RWMutex
-
-	rounds     uint32
-	roundMutex sync.RWMutex
-
-	monitorTimeout  time.Duration
-	nodeDeadTimeout float64
+	pingsPerInterval int
+	monitorTimeout   time.Duration
+	nodeDeadTimeout  float64
 
 	msgHandler      processMsg
 	msgHandlerMutex sync.RWMutex
@@ -80,36 +59,40 @@ type Node struct {
 
 	dispatcher *workerpool.Dispatcher
 
-	privKey    *ecdsa.PrivateKey
-	localCert  *x509.Certificate
-	caCert     *x509.Certificate
 	entryAddrs []string
 
-	stats *recorder
+	fd *failureDetector
 
-	trustedBootNode  bool
-	vizId            string
-	httpListener     net.Listener
-	httpServer       *http.Server
-	httpAddr         string
-	viz              bool
-	vizAddr          string
-	vizAppAddr       string
-	vizUpdateTimeout time.Duration
+	comm commService
+	cs   cryptoService
+	cm   certManager
+
+	useViz bool
+	viz    *viz
 }
 
-type client interface {
-	Init(config *tls.Config)
-	Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error)
-	SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error)
-	CloseConn(addr string)
-}
-
-type server interface {
-	Init(config *tls.Config, n interface{}, maxConcurrent uint32) error
+type commService interface {
+	Register(pb.GossipServer)
+	CloseConn(string)
 	Addr() string
-	Start() error
-	ShutDown()
+	Start()
+	Stop()
+
+	Gossip(string, *pb.State) (*pb.StateResponse, error)
+	Send(string, *pb.Msg) (*pb.MsgResponse, error)
+}
+
+type certManager interface {
+	Certificate() *x509.Certificate
+	CaCertificate() *x509.Certificate
+	ContactList() []*x509.Certificate
+	NumRings() uint32
+	Trusted() bool
+}
+
+type cryptoService interface {
+	Verify([]byte, []byte, []byte, *ecdsa.PublicKey) bool
+	Sign([]byte) ([]byte, []byte, error)
 }
 
 type protocol interface {
@@ -127,12 +110,12 @@ func (n *Node) gossipLoop() {
 			log.Info("Exiting gossiping")
 			return
 		case <-time.After(n.getGossipTimeout()):
-			n.getProtocol().Gossip(n)
+			n.protocol().Gossip(n)
 		}
 	}
 }
 
-func (n *Node) monitor() {
+func (n *Node) monitorLoop() {
 	defer n.wg.Done()
 
 	for {
@@ -141,88 +124,15 @@ func (n *Node) monitor() {
 			log.Info("Stopping monitoring")
 			return
 		case <-time.After(n.monitorTimeout):
-			n.getProtocol().Monitor(n)
+			n.protocol().Monitor(n)
 		}
 	}
 }
 
-func (n *Node) checkTimeouts() {
-	defer n.wg.Done()
-
-	for {
-		select {
-		case <-n.exitChan:
-			log.Info("Stopping view update")
-			return
-		case <-time.After(n.viewUpdateTimeout):
-			n.view.CheckTimeouts()
-		}
-	}
-}
-
-func NewNode(c client, s server) (*Node, error) {
-	var extValue []byte
-	var certs *certSet
-	var http string
-	var l net.Listener
+func NewNode(comm commService, ps pingService, cm certManager, cs cryptoService) (*Node, error) {
 	var perInterval int
 
-	udpServer, err := udp.NewServer()
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
-	}
-
-	privKey, err := genKeys()
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
-	}
-
-	if useViz := viper.GetBool("use_viz"); useViz {
-		l, err = initHttp()
-		if err != nil {
-			log.Error(err.Error())
-		} else {
-			httpPort := strings.Split(l.Addr().String(), ":")[1]
-			http = fmt.Sprintf("%s:%s", netutil.GetLocalIP(), httpPort)
-		}
-	}
-
-	if useCa := viper.GetBool("use_ca"); useCa {
-		if exists := viper.IsSet("ca_addr"); !exists {
-			return nil, errNoCaAddr
-		}
-
-		addr := fmt.Sprintf("http://%s/certificateRequest", viper.GetString("ca_addr"))
-		certs, err = sendCertRequest(privKey, addr, s.Addr(), udpServer.Addr(), http)
-		if err != nil {
-			log.Error(err.Error())
-			return nil, err
-		}
-	} else {
-		// TODO only have numrings in notes and not certificate?
-		certs, err = selfSignedCert(privKey, s.Addr(), udpServer.Addr(), http, uint32(32))
-		if err != nil {
-			log.Error(err.Error())
-			return nil, err
-		}
-	}
-
-	for _, e := range certs.ownCert.Extensions {
-		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
-			extValue = e.Value
-		}
-	}
-
-	if extValue == nil {
-		log.Error(errNoRingNum.Error())
-		return nil, errNoRingNum
-	}
-
-	numRings := binary.LittleEndian.Uint32(extValue[0:])
-
-	v, err := discovery.NewView(numRings, certs.ownCert, privKey, c.CloseConn)
+	v, err := discovery.NewView(cm.NumRings(), cm.Certificate(), comm, cs)
 	if err != nil {
 		log.Error(err.Error())
 		return nil, err
@@ -238,52 +148,51 @@ func NewNode(c client, s server) (*Node, error) {
 	}
 
 	n := &Node{
-		exitChan:          make(chan bool, 1),
-		wg:                &sync.WaitGroup{},
-		gossipTimeout:     time.Second * time.Duration(viper.GetInt32("gossip_interval")),
-		monitorTimeout:    time.Second * time.Duration(viper.GetInt32("monitor_interval")),
-		viewUpdateTimeout: time.Second * time.Duration(viper.GetInt32("view_update_interval")),
-		view:              v,
-		failureDetector:   newPinger(udpServer, uint32(viper.GetInt32("ping_limit")), privKey),
-		privKey:           privKey,
-		client:            c,
-		server:            s,
-		stats:             &recorder{recordDuration: 60},
-		localCert:         certs.ownCert,
-		caCert:            certs.caCert,
-		dispatcher:        workerpool.NewDispatcher(uint32(viper.GetInt32("max_concurrent_messages"))),
-		entryAddrs:        viper.GetStringSlice("entry_addrs"),
-		httpListener:      l,
-		protocol:          correct{},
-		self:              v.Self(),
-		pingsPerInterval:  perInterval,
+		exitChan:       make(chan bool, 1),
+		wg:             &sync.WaitGroup{},
+		gossipTimeout:  time.Second * time.Duration(viper.GetInt32("gossip_interval")),
+		monitorTimeout: time.Second * time.Duration(viper.GetInt32("monitor_interval")),
+		dispatcher: workerpool.NewDispatcher(uint32(viper.
+			GetInt32("max_concurrent_messages"))),
+		entryAddrs:       viper.GetStringSlice("entry_addrs"),
+		p:                correct{},
+		pingsPerInterval: perInterval,
+
+		fd:   newFd(ps, cs, uint32(viper.GetInt32("ping_limit"))),
+		cm:   cm,
+		cs:   cs,
+		comm: comm,
+		self: v.Self(),
+		view: v,
 
 		// Visualizer specific
-		viz:              viper.GetBool("use_viz"),
-		vizAddr:          viper.GetString("viz_addr"),
-		vizId:            fmt.Sprintf("http://%s", http),
-		trustedBootNode:  certs.trusted,
-		vizUpdateTimeout: time.Second * time.Duration(viper.GetInt32("viz_update_interval")),
+		useViz: viper.GetBool("use_viz"),
 	}
 
-	serverConfig := genServerConfig(certs, privKey)
-
-	err = n.server.Init(serverConfig, n, ((numRings * 2) + 20))
-	if err != nil {
-		log.Error(err.Error())
-		return nil, err
+	if n.useViz {
+		interval := time.Second * time.Duration(viper.GetInt32("viz_update_interval"))
+		viz, err := newViz(n, viper.GetString("viz_addr"), interval, cm.Trusted())
+		if err != nil {
+			return nil, err
+		}
+		n.viz = viz
 	}
 
-	n.client.Init(genClientConfig(certs, privKey))
+	n.comm.Register(n)
 
-	if n.caCert != nil {
-		for _, c := range certs.knownCerts {
+	if n.cm.CaCertificate() != nil {
+		for _, c := range n.cm.ContactList() {
 			if n.self.Id == string(c.SubjectKeyId) {
 				continue
 			}
-			n.evalCertificate(c)
+			err := n.evalCertificate(c)
+			if err != nil {
+				log.Error(err.Error())
+			}
 		}
 
+		// We add all our initial contacts to the live view without notes
+		// to ensure that we have someone to gossip with at startup.
 		for _, p := range n.view.Full() {
 			n.view.AddLive(p)
 		}
@@ -293,7 +202,7 @@ func NewNode(c client, s server) (*Node, error) {
 }
 
 func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
-	msg := &gossip.Msg{
+	msg := &pb.Msg{
 		Content: data,
 	}
 
@@ -303,7 +212,7 @@ func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
 }
 
 func (n *Node) Sign(content []byte) ([]byte, []byte, error) {
-	r, s, err := signContent(content, n.privKey)
+	r, s, err := n.cs.Sign(content)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -317,7 +226,7 @@ func (n *Node) Verify(r, s, content []byte, id string) bool {
 		return false
 	}
 
-	return p.ValidateSignature(r, s, content)
+	return n.cs.Verify(content, r, s, p.PublicKey())
 }
 
 func (n *Node) IdToAddr(id []byte) (string, error) {
@@ -330,7 +239,7 @@ func (n *Node) IdToAddr(id []byte) (string, error) {
 }
 
 func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
-	msg := &gossip.Msg{
+	msg := &pb.Msg{
 		Content: data,
 	}
 
@@ -342,8 +251,8 @@ func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 	}
 }
 
-func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
-	reply, err := n.client.SendMsg(dest, msg)
+func (n *Node) sendMsg(dest string, ch chan []byte, msg *pb.Msg) {
+	reply, err := n.comm.Send(dest, msg)
 	if err != nil {
 		log.Error(err.Error())
 		ch <- nil
@@ -351,8 +260,31 @@ func (n *Node) sendMsg(dest string, ch chan []byte, msg *gossip.Msg) {
 	ch <- reply.GetContent()
 }
 
-func (n *Node) ShutDownNode() {
+func (n *Node) isStopping() bool {
+	n.exitMutex.Lock()
+	defer n.exitMutex.Unlock()
+
+	if n.exitFlag {
+		return true
+	}
+
+	n.exitFlag = true
 	close(n.exitChan)
+
+	return false
+}
+
+func (n *Node) Stop() {
+	if n.isStopping() {
+		return
+	}
+
+	if n.useViz {
+		n.viz.stop()
+	}
+
+	n.view.Stop()
+	n.fd.stop()
 
 	n.dispatcher.Stop()
 	n.wg.Wait()
@@ -379,40 +311,33 @@ func (n *Node) Id() string {
 }
 
 func (n *Node) Addr() string {
-	return n.server.Addr()
+	return n.comm.Addr()
 }
 
 func (n *Node) Start() {
 	log.Info("Started Node")
 
-	go n.server.Start()
-	go n.failureDetector.serve()
+	go n.fd.start()
+	go n.comm.Start()
+	go n.view.Start()
 
-	routines := 3
-	if n.viz {
-		routines = 4
-	}
-
-	n.wg.Add(routines)
+	n.wg.Add(2)
 	go n.gossipLoop()
-	go n.monitor()
-	go n.checkTimeouts()
+	go n.monitorLoop()
 
 	n.dispatcher.Start()
 
-	if n.viz {
-		n.addToViz()
-		go n.updateState()
-		go n.httpHandler()
+	if n.useViz {
+		n.viz.start()
 	}
 
 	msg := n.collectGossipContent()
 
 	// With no ca we need to contact existing hosts.
 	// TODO retry if we fail to contact them?
-	if n.caCert == nil {
+	if n.cm.CaCertificate() == nil {
 		for _, addr := range n.entryAddrs {
-			reply, err := n.client.Gossip(addr, msg)
+			reply, err := n.comm.Gossip(addr, msg)
 			if err != nil {
 				log.Error(err.Error(), "addr", addr)
 				continue
@@ -425,13 +350,6 @@ func (n *Node) Start() {
 	}
 
 	<-n.exitChan
-	n.httpServer.Close()
-	n.server.ShutDown()
-	n.failureDetector.shutdown()
-
 	log.Info("Exiting node")
-
-	if n.viz {
-		n.remove()
-	}
+	n.Stop()
 }
