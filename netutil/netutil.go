@@ -139,3 +139,27 @@ func LocalIP() (string, error) {
 
 	return addrs[0].String(), nil
 }
+
+func ListenUdp() (*net.UDPConn, string, error) {
+	h, _ := os.Hostname()
+
+	addr, err := net.LookupHost(h)
+	if err != nil {
+		return nil, "", err
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:0", addr[0]))
+	if err != nil {
+		return nil, "", err
+	}
+
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, "", err
+	}
+
+	port := strings.Split(conn.LocalAddr().String(), ":")[1]
+	fullAddr := fmt.Sprintf("%s:%s", addr[0], port)
+
+	return conn, fullAddr, nil
+}
