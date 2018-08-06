@@ -57,37 +57,69 @@ func (suite *HandlerTestSuite) TestSpread() {
 
 	node := suite.n
 
-	notNeighbour := nonNeighbourPeer(node, []*discovery.Peer{})
+	testPeers := nonNeighbouringPeers(node, 5)
 
-	accusedNonNeighbour := nonNeighbourPeer(node, []*discovery.Peer{notNeighbour})
+	for i, p := range testPeers {
+		require.False(suite.T(), node.view.ShouldBeNeighbour(p.Id),
+			"Peer should not be neighbour.")
+
+		if i != 0 {
+			require.False(suite.T(), node.view.IsAlive(p.Id), "Peer should be dead.")
+		} else {
+			require.True(suite.T(), node.view.IsAlive(p.Id), "Peer should be alive.")
+		}
+	}
+
+	notNeighbour := testPeers[0]
+
+	accusedNonNeighbour := testPeers[1]
 	acc := discovery.NewAccusation(1, accusedNonNeighbour.Id, node.self.Id, 1,
 		node.privKey)
 	accusedNonNeighbour.AddTestAccusation(acc)
-	node.view.RemoveLive(accusedNonNeighbour.Id)
 
-	rebuttalPeer := nonNeighbourPeer(node,
-		[]*discovery.Peer{notNeighbour, accusedNonNeighbour})
-
+	rebuttalPeer := testPeers[2]
 	acc2 := discovery.NewAccusation(1, rebuttalPeer.Id, node.self.Id, 1, node.privKey)
 	rebuttalPeer.AddTestAccusation(acc2)
 
-	node.view.RemoveLive(rebuttalPeer.Id)
-
-	nonExistingPeer := nonNeighbourPeer(node,
-		[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer})
-	node.view.RemoveLive(nonExistingPeer.Id)
+	nonExistingPeer := testPeers[3]
 	node.view.RemoveTestFull(nonExistingPeer.Id)
 
-	invalidNonExisting := nonNeighbourPeer(node,
-		[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer, nonExistingPeer})
-	node.view.RemoveLive(invalidNonExisting.Id)
+	invalidNonExisting := testPeers[4]
 	node.view.RemoveTestFull(invalidNonExisting.Id)
 
-	for _, p := range node.view.FindNeighbours(nonExistingPeer.Id) {
-		nonExistingNeighbours = append(nonExistingNeighbours, p.Id)
-	}
+	/*
+		notNeighbour := nonNeighbourPeer(node, []*discovery.Peer{})
 
-	nonExistingNeighbours = append(nonExistingNeighbours, node.self.Id)
+		accusedNonNeighbour := nonNeighbourPeer(node, []*discovery.Peer{notNeighbour})
+		acc := discovery.NewAccusation(1, accusedNonNeighbour.Id, node.self.Id, 1,
+			node.privKey)
+		accusedNonNeighbour.AddTestAccusation(acc)
+		node.view.RemoveLive(accusedNonNeighbour.Id)
+
+		rebuttalPeer := nonNeighbourPeer(node,
+			[]*discovery.Peer{notNeighbour, accusedNonNeighbour})
+
+		acc2 := discovery.NewAccusation(1, rebuttalPeer.Id, node.self.Id, 1, node.privKey)
+		rebuttalPeer.AddTestAccusation(acc2)
+
+		node.view.RemoveLive(rebuttalPeer.Id)
+
+		nonExistingPeer := nonNeighbourPeer(node,
+			[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer})
+		node.view.RemoveLive(nonExistingPeer.Id)
+		node.view.RemoveTestFull(nonExistingPeer.Id)
+
+		invalidNonExisting := nonNeighbourPeer(node,
+			[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer, nonExistingPeer})
+		node.view.RemoveLive(invalidNonExisting.Id)
+		node.view.RemoveTestFull(invalidNonExisting.Id)
+
+		for _, p := range node.view.FindNeighbours(nonExistingPeer.Id) {
+			nonExistingNeighbours = append(nonExistingNeighbours, p.Id)
+		}
+
+		nonExistingNeighbours = append(nonExistingNeighbours, node.self.Id)
+	*/
 
 	succ, _ := node.view.MyRingNeighbours(ringNum)
 
@@ -107,6 +139,8 @@ func (suite *HandlerTestSuite) TestSpread() {
 		certs []string
 		notes []string
 		accs  []string
+
+		findNeighbours bool
 	}{
 		{
 			ctx:    noCertPeerContext(succ),
@@ -186,6 +220,7 @@ func (suite *HandlerTestSuite) TestSpread() {
 			args: &gossip.State{
 				OwnNote: nonExistingPeer.Note().ToPbMsg(),
 			},
+			findNeighbours: true,
 		},
 	}
 
@@ -232,14 +267,29 @@ func (suite *HandlerTestSuite) TestSpread() {
 			accs = append(accs, string(a.GetAccused()))
 		}
 
-		require.ElementsMatchf(suite.T(), t.certs, certs,
-			"Invalid certificate output for test %d.", i)
+		if !t.findNeighbours {
+			require.ElementsMatchf(suite.T(), t.certs, certs,
+				"Invalid certificate output for test %d.", i)
 
-		require.ElementsMatchf(suite.T(), t.notes, notes,
-			"Invalid note output for test %d.", i)
+			require.ElementsMatchf(suite.T(), t.notes, notes,
+				"Invalid note output for test %d.", i)
 
-		require.ElementsMatchf(suite.T(), t.accs, accs,
-			"Invalid accusation output for test %d.", i)
+			require.ElementsMatchf(suite.T(), t.accs, accs,
+				"Invalid accusation output for test %d.", i)
+		} else {
+			var neighbours []string
+			for _, p := range node.view.FindNeighbours(nonExistingPeer.Id) {
+				neighbours = append(neighbours, p.Id)
+			}
+
+			neighbours = append(neighbours, node.self.Id)
+
+			require.ElementsMatchf(suite.T(), neighbours, certs,
+				"Invalid certificate output for test %d.", i)
+
+			require.ElementsMatchf(suite.T(), neighbours, notes,
+				"Invalid note output for test %d.", i)
+		}
 	}
 }
 
@@ -816,6 +866,7 @@ func invalidCertPeerContext(p *discovery.Peer) context.Context {
 	return grpcPeer.NewContext(context.Background(), authInfo)
 }
 
+/*
 func nonNeighbourPeer(n *Node, alreadyFetched []*discovery.Peer) *discovery.Peer {
 	for _, p := range n.view.Full() {
 		if !n.view.ShouldBeNeighbour(p.Id) {
@@ -836,6 +887,56 @@ func nonNeighbourPeer(n *Node, alreadyFetched []*discovery.Peer) *discovery.Peer
 	panic("found no peer")
 
 	return nil
+}
+*/
+func nonNeighbouringPeers(n *Node, amount int) []*discovery.Peer {
+	var fetched []*discovery.Peer
+
+	for i := 0; i < amount; i++ {
+		for _, p := range n.view.Full() {
+			if !n.view.ShouldBeNeighbour(p.Id) {
+				counter := 0
+				for _, p2 := range fetched {
+					if p.Id == p2.Id {
+						break
+					}
+					counter++
+				}
+
+				if counter == len(fetched) {
+					if i != 0 {
+						n.view.RemoveLive(p.Id)
+					}
+					fetched = append(fetched, p)
+					break
+				}
+			}
+		}
+	}
+
+	invalid := checkPeerPlacement(n, fetched)
+	if invalid != nil {
+		for _, p := range invalid {
+			n.view.AddLive(p)
+		}
+
+		return nonNeighbouringPeers(n, amount)
+	}
+
+	return fetched
+}
+
+func checkPeerPlacement(n *Node, peers []*discovery.Peer) []*discovery.Peer {
+	var invalid []*discovery.Peer
+
+	for _, p := range peers {
+		if n.view.ShouldBeNeighbour(p.Id) {
+			invalid = append(invalid, p)
+		}
+
+	}
+
+	return invalid
 }
 
 func addPeer(node *Node) (*discovery.Peer, *ecdsa.PrivateKey, error) {
@@ -891,39 +992,4 @@ func genInvalidIdCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
 	c.ownCert.SubjectKeyId = []byte("Invalid id")
 
 	return c.ownCert
-}
-
-type clientStub struct {
-}
-
-func (cs *clientStub) Init(config *tls.Config) {
-}
-
-func (cs *clientStub) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
-	return nil, nil
-}
-
-func (cs *clientStub) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error) {
-	return nil, nil
-}
-
-func (cs *clientStub) CloseConn(addr string) {
-}
-
-type serverStub struct {
-}
-
-func (ss *serverStub) Init(config *tls.Config, n interface{}, maxConcurrent uint32) error {
-	return nil
-}
-
-func (ss *serverStub) Addr() string {
-	return "127.0.0.1:8000"
-}
-
-func (ss *serverStub) Start() error {
-	return nil
-}
-
-func (ss *serverStub) ShutDown() {
 }
