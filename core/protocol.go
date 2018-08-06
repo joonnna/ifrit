@@ -3,7 +3,7 @@ package core
 import (
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/core/discovery"
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 )
 
 type correct struct {
@@ -22,12 +22,12 @@ func (c correct) Rebuttal(n *Node) {
 
 	noteMsg := n.self.Note().ToPbMsg()
 
-	msg := &gossip.State{
+	msg := &pb.State{
 		OwnNote: noteMsg,
 	}
 
 	for _, p := range neighbours {
-		_, err := n.client.Gossip(p.Addr, msg)
+		_, err := n.comm.Gossip(p.Addr, msg)
 		if err != nil {
 			log.Error(err.Error(), "addr", p.Addr)
 			continue
@@ -41,7 +41,7 @@ func (c correct) Gossip(n *Node) {
 	neighbours := n.view.GossipPartners()
 
 	for _, p := range neighbours {
-		reply, err := n.client.Gossip(p.Addr, msg)
+		reply, err := n.comm.Gossip(p.Addr, msg)
 		if err != nil {
 			log.Error(err.Error(), "addr", p.Addr)
 			continue
@@ -62,21 +62,13 @@ func (c correct) Gossip(n *Node) {
 }
 
 func (c correct) Monitor(n *Node) {
-
-	/*
-		p, ringNum := n.view.MonitorTarget()
-		if p == nil {
-			log.Debug("No peers to monitor, must be alone")
-			return
-		}
-	*/
-
 	for i := 1; i <= n.pingsPerInterval; i++ {
 		p, ringNum := n.view.MonitorTarget()
 		if p == nil {
 			continue
 		}
-		err := n.failureDetector.ping(p)
+
+		err := n.fd.probe(p)
 		if err == errDead {
 			log.Debug("Successor dead, accusing", "succ", p.Addr, "ringNum", ringNum)
 			peerNote := p.Note()
@@ -92,7 +84,7 @@ func (c correct) Monitor(n *Node) {
 				continue
 			}
 
-			err := p.CreateAccusation(peerNote, n.self, ringNum, n.privKey)
+			err := p.CreateAccusation(peerNote, n.self, ringNum, n.cs)
 			if err == discovery.ErrAccAlreadyExists || err == nil {
 				live := n.view.IsAlive(p.Id)
 				if exists := n.view.HasTimer(p.Id); !exists && live {
