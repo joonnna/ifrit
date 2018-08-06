@@ -1,15 +1,18 @@
 package discovery
 
 import (
-	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"errors"
+	"math"
 	"math/bits"
 	"sync"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 	"github.com/spf13/viper"
 )
 
@@ -43,16 +46,25 @@ type View struct {
 	deactivatedRings uint32
 
 	removalTimeout float64
+	updateTimeout  time.Duration
 
-	privKey *ecdsa.PrivateKey
-	self    *Peer
+	self *Peer
 
-	closeConn func(string)
+	cm connectionManager
+	s  signer
+
+	exitChan chan bool
 }
 
-func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey, closeConn func(string)) (*View, error) {
-	var i, mask uint32
+type connectionManager interface {
+	CloseConn(addr string)
+}
 
+type signer interface {
+	Sign([]byte) ([]byte, []byte, error)
+}
+
+func NewView(numRings uint32, cert *x509.Certificate, cm connectionManager, s signer) (*View, error) {
 	maxByz := (float64(numRings) / 2.0) - 1
 	if maxByz < 0 {
 		maxByz = 0
@@ -62,23 +74,6 @@ func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey,
 	if err != nil {
 		return nil, err
 	}
-
-	for i = 0; i < numRings; i++ {
-		mask = setBit(mask, i)
-	}
-
-	localNote := &Note{
-		epoch: 1,
-		mask:  mask,
-		id:    self.Id,
-	}
-
-	err = signNote(localNote, privKey)
-	if err != nil {
-		return nil, err
-	}
-
-	self.note = localNote
 
 	rings, err := createRings(self, numRings)
 	if err != nil {
@@ -90,16 +85,47 @@ func NewView(numRings uint32, cert *x509.Certificate, privKey *ecdsa.PrivateKey,
 		viewMap:         make(map[string]*Peer),
 		liveMap:         make(map[string]*Peer),
 		timeoutMap:      make(map[string]*timeout),
-		removalTimeout:  viper.GetFloat64("dead_timeout"),
 		maxByz:          uint32(maxByz),
 		currGossipRing:  1,
 		currMonitorRing: 1,
-		privKey:         privKey,
 		self:            self,
-		closeConn:       closeConn,
+		cm:              cm,
+		exitChan:        make(chan bool, 1),
+		s:               s,
+
+		removalTimeout: viper.GetFloat64("dead_timeout"),
+		updateTimeout: time.Second * time.Duration(viper.
+			GetInt32("view_update_interval")),
+	}
+
+	localNote := &Note{
+		epoch: 1,
+		mask:  math.MaxUint32,
+		id:    self.Id,
+	}
+
+	err = v.signLocalNote(localNote)
+	if err != nil {
+		return nil, err
 	}
 
 	return v, nil
+}
+
+func (v *View) Start() {
+	for {
+		select {
+		case <-v.exitChan:
+			log.Info("Stopping view update")
+			return
+		case <-time.After(v.updateTimeout):
+			v.checkTimeouts()
+		}
+	}
+}
+
+func (v *View) Stop() {
+	close(v.exitChan)
 }
 
 func (v *View) NumRings() uint32 {
@@ -221,7 +247,7 @@ func (v *View) AddLive(p *Peer) {
 
 	old := v.rings.add(p)
 	for _, addr := range old {
-		v.closeConn(addr)
+		v.cm.CloseConn(addr)
 	}
 }
 
@@ -248,7 +274,7 @@ func (v *View) RemoveLive(id string) {
 
 		delete(v.liveMap, peer.Id)
 
-		v.closeConn(peer.Addr)
+		v.cm.CloseConn(peer.Addr)
 
 		log.Debug("Removed livePeer", "addr", peer.Addr)
 	} else {
@@ -334,7 +360,7 @@ func (v *View) allTimeouts() []*timeout {
 	return ret
 }
 
-func (v *View) CheckTimeouts() {
+func (v *View) checkTimeouts() {
 	timeouts := v.allTimeouts()
 	if numTimeouts := len(timeouts); numTimeouts > 0 {
 		log.Debug("Have timeouts", "amount", numTimeouts)
@@ -369,7 +395,7 @@ func (v *View) ShouldRebuttal(epoch uint64, ringNum uint32) bool {
 			mask:  newMask,
 		}
 
-		err = signNote(newNote, v.privKey)
+		err = v.signLocalNote(newNote)
 		if err != nil {
 			log.Error(err.Error())
 		}
@@ -499,34 +525,49 @@ func (v *View) deactivateRing(ringNumber uint32) (uint32, error) {
 	return clearBit(currMask, ringIdx), nil
 }
 
+func (v *View) signLocalNote(n *Note) error {
+	pbNote := &pb.Note{
+		Epoch: n.epoch,
+		Mask:  n.mask,
+		Id:    []byte(n.id),
+	}
+
+	bytes, err := proto.Marshal(pbNote)
+	if err != nil {
+		return err
+	}
+
+	r, s, err := v.s.Sign(bytes)
+	if err != nil {
+		return err
+	}
+
+	n.signature = &signature{
+		r: r,
+		s: s,
+	}
+
+	v.self.note = n
+
+	return err
+}
+
 func validMask(mask, numRings, maxByz uint32) error {
 	active := bits.OnesCount32(mask)
-	disabled := numRings - uint32(active)
+	disabled := int(numRings) - active
 
-	if disabled > maxByz {
+	if disabled > int(maxByz) {
 		return errTooManyDeactivatedRings
 	}
 
 	return nil
 }
 
-/*
-
-func (v *View) IsRingDisabled(mask, ringNum uint32) bool {
-	return isRingDisabled(mask, v.rings.numRings, ringNum)
+func hashContent(data []byte) []byte {
+	h := sha256.New()
+	h.Write(data)
+	return h.Sum(nil)
 }
-func isRingDisabled(mask, numRings, ringNum uint32) bool {
-	idx := int(ringNum) - 1
-
-	maxIdx := uint32(numRings - 1)
-
-	if idx > int(maxIdx) || idx < 0 {
-		return false
-	}
-
-	return !hasBit(mask, uint32(idx))
-}
-*/
 
 func setBit(n uint32, pos uint32) uint32 {
 	n |= (1 << pos)
@@ -544,7 +585,43 @@ func hasBit(n uint32, pos uint32) bool {
 	return (val > 0)
 }
 
+/*
+
+########## METHODS ONLY USED FOR TESTING BELOW THIS LINE ##########
+
+*/
+
 // ONLY for testing
 func (v *View) RemoveTestFull(id string) {
 	delete(v.viewMap, id)
+}
+
+// ONLY for testing
+func (v *View) Compare(other *View) error {
+	for id, p := range v.viewMap {
+		if p2, ok := other.viewMap[id]; !ok {
+			return errors.New("Peer not present in both views.")
+		} else {
+			for ringNum, a := range p.accusations {
+				if a2, ok := p2.accusations[ringNum]; !ok {
+					return errors.New("Accusation not present in both views.")
+				} else {
+					if !a.Equal(a2.accused, a2.accuser, a2.ringNum, a2.epoch) {
+						return errors.New("Accusation were not equal in both views.")
+					}
+				}
+			}
+			if !p.note.Equal(p2.note.epoch) {
+				return errors.New("Did not have same note for peer in both views.")
+			}
+		}
+	}
+
+	for id, _ := range v.liveMap {
+		if _, ok := other.liveMap[id]; !ok {
+			return errors.New("Did not have peer in both live views.")
+		}
+	}
+
+	return nil
 }
