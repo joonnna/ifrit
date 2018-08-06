@@ -2,16 +2,15 @@ package discovery
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"math"
-	"math/big"
 	"sync"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 )
 
 var (
@@ -123,23 +122,11 @@ func (p *Peer) Certificate() []byte {
 	return p.cert.Raw
 }
 
-func (p *Peer) ValidateSignature(r, s, data []byte) bool {
-	if p.publicKey == nil {
-		log.Error("Peer had no publicKey")
-		return false
-	}
-
-	var rInt, sInt big.Int
-
-	b := hashContent(data)
-
-	rInt.SetBytes(r)
-	sInt.SetBytes(s)
-
-	return ecdsa.Verify(p.publicKey, b, &rInt, &sInt)
+func (p *Peer) PublicKey() *ecdsa.PublicKey {
+	return p.publicKey
 }
 
-func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv *ecdsa.PrivateKey) error {
+func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, sign signer) error {
 	p.accuseMutex.Lock()
 	defer p.accuseMutex.Unlock()
 
@@ -158,9 +145,26 @@ func (p *Peer) CreateAccusation(accused *Note, self *Peer, ringNum uint32, priv 
 		ringNum: ringNum,
 	}
 
-	err := signAcc(acc, priv)
+	pbAcc := &pb.Accusation{
+		Epoch:   acc.epoch,
+		Accuser: []byte(acc.accuser),
+		Accused: []byte(acc.accused),
+		RingNum: acc.ringNum,
+	}
+
+	b, err := proto.Marshal(pbAcc)
 	if err != nil {
 		return err
+	}
+
+	r, s, err := sign.Sign(b)
+	if err != nil {
+		return err
+	}
+
+	acc.signature = &signature{
+		r: r,
+		s: s,
 	}
 
 	p.accusations[acc.ringNum] = acc
@@ -324,12 +328,12 @@ func (p *Peer) Note() *Note {
 	return p.note
 }
 
-func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) {
-	var c *gossip.Certificate
-	var n *gossip.Note
+func (p *Peer) Info() (*pb.Certificate, *pb.Note, []*pb.Accusation) {
+	var c *pb.Certificate
+	var n *pb.Note
 
 	if p.cert != nil {
-		c = &gossip.Certificate{
+		c = &pb.Certificate{
 			Raw: p.cert.Raw,
 		}
 	} else {
@@ -343,7 +347,7 @@ func (p *Peer) Info() (*gossip.Certificate, *gossip.Note, []*gossip.Accusation) 
 	}
 
 	accs := p.AllAccusations()
-	a := make([]*gossip.Accusation, 0, len(accs))
+	a := make([]*pb.Accusation, 0, len(accs))
 
 	for _, acc := range accs {
 		a = append(a, acc.ToPbMsg())
@@ -373,11 +377,11 @@ func (p *Peer) NumPing() uint32 {
 	return p.nPing
 }
 
-func hashContent(data []byte) []byte {
-	h := sha256.New224()
-	h.Write(data)
-	return h.Sum(nil)
-}
+/*
+
+########## METHODS ONLY USED FOR TESTING BELOW THIS LINE ##########
+
+*/
 
 // ONLY for testing
 func (p *Peer) NewNote(priv *ecdsa.PrivateKey, epoch uint64) {
@@ -395,7 +399,7 @@ func (p *Peer) ClearNote() {
 }
 
 // ONLY for testing
-func (p *Peer) AddTestAccusation(a *gossip.Accusation) {
+func (p *Peer) AddTestAccusation(a *pb.Accusation) {
 	acc := &Accusation{
 		epoch:   a.GetEpoch(),
 		accuser: string(a.GetAccuser()),

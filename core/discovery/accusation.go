@@ -6,7 +6,7 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 )
 
 var (
@@ -33,25 +33,62 @@ func (a Accusation) IsAccuser(id string) bool {
 	return a.accuser == id
 }
 
-func (a Accusation) ToPbMsg() *gossip.Accusation {
-	return &gossip.Accusation{
+func (a Accusation) ToPbMsg() *pb.Accusation {
+	return &pb.Accusation{
 		Epoch:   a.epoch,
 		Accuser: []byte(a.accuser),
 		Accused: []byte(a.accused),
 		RingNum: a.ringNum,
-		Signature: &gossip.Signature{
+		Signature: &pb.Signature{
 			R: a.r,
 			S: a.s,
 		},
 	}
 }
 
+/*
+
+########## METHODS ONLY USED FOR TESTING BELOW THIS LINE ##########
+
+*/
+
+// ONLY for testing
+func NewAccusation(epoch uint64, accused, accuser string, ringNum uint32, priv *ecdsa.PrivateKey) *pb.Accusation {
+	a := &Accusation{
+		accused: accused,
+		accuser: accuser,
+		epoch:   epoch,
+		ringNum: ringNum,
+	}
+
+	err := signAcc(a, priv)
+	if err != nil {
+		panic(err)
+	}
+
+	return a.ToPbMsg()
+}
+
+// ONLY for testing
+func NewUnsignedAccusation(epoch uint64, accused, accuser string, ringNum uint32) *pb.Accusation {
+	a := &Accusation{
+		accused:   accused,
+		accuser:   accuser,
+		epoch:     epoch,
+		ringNum:   ringNum,
+		signature: &signature{},
+	}
+
+	return a.ToPbMsg()
+}
+
+// ONLY for testing
 func signAcc(a *Accusation, privKey *ecdsa.PrivateKey) error {
 	if privKey == nil {
 		return errNoPrivKey
 	}
 
-	accMsg := &gossip.Accusation{
+	accMsg := &pb.Accusation{
 		Epoch:   a.epoch,
 		Accuser: []byte(a.accuser),
 		Accused: []byte(a.accused),
@@ -76,34 +113,4 @@ func signAcc(a *Accusation, privKey *ecdsa.PrivateKey) error {
 	}
 
 	return nil
-}
-
-// ONLY for testing
-func NewAccusation(epoch uint64, accused, accuser string, ringNum uint32, priv *ecdsa.PrivateKey) *gossip.Accusation {
-	a := &Accusation{
-		accused: accused,
-		accuser: accuser,
-		epoch:   epoch,
-		ringNum: ringNum,
-	}
-
-	err := signAcc(a, priv)
-	if err != nil {
-		panic(err)
-	}
-
-	return a.ToPbMsg()
-}
-
-// ONLY for testing
-func NewUnsignedAccusation(epoch uint64, accused, accuser string, ringNum uint32) *gossip.Accusation {
-	a := &Accusation{
-		accused:   accused,
-		accuser:   accuser,
-		epoch:     epoch,
-		ringNum:   ringNum,
-		signature: &signature{},
-	}
-
-	return a.ToPbMsg()
 }
