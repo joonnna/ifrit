@@ -70,6 +70,7 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	var ok bool
 	var i uint32
 	var http string
+	var pb *ecdsa.PublicKey
 
 	if numRings == 0 {
 		return nil, errNoRings
@@ -88,8 +89,6 @@ func newPeer(cert *x509.Certificate, numRings uint32) (*Peer, error) {
 	if len(cert.SubjectKeyId) == 0 {
 		return nil, errPeerId
 	}
-
-	pb := new(ecdsa.PublicKey)
 
 	if pb, ok = cert.PublicKey.(*ecdsa.PublicKey); !ok {
 		return nil, errPubKey
