@@ -16,6 +16,7 @@ import (
 
 var (
 	errReachable = errors.New("Remote entity not reachable")
+	errNilConfig = errors.New("Provided tls config was nil")
 )
 
 type gRPCClient struct {
@@ -30,8 +31,12 @@ type conn struct {
 	cc *grpc.ClientConn
 }
 
-func newClient(config *tls.Config) *gRPCClient {
+func newClient(config *tls.Config) (*gRPCClient, error) {
 	var dialOptions []grpc.DialOption
+
+	if config == nil {
+		return nil, errNilConfig
+	}
 
 	creds := credentials.NewTLS(config)
 
@@ -46,7 +51,7 @@ func newClient(config *tls.Config) *gRPCClient {
 	return &gRPCClient{
 		allConnections: make(map[string]*conn),
 		dialOptions:    dialOptions,
-	}
+	}, nil
 }
 
 func (c *gRPCClient) Gossip(addr string, args *pb.State) (*pb.StateResponse, error) {
