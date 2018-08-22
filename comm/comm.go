@@ -31,13 +31,21 @@ func NewComm(cert, caCert *x509.Certificate, priv *ecdsa.PrivateKey, l net.Liste
 
 	serverConf := serverConfig(cert, caCert, priv)
 
-	server := newServer(serverConf, l)
+	server, err := newServer(serverConf, l)
+	if err != nil {
+		return nil, err
+	}
 
 	clientConf := clientConfig(cert, caCert, priv)
 
+	client, err := newClient(clientConf)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Comm{
 		s:          server,
-		gRPCClient: newClient(clientConf),
+		gRPCClient: client,
 	}, nil
 }
 
