@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"errors"
-	"math"
 	"math/bits"
 	"sync"
 	"time"
@@ -65,6 +64,8 @@ type signer interface {
 }
 
 func NewView(numRings uint32, cert *x509.Certificate, cm connectionManager, s signer) (*View, error) {
+	var i, mask uint32
+
 	maxByz := (float64(numRings) / 2.0) - 1
 	if maxByz < 0 {
 		maxByz = 0
@@ -98,9 +99,13 @@ func NewView(numRings uint32, cert *x509.Certificate, cm connectionManager, s si
 			GetInt32("view_update_interval")),
 	}
 
+	for i = 0; i < numRings; i++ {
+		mask = setBit(mask, i)
+	}
+
 	localNote := &Note{
 		epoch: 1,
-		mask:  math.MaxUint32,
+		mask:  mask,
 		id:    self.Id,
 	}
 
