@@ -2,11 +2,19 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/binary"
+	"errors"
 	"math"
-	"os"
+	"math/big"
+	"net"
+	"strings"
 	"testing"
+	"time"
 
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/core/discovery"
@@ -22,21 +30,27 @@ type HandlerTestSuite struct {
 	suite.Suite
 	n *Node
 
+	priv    *ecdsa.PrivateKey
 	privMap map[string]*ecdsa.PrivateKey
 }
 
 func TestHandlerTestSuite(t *testing.T) {
 	r := log.Root()
 
-	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	r.SetHandler(log.DiscardHandler())
 
 	suite.Run(t, new(HandlerTestSuite))
 }
 
 func (suite *HandlerTestSuite) SetupTest() {
+	priv, err := genKeys()
+	require.NoError(suite.T(), err, "Failed to generate keys")
+
 	numTestPeers := 100
 
-	n, err := NewNode(&clientStub{}, &serverStub{})
+	ownCert := genCert(priv, 10)
+
+	n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{cert: ownCert}, &cryptoStub{})
 	require.NoError(suite.T(), err, "Failed to create node.")
 
 	suite.n = n
@@ -49,6 +63,7 @@ func (suite *HandlerTestSuite) SetupTest() {
 		suite.privMap[p.Id] = priv
 	}
 
+	suite.priv = priv
 }
 
 func (suite *HandlerTestSuite) TestSpread() {
@@ -74,11 +89,11 @@ func (suite *HandlerTestSuite) TestSpread() {
 
 	accusedNonNeighbour := testPeers[1]
 	acc := discovery.NewAccusation(1, accusedNonNeighbour.Id, node.self.Id, 1,
-		node.privKey)
+		suite.priv)
 	accusedNonNeighbour.AddTestAccusation(acc)
 
 	rebuttalPeer := testPeers[2]
-	acc2 := discovery.NewAccusation(1, rebuttalPeer.Id, node.self.Id, 1, node.privKey)
+	acc2 := discovery.NewAccusation(1, rebuttalPeer.Id, node.self.Id, 1, suite.priv)
 	rebuttalPeer.AddTestAccusation(acc2)
 
 	nonExistingPeer := testPeers[3]
@@ -86,40 +101,6 @@ func (suite *HandlerTestSuite) TestSpread() {
 
 	invalidNonExisting := testPeers[4]
 	node.view.RemoveTestFull(invalidNonExisting.Id)
-
-	/*
-		notNeighbour := nonNeighbourPeer(node, []*discovery.Peer{})
-
-		accusedNonNeighbour := nonNeighbourPeer(node, []*discovery.Peer{notNeighbour})
-		acc := discovery.NewAccusation(1, accusedNonNeighbour.Id, node.self.Id, 1,
-			node.privKey)
-		accusedNonNeighbour.AddTestAccusation(acc)
-		node.view.RemoveLive(accusedNonNeighbour.Id)
-
-		rebuttalPeer := nonNeighbourPeer(node,
-			[]*discovery.Peer{notNeighbour, accusedNonNeighbour})
-
-		acc2 := discovery.NewAccusation(1, rebuttalPeer.Id, node.self.Id, 1, node.privKey)
-		rebuttalPeer.AddTestAccusation(acc2)
-
-		node.view.RemoveLive(rebuttalPeer.Id)
-
-		nonExistingPeer := nonNeighbourPeer(node,
-			[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer})
-		node.view.RemoveLive(nonExistingPeer.Id)
-		node.view.RemoveTestFull(nonExistingPeer.Id)
-
-		invalidNonExisting := nonNeighbourPeer(node,
-			[]*discovery.Peer{notNeighbour, accusedNonNeighbour, rebuttalPeer, nonExistingPeer})
-		node.view.RemoveLive(invalidNonExisting.Id)
-		node.view.RemoveTestFull(invalidNonExisting.Id)
-
-		for _, p := range node.view.FindNeighbours(nonExistingPeer.Id) {
-			nonExistingNeighbours = append(nonExistingNeighbours, p.Id)
-		}
-
-		nonExistingNeighbours = append(nonExistingNeighbours, node.self.Id)
-	*/
 
 	succ, _ := node.view.MyRingNeighbours(ringNum)
 
@@ -480,7 +461,7 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 		},
 
 		{
-			acc:       discovery.NewAccusation(2, succ.Id, selfId, 1, node.privKey),
+			acc:       discovery.NewAccusation(2, succ.Id, selfId, 1, suite.priv),
 			accuser:   node.self,
 			accused:   succ,
 			out:       errInvalidEpoch,
@@ -500,7 +481,7 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 		},
 
 		{
-			acc:       discovery.NewAccusation(1, succ.Id, selfId, 1, node.privKey),
+			acc:       discovery.NewAccusation(1, succ.Id, selfId, 1, suite.priv),
 			accuser:   node.self,
 			accused:   succ,
 			out:       nil,
@@ -510,7 +491,7 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 		},
 
 		{
-			acc:       discovery.NewAccusation(1, succ.Id, selfId, 1, node.privKey),
+			acc:       discovery.NewAccusation(1, succ.Id, selfId, 1, suite.priv),
 			accuser:   node.self,
 			accused:   succ,
 			out:       errAccAlreadyExists,
@@ -712,7 +693,7 @@ func (suite *HandlerTestSuite) TestEvalCertificate() {
 		},
 
 		{
-			cert:        node.localCert,
+			cert:        node.cm.Certificate(),
 			out:         errSelfCert,
 			exists:      false,
 			nonNilError: false,
@@ -866,29 +847,6 @@ func invalidCertPeerContext(p *discovery.Peer) context.Context {
 	return grpcPeer.NewContext(context.Background(), authInfo)
 }
 
-/*
-func nonNeighbourPeer(n *Node, alreadyFetched []*discovery.Peer) *discovery.Peer {
-	for _, p := range n.view.Full() {
-		if !n.view.ShouldBeNeighbour(p.Id) {
-			counter := 0
-			for _, p2 := range alreadyFetched {
-				if p.Id == p2.Id {
-					break
-				}
-				counter++
-			}
-
-			if counter == len(alreadyFetched) {
-				return p
-			}
-		}
-	}
-
-	panic("found no peer")
-
-	return nil
-}
-*/
 func nonNeighbouringPeers(n *Node, amount int) []*discovery.Peer {
 	var fetched []*discovery.Peer
 
@@ -964,32 +922,127 @@ func addPeer(node *Node) (*discovery.Peer, *ecdsa.PrivateKey, error) {
 }
 
 func genCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
-	c, err := selfSignedCert(priv, "127.0.0.1:8080", "pingAddr", "httpAddr", rings)
+	pk := pkix.Name{
+		Locality: []string{"127:0.0.1:8000", "pingAddr", "httpAddr"},
+	}
+
+	c, err := selfSignedCert(priv, pk)
 	if err != nil {
 		panic(err)
 	}
 
-	return c.ownCert
+	return c
 }
 
 func genInvalidSignatureCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
-	c, err := selfSignedCert(priv, "127.0.0.1:8080", "pingAddr", "httpAddr", rings)
+	pk := pkix.Name{
+		Locality: []string{"127.0.0.1:8000", "pingAddr", "httpAddr"},
+	}
+
+	c, err := selfSignedCert(priv, pk)
 	if err != nil {
 		panic(err)
 	}
 
-	c.ownCert.Signature = []byte("Invalid signature")
+	c.Signature = []byte("Invalid signature")
 
-	return c.ownCert
+	return c
 }
 
 func genInvalidIdCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
-	c, err := selfSignedCert(priv, "127.0.0.1:8080", "pingAddr", "httpAddr", rings)
+	pk := pkix.Name{
+		Locality: []string{"127:0.0.1:8000", "pingAddr", "httpAddr"},
+	}
+
+	c, err := selfSignedCert(priv, pk)
 	if err != nil {
 		panic(err)
 	}
 
-	c.ownCert.SubjectKeyId = []byte("Invalid id")
+	c.SubjectKeyId = []byte("Invalid id")
 
-	return c.ownCert
+	return c
+}
+
+func genKeys() (*ecdsa.PrivateKey, error) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return privKey, nil
+}
+
+func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*x509.Certificate, error) {
+	ringBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ringBytes[0:], uint32(32))
+
+	ext := pkix.Extension{
+		Id:       []int{2, 5, 13, 37},
+		Critical: false,
+		Value:    ringBytes,
+	}
+
+	serviceAddr := strings.Split(pk.Locality[0], ":")
+	if len(serviceAddr) <= 0 {
+		return nil, errors.New("No service addr in identity")
+	}
+
+	ip := net.ParseIP(serviceAddr[0])
+	if ip == nil {
+		return nil, errors.New("No service addr in identity")
+	}
+
+	serial, err := genSerialNumber()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO generate ids and serial numbers differently
+	newCert := &x509.Certificate{
+		SerialNumber:          serial,
+		SubjectKeyId:          genId(),
+		Subject:               pk,
+		BasicConstraintsValid: true,
+		NotBefore:             time.Now().AddDate(-10, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		ExtraExtensions:       []pkix.Extension{ext},
+		PublicKey:             priv.PublicKey,
+		IPAddresses:           []net.IP{ip},
+		IsCA:                  true,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth},
+		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment |
+			x509.KeyUsageCertSign,
+	}
+
+	signedCert, err := x509.CreateCertificate(rand.Reader, newCert,
+		newCert, priv.Public(), priv)
+	if err != nil {
+		return nil, err
+	}
+
+	parsed, err := x509.ParseCertificate(signedCert)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
+
+func genId() []byte {
+	nonce := make([]byte, 32)
+	rand.Read(nonce)
+	return nonce
+
+}
+
+func genSerialNumber() (*big.Int, error) {
+	sLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	s, err := rand.Int(rand.Reader, sLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
