@@ -30,8 +30,12 @@ type gRPCServer struct {
 	listenAddr string
 }
 
-func newServer(config *tls.Config, l net.Listener) *gRPCServer {
+func newServer(config *tls.Config, l net.Listener) (*gRPCServer, error) {
 	var serverOpts []grpc.ServerOption
+
+	if config == nil {
+		return nil, errNilConfig
+	}
 
 	keepAlive := keepalive.ServerParameters{
 		MaxConnectionIdle: time.Minute * 5,
@@ -47,7 +51,7 @@ func newServer(config *tls.Config, l net.Listener) *gRPCServer {
 		listener:   l,
 		listenAddr: l.Addr().String(),
 		rpcServer:  grpc.NewServer(serverOpts...),
-	}
+	}, nil
 }
 
 func (s *gRPCServer) start() error {
