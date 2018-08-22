@@ -1,9 +1,12 @@
 package core
 
 import (
+	"crypto/ecdsa"
 	"crypto/tls"
+	"crypto/x509"
 	"os"
 	"testing"
+	"time"
 
 	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
@@ -11,7 +14,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/net/context"
 
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 )
 
 // Define the suite, and absorb the built-in basic suite
@@ -35,7 +38,7 @@ func TestNodeTestSuite(t *testing.T) {
 
 func (suite *NodeTestSuite) SetupTest() {
 	for i := 0; i < 30; i++ {
-		n, err := NewNode(&clientStub{}, &serverStub{})
+		n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{}, &cryptoStub{})
 		require.NoError(suite.T(), err, "Failed to create node.")
 
 		suite.nodes = append(suite.nodes, n)
@@ -72,11 +75,11 @@ type clientStub struct {
 func (cs *clientStub) Init(config *tls.Config) {
 }
 
-func (cs *clientStub) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
+func (cs *clientStub) Gossip(addr string, args *pb.State) (*pb.StateResponse, error) {
 	return nil, nil
 }
 
-func (cs *clientStub) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error) {
+func (cs *clientStub) SendMsg(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 	return nil, nil
 }
 
@@ -99,4 +102,83 @@ func (ss *serverStub) Start() error {
 }
 
 func (ss *serverStub) ShutDown() {
+}
+
+type commStub struct {
+}
+
+func (cs *commStub) Register(p pb.GossipServer) {
+}
+
+func (cs *commStub) CloseConn(addr string) {
+}
+
+func (cs *commStub) Addr() string {
+	return "addr"
+}
+
+func (cs *commStub) Start() {
+}
+
+func (cs *commStub) Stop() {
+}
+
+func (cs *commStub) Gossip(addr string, m *pb.State) (*pb.StateResponse, error) {
+	return &pb.StateResponse{}, nil
+}
+
+func (cs *commStub) Send(addr string, m *pb.Msg) (*pb.MsgResponse, error) {
+	return &pb.MsgResponse{}, nil
+}
+
+type pingStub struct {
+}
+
+func (ps *pingStub) Pause(t time.Duration) {
+}
+
+func (ps *pingStub) Start() {
+}
+
+func (ps *pingStub) Stop() {
+}
+
+func (ps *pingStub) Ping(addr string, m *pb.Ping) (*pb.Pong, error) {
+	return &pb.Pong{}, nil
+}
+
+type cryptoStub struct {
+	priv *ecdsa.PrivateKey
+}
+
+func (cs *cryptoStub) Verify(data, r, s []byte, pub *ecdsa.PublicKey) bool {
+	return false
+}
+
+func (cs *cryptoStub) Sign(data []byte) ([]byte, []byte, error) {
+	return nil, nil, nil
+}
+
+type cmStub struct {
+	cert *x509.Certificate
+}
+
+func (cm *cmStub) Certificate() *x509.Certificate {
+	return cm.cert
+}
+
+func (cm *cmStub) CaCertificate() *x509.Certificate {
+	return nil
+}
+
+func (cm *cmStub) ContactList() []*x509.Certificate {
+	return nil
+}
+
+func (cm *cmStub) NumRings() uint32 {
+	return 0
+}
+
+func (cm *cmStub) Trusted() bool {
+	return false
 }
