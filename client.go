@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	log "github.com/inconshreveable/log15"
+
 	"github.com/joonnna/ifrit/comm"
 	"github.com/joonnna/ifrit/core"
 	"github.com/joonnna/ifrit/netutil"

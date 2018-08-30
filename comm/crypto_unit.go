@@ -25,6 +25,7 @@ import (
 var (
 	errNoRingNum = errors.New("No ringnumber present in received certificate")
 	errNoIp      = errors.New("No ip present in received identity")
+	errNoAddrs = errors.New("Not enough addresses present in identity")
 )
 
 type CryptoUnit struct {
@@ -33,7 +34,7 @@ type CryptoUnit struct {
 	caAddr string
 
 	self       *x509.Certificate
-	ca         *x509.Certificate
+	ca       *x509.Certificate
 	numRings   uint32
 	knownCerts []*x509.Certificate
 	trusted    bool
@@ -56,6 +57,20 @@ type certSet struct {
 func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 	var certs *certSet
 	var extValue []byte
+
+	if addrs := len(pk.Locality); addrs < 2 {
+		return nil, errNoAddrs
+	}
+
+	serviceAddr := strings.Split(pk.Locality[0], ":")
+	if len(serviceAddr) <= 0 {
+		return nil, errNoIp
+	}
+
+	ip := net.ParseIP(serviceAddr[0])
+	if ip == nil {
+		return nil, errNoIp
+	}
 
 	priv, err := genKeys()
 	if err != nil {
@@ -215,15 +230,6 @@ func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*certSet, error) {
 		Value:    ringBytes,
 	}
 
-	serviceAddr := strings.Split(pk.Locality[0], ":")
-	if len(serviceAddr) <= 0 {
-		return nil, errNoIp
-	}
-
-	ip := net.ParseIP(serviceAddr[0])
-	if ip == nil {
-		return nil, errNoIp
-	}
 
 	serial, err := genSerialNumber()
 	if err != nil {
