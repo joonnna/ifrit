@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 )
 
 type Note struct {
@@ -27,38 +27,67 @@ func (n Note) IsRingDisabled(ringNum, numRings uint32) bool {
 	return !hasBit(n.mask, uint32(idx))
 }
 
-/*
-func (n Note) Mask() uint32 {
-	return n.mask
-}
-*/
-
-func (n Note) Equal(epoch uint64) bool {
+func (n *Note) Equal(epoch uint64) bool {
 	return n.epoch == epoch
 }
 
-func (n Note) IsMoreRecent(other uint64) bool {
+func (n *Note) IsMoreRecent(other uint64) bool {
 	return n.epoch < other
 }
 
-func (n Note) ToPbMsg() *gossip.Note {
-	return &gossip.Note{
+func (n *Note) ToPbMsg() *pb.Note {
+	return &pb.Note{
 		Epoch: n.epoch,
 		Id:    []byte(n.id),
 		Mask:  n.mask,
-		Signature: &gossip.Signature{
+		Signature: &pb.Signature{
 			R: n.r,
 			S: n.s,
 		},
 	}
 }
 
+/*
+
+########## METHODS ONLY USED FOR TESTING BELOW THIS LINE ##########
+
+*/
+
+// ONLY FOR TESTING
+func NewNote(id string, epoch uint64, mask uint32, priv *ecdsa.PrivateKey) *pb.Note {
+	n := &Note{
+		id:    id,
+		epoch: epoch,
+		mask:  mask,
+	}
+
+	err := signNote(n, priv)
+	if err != nil {
+		panic(err)
+	}
+
+	return n.ToPbMsg()
+}
+
+// ONLY FOR TESTING
+func NewUnsignedNote(id string, epoch uint64, mask uint32) *pb.Note {
+	n := &Note{
+		id:        id,
+		epoch:     epoch,
+		mask:      mask,
+		signature: &signature{},
+	}
+
+	return n.ToPbMsg()
+}
+
+// ONLY FOR TESTING
 func signNote(n *Note, privKey *ecdsa.PrivateKey) error {
 	if privKey == nil {
 		return errNoPrivKey
 	}
 
-	noteMsg := &gossip.Note{
+	noteMsg := &pb.Note{
 		Epoch: n.epoch,
 		Id:    []byte(n.id),
 		Mask:  n.mask,
@@ -82,32 +111,4 @@ func signNote(n *Note, privKey *ecdsa.PrivateKey) error {
 	}
 
 	return nil
-}
-
-// ONLY for testing
-func NewNote(id string, epoch uint64, mask uint32, priv *ecdsa.PrivateKey) *gossip.Note {
-	n := &Note{
-		id:    id,
-		epoch: epoch,
-		mask:  mask,
-	}
-
-	err := signNote(n, priv)
-	if err != nil {
-		panic(err)
-	}
-
-	return n.ToPbMsg()
-}
-
-// ONLY for testing
-func NewUnsignedNote(id string, epoch uint64, mask uint32) *gossip.Note {
-	n := &Note{
-		id:        id,
-		epoch:     epoch,
-		mask:      mask,
-		signature: &signature{},
-	}
-
-	return n.ToPbMsg()
 }

@@ -1,16 +1,31 @@
 package ifrit
 
 import (
+	"crypto/x509/pkix"
 	"errors"
 
+	log "github.com/inconshreveable/log15"
+
+	"github.com/joonnna/ifrit/comm"
 	"github.com/joonnna/ifrit/core"
-	"github.com/joonnna/ifrit/rpc"
+	"github.com/joonnna/ifrit/netutil"
 	"github.com/spf13/viper"
 )
 
 type Client struct {
 	node *core.Node
 }
+
+/*
+type MessageHandler interface {
+	Incoming([]byte) ([]byte, error)
+}
+
+type GossipHandler interface {
+	Incoming([]byte) ([]byte, error)
+	Response([]byte)
+}
+*/
 
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
@@ -24,23 +39,45 @@ func NewClient() (*Client, error) {
 		return nil, err
 	}
 
-	c := rpc.NewClient()
-
-	s, err := rpc.NewServer()
+	udpConn, udpAddr, err := netutil.ListenUdp()
 	if err != nil {
 		return nil, err
 	}
 
-	n, err := core.NewNode(c, s)
+	l, err := netutil.GetListener()
 	if err != nil {
 		return nil, err
 	}
 
-	client := &Client{
+	log.Debug("addrs", "rpc", l.Addr().String(), "udp", udpAddr)
+
+	pk := pkix.Name{
+		Locality: []string{l.Addr().String(), udpAddr},
+	}
+
+	cu, err := comm.NewCu(pk, viper.GetString("ca_addr"))
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := comm.NewComm(cu.Certificate(), cu.CaCertificate(), cu.Priv(), l)
+	if err != nil {
+		return nil, err
+	}
+
+	udpServer, err := comm.NewUdpServer(cu, udpConn)
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := core.NewNode(c, udpServer, cu, cu)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Client{
 		node: n,
-	}
-
-	return client, nil
+	}, nil
 }
 
 // Client starts operating.
@@ -48,9 +85,10 @@ func (c *Client) Start() {
 	c.node.Start()
 }
 
-// Shutsdown the client and all held resources.
-func (c *Client) Close() {
-	c.node.ShutDownNode()
+// Stops client operations.
+// The client cannot be used after callling Close.
+func (c *Client) Stop() {
+	c.node.Stop()
 }
 
 // Returns the address (ip:port, rpc endpoint) of all other ifrit clients in the network which is currently believed to be alive.

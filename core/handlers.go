@@ -5,9 +5,10 @@ import (
 	"crypto/x509"
 	"errors"
 
+	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/core/discovery"
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/credentials"
 	grpcPeer "google.golang.org/grpc/peer"
@@ -24,11 +25,11 @@ var (
 	errAccAlreadyExists      = errors.New("Accusation already existed, discarding.")
 	errDisabledRing          = errors.New("Ring associated with accusation was disabled.")
 	errInvalidAccuser        = errors.New("Accuser is not predecessor of accused on given ring, invalid accusation.")
-	errInvalidSignature      = errors.New("Accusation signature was invalid.")
+	errInvalidSignature      = errors.New("Signature was invalid.")
 	errInvalidSelfAccusation = errors.New("Received accusation about myself, but it was invalid.")
 	errInvalidEpoch          = errors.New("Accusation epoch did not match note epoch.")
 
-	errInvalidMask = errors.New("Note contaiend invalid mask")
+	errInvalidMask = errors.New("Note contained invalid mask")
 	errOldNote     = errors.New("Already had the same or a more recent note")
 	errNoPeer      = errors.New("Peer associated with note not found in full view.")
 
@@ -38,14 +39,14 @@ var (
 	errInvalidId = errors.New("Id in certificate is of invalid size.")
 )
 
-func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateResponse, error) {
+func (n *Node) Spread(ctx context.Context, args *pb.State) (*pb.StateResponse, error) {
 	var observed bool
 	cert, err := n.validateCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	reply := &gossip.StateResponse{}
+	reply := &pb.StateResponse{}
 
 	remoteId := string(cert.SubjectKeyId[:])
 	peer := n.view.Peer(remoteId)
@@ -108,11 +109,13 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 		}
 
 		// Help new peer integrate into the network
-		reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: n.localCert.Raw})
+		reply.Certificates = append(reply.Certificates,
+			&pb.Certificate{Raw: n.cm.Certificate().Raw})
 		reply.Notes = append(reply.Notes, n.self.Note().ToPbMsg())
 
 		for _, p := range n.view.FindNeighbours(remoteId) {
-			reply.Certificates = append(reply.Certificates, &gossip.Certificate{Raw: p.Certificate()})
+			reply.Certificates = append(reply.Certificates,
+				&pb.Certificate{Raw: p.Certificate()})
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
 			}
@@ -122,7 +125,7 @@ func (n *Node) Spread(ctx context.Context, args *gossip.State) (*gossip.StateRes
 	return reply, nil
 }
 
-func (n *Node) Messenger(ctx context.Context, args *gossip.Msg) (*gossip.MsgResponse, error) {
+func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, error) {
 	var replyContent []byte
 
 	_, err := n.validateCtx(ctx)
@@ -137,14 +140,14 @@ func (n *Node) Messenger(ctx context.Context, args *gossip.Msg) (*gossip.MsgResp
 		}
 	}
 
-	return &gossip.MsgResponse{Content: replyContent}, nil
+	return &pb.MsgResponse{Content: replyContent}, nil
 }
 
-func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) {
+func (n *Node) mergeViews(given map[string]uint64, reply *pb.StateResponse) {
 	for _, p := range n.view.Full() {
 		if _, ok := given[p.Id]; !ok {
 			reply.Certificates = append(reply.Certificates,
-				&gossip.Certificate{Raw: p.Certificate()})
+				&pb.Certificate{Raw: p.Certificate()})
 
 			if note := p.Note(); note != nil {
 				reply.Notes = append(reply.Notes, note.ToPbMsg())
@@ -168,7 +171,7 @@ func (n *Node) mergeViews(given map[string]uint64, reply *gossip.StateResponse) 
 	}
 }
 
-func (n *Node) mergeNotes(notes []*gossip.Note) {
+func (n *Node) mergeNotes(notes []*pb.Note) {
 	if notes == nil {
 		return
 	}
@@ -185,7 +188,7 @@ func (n *Node) mergeNotes(notes []*gossip.Note) {
 	}
 }
 
-func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
+func (n *Node) mergeAccusations(accusations []*pb.Accusation) {
 	if accusations == nil {
 		return
 	}
@@ -215,7 +218,7 @@ func (n *Node) mergeAccusations(accusations []*gossip.Accusation) {
 	}
 }
 
-func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
+func (n *Node) mergeCertificates(certs []*pb.Certificate) {
 	if certs == nil {
 		return
 	}
@@ -237,22 +240,35 @@ func (n *Node) mergeCertificates(certs []*gossip.Certificate) {
 	}
 }
 
-func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Peer) error {
+func (n *Node) evalAccusation(a *pb.Accusation, accuserPeer, p *discovery.Peer) error {
 	sign := a.GetSignature()
+	if sign == nil {
+		return errInvalidSignature
+	}
+
+	r := sign.GetR()
+	s := sign.GetS()
+
 	epoch := a.GetEpoch()
 	ringNum := a.GetRingNum()
+
+	a.Signature = nil
+	bytes, err := proto.Marshal(a)
+	if err != nil {
+		return err
+	}
 
 	if n.self.Id == p.Id {
 		if isPrev := n.view.ValidAccuser(n.self, accuserPeer, ringNum); !isPrev {
 			return errInvalidAccuser
 		}
 
-		if valid := checkAccusationSignature(a, accuserPeer); !valid {
+		if valid := n.cs.Verify(bytes, r, s, accuserPeer.PublicKey()); !valid {
 			return errInvalidSignature
 		}
 
 		if rebut := n.view.ShouldRebuttal(epoch, ringNum); rebut {
-			n.getProtocol().Rebuttal(n)
+			n.protocol().Rebuttal(n)
 			return nil
 		} else {
 			return errInvalidSelfAccusation
@@ -278,7 +294,7 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 			return errInvalidAccuser
 		}
 
-		if valid := checkAccusationSignature(a, accuserPeer); !valid {
+		if valid := n.cs.Verify(bytes, r, s, accuserPeer.PublicKey()); !valid {
 			return errInvalidSignature
 		}
 
@@ -298,11 +314,19 @@ func (n *Node) evalAccusation(a *gossip.Accusation, accuserPeer, p *discovery.Pe
 	return nil
 }
 
-func (n *Node) evalNote(gossipNote *gossip.Note) error {
-	epoch := gossipNote.GetEpoch()
-	mask := gossipNote.GetMask()
+func (n *Node) evalNote(newNote *pb.Note) error {
+	epoch := newNote.GetEpoch()
+	mask := newNote.GetMask()
 
-	p := n.view.Peer(string(gossipNote.GetId()))
+	sign := newNote.GetSignature()
+	if sign == nil {
+		return errInvalidSignature
+	}
+
+	r := sign.GetR()
+	s := sign.GetS()
+
+	p := n.view.Peer(string(newNote.GetId()))
 	if p == nil {
 		return errNoPeer
 	}
@@ -317,25 +341,29 @@ func (n *Node) evalNote(gossipNote *gossip.Note) error {
 		return errInvalidMask
 	}
 
+	newNote.Signature = nil
+	bytes, err := proto.Marshal(newNote)
+	if err != nil {
+		return err
+	}
+
 	accusations := p.AllAccusations()
 	// Not accused, only need to check if newnote is more recent
 	if numAccs := len(accusations); numAccs == 0 {
 		// Want to store the most recent note
 		if note == nil || note.IsMoreRecent(epoch) {
-			if valid := checkNoteSignature(gossipNote, p); !valid {
+			if valid := n.cs.Verify(bytes, r, s, p.PublicKey()); !valid {
 				return errInvalidSignature
 			}
 
-			sign := gossipNote.GetSignature()
-
-			p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
+			p.AddNote(mask, epoch, r, s)
 
 			if alive := n.view.IsAlive(p.Id); !alive {
 				n.view.AddLive(p)
 			}
 		}
 	} else {
-		if valid := checkNoteSignature(gossipNote, p); !valid {
+		if valid := n.cs.Verify(bytes, r, s, p.PublicKey()); !valid {
 			return errInvalidSignature
 		}
 
@@ -347,8 +375,7 @@ func (n *Node) evalNote(gossipNote *gossip.Note) error {
 		}
 
 		if note == nil || note.IsMoreRecent(epoch) {
-			sign := gossipNote.GetSignature()
-			p.AddNote(mask, epoch, sign.GetR(), sign.GetS())
+			p.AddNote(mask, epoch, r, s)
 		}
 
 		// All accusations has to be invalidated before we add peer back to full view.
@@ -385,9 +412,16 @@ func (n *Node) evalCertificate(cert *x509.Certificate) error {
 		return errInvalidId
 	}
 
-	err := checkCertificateSignature(cert, n.caCert)
-	if err != nil {
-		return err
+	if caCert := n.cm.CaCertificate(); caCert != nil {
+		err := cert.CheckSignatureFrom(caCert)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := cert.CheckSignatureFrom(cert)
+		if err != nil {
+			return err
+		}
 	}
 
 	if exists := n.view.Exists(id); !exists {
@@ -415,4 +449,10 @@ func (n *Node) validateCtx(ctx context.Context) (*x509.Certificate, error) {
 	}
 
 	return tlsInfo.State.PeerCertificates[0], nil
+}
+
+func hashContent(data []byte) []byte {
+	h := sha256.New()
+	h.Write(data)
+	return h.Sum(nil)
 }

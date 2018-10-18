@@ -1,4 +1,4 @@
-package rpc
+package comm
 
 import (
 	"crypto/tls"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/protobuf"
+	pb "github.com/joonnna/ifrit/protobuf"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -16,9 +16,10 @@ import (
 
 var (
 	errReachable = errors.New("Remote entity not reachable")
+	errNilConfig = errors.New("Provided tls config was nil")
 )
 
-type Client struct {
+type gRPCClient struct {
 	allConnections  map[string]*conn
 	connectionMutex sync.RWMutex
 
@@ -26,28 +27,34 @@ type Client struct {
 }
 
 type conn struct {
-	gossip.GossipClient
+	pb.GossipClient
 	cc *grpc.ClientConn
 }
 
-func NewClient() *Client {
-	return &Client{
-		allConnections: make(map[string]*conn),
-	}
-}
+func newClient(config *tls.Config) (*gRPCClient, error) {
+	var dialOptions []grpc.DialOption
 
-func (c *Client) Init(config *tls.Config) {
+	if config == nil {
+		return nil, errNilConfig
+	}
+
 	creds := credentials.NewTLS(config)
 
-	c.dialOptions = append(c.dialOptions, grpc.WithTransportCredentials(creds))
-	c.dialOptions = append(c.dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
+	dialOptions = append(dialOptions, grpc.WithTransportCredentials(creds))
+	dialOptions = append(dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
 
 	if compress := viper.GetBool("use_compression"); compress {
-		c.dialOptions = append(c.dialOptions, grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
+		dialOptions = append(dialOptions,
+			grpc.WithDefaultCallOptions(grpc.UseCompressor(gzip.Name)))
 	}
+
+	return &gRPCClient{
+		allConnections: make(map[string]*conn),
+		dialOptions:    dialOptions,
+	}, nil
 }
 
-func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse, error) {
+func (c *gRPCClient) Gossip(addr string, args *pb.State) (*pb.StateResponse, error) {
 	conn, err := c.connection(addr)
 	if err != nil {
 		return nil, err
@@ -61,7 +68,7 @@ func (c *Client) Gossip(addr string, args *gossip.State) (*gossip.StateResponse,
 	return r, nil
 }
 
-func (c *Client) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, error) {
+func (c *gRPCClient) Send(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 	conn, err := c.connection(addr)
 	if err != nil {
 		return nil, err
@@ -75,7 +82,7 @@ func (c *Client) SendMsg(addr string, args *gossip.Msg) (*gossip.MsgResponse, er
 	return r, nil
 }
 
-func (c *Client) CloseConn(addr string) {
+func (c *gRPCClient) CloseConn(addr string) {
 	c.connectionMutex.Lock()
 	defer c.connectionMutex.Unlock()
 
@@ -85,7 +92,7 @@ func (c *Client) CloseConn(addr string) {
 	}
 }
 
-func (c *Client) dial(addr string) (*conn, error) {
+func (c *gRPCClient) dial(addr string) (*conn, error) {
 	c.connectionMutex.Lock()
 	defer c.connectionMutex.Unlock()
 
@@ -98,7 +105,7 @@ func (c *Client) dial(addr string) (*conn, error) {
 		return nil, err
 	} else {
 		connection := &conn{
-			GossipClient: gossip.NewGossipClient(cc),
+			GossipClient: pb.NewGossipClient(cc),
 			cc:           cc,
 		}
 		c.allConnections[addr] = connection
@@ -107,7 +114,7 @@ func (c *Client) dial(addr string) (*conn, error) {
 	}
 }
 
-func (c *Client) connection(addr string) (*conn, error) {
+func (c *gRPCClient) connection(addr string) (*conn, error) {
 	if conn := c.getConnection(addr); conn != nil {
 		return conn, nil
 	} else {
@@ -115,7 +122,7 @@ func (c *Client) connection(addr string) (*conn, error) {
 	}
 }
 
-func (c *Client) getConnection(addr string) *conn {
+func (c *gRPCClient) getConnection(addr string) *conn {
 	c.connectionMutex.RLock()
 	defer c.connectionMutex.RUnlock()
 

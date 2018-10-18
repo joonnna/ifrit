@@ -24,14 +24,11 @@ type ViewTestSuite struct {
 	v *View
 }
 
-func closeConnStub(addr string) {
-
-}
-
 func TestViewTestSuite(t *testing.T) {
 	r := log.Root()
 
 	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	//r.SetHandler(log.DiscardHandler())
 
 	suite.Run(t, new(ViewTestSuite))
 }
@@ -42,7 +39,7 @@ func (suite *ViewTestSuite) SetupTest() {
 
 	cert := validCert("selfId", privKey.Public())
 
-	v, err := NewView(10, cert, privKey, closeConnStub)
+	v, err := NewView(10, cert, &cmStub{}, &signerStub{})
 	require.NoError(suite.T(), err, "Failed to create view.")
 
 	suite.v = v
@@ -58,26 +55,23 @@ func (suite *ViewTestSuite) TestNewView() {
 
 	expectedByz := uint32((float64(numRings) / 2.0) - 1)
 
-	v, err := NewView(numRings, cert, privKey, closeConnStub)
+	v, err := NewView(numRings, cert, &cmStub{}, &signerStub{})
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), expectedByz, v.maxByz, "Max byzantine not set correctly.")
 
-	v2, err := NewView(2, cert, privKey, closeConnStub)
+	v2, err := NewView(2, cert, &cmStub{}, &signerStub{})
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), uint32(0), v2.maxByz, "Max byzantine should be zero with 2 rings.")
 
-	v3, err := NewView(1, cert, privKey, closeConnStub)
+	v3, err := NewView(1, cert, &cmStub{}, &signerStub{})
 	require.NoError(suite.T(), err, "Failed to create view.")
 	require.Equal(suite.T(), uint32(0), v3.maxByz, "Max byzantine should be zero with 1 ring.")
 
-	_, err = NewView(0, cert, privKey, closeConnStub)
+	_, err = NewView(0, cert, &cmStub{}, &signerStub{})
 	require.Error(suite.T(), err, "Should return error with 0 rings.")
 
-	_, err = NewView(numRings, nil, privKey, closeConnStub)
+	_, err = NewView(numRings, nil, &cmStub{}, &signerStub{})
 	require.Error(suite.T(), err, "Should return error with no certificate.")
-
-	_, err = NewView(numRings, cert, nil, closeConnStub)
-	require.Error(suite.T(), err, "Should return error with no privateKey.")
 
 }
 
@@ -512,7 +506,7 @@ func (suite *ViewTestSuite) TestAllTimeouts() {
 func (suite *ViewTestSuite) TestCheckTimeouts() {
 	view := suite.v
 
-	view.CheckTimeouts()
+	view.checkTimeouts()
 	assert.Zero(suite.T(), len(view.timeoutMap), "Does not alter state when there are no timeouts.")
 
 	accused := &Peer{
@@ -539,7 +533,7 @@ func (suite *ViewTestSuite) TestCheckTimeouts() {
 
 	view.timeoutMap[accused.Id] = t
 
-	view.CheckTimeouts()
+	view.checkTimeouts()
 	require.Equal(suite.T(), 1, len(view.timeoutMap), "Timeout removed before expiration.")
 
 	_, ok := view.timeoutMap[accused.Id]
@@ -548,7 +542,7 @@ func (suite *ViewTestSuite) TestCheckTimeouts() {
 	// 10 years in the past
 	t.timeStamp = t.timeStamp.AddDate(-10, 0, 0)
 
-	view.CheckTimeouts()
+	view.checkTimeouts()
 	require.Zero(suite.T(), len(view.timeoutMap), "Timeout not removed after expiration.")
 
 	_, ok = view.timeoutMap[accused.Id]
@@ -668,7 +662,8 @@ func (suite *ViewTestSuite) TestIncrementMonitorRing() {
 		if i == view.rings.numRings {
 			require.Equal(suite.T(), uint32(1), view.currMonitorRing, "Wrap around not working.")
 		} else {
-			require.Equal(suite.T(), i+1, view.currMonitorRing, "Monitor ring not incremented.")
+			require.Equal(suite.T(), i+1, view.currMonitorRing,
+				"Monitor ring not incremented.")
 		}
 	}
 }
@@ -827,16 +822,19 @@ func (suite *ViewTestSuite) TestValidMaskInternal() {
 	numRings := suite.v.rings.numRings
 	maxByz := suite.v.maxByz
 
-	assert.NoError(suite.T(), validMask(mask, numRings, maxByz), "Should not fail with valid mask.")
-	assert.Error(suite.T(), validMask(mask, 0, maxByz), "Should always fail with numRings set to zero.")
-	assert.Error(suite.T(), validMask(0, numRings, maxByz), "Should always fail with mask set to zero.")
+	assert.NoError(suite.T(), validMask(mask, numRings, maxByz),
+		"Should not fail with valid mask.")
+	assert.Error(suite.T(), validMask(0, numRings, maxByz),
+		"Should always fail with mask set to zero.")
 
 	for i = 0; i < numRings; i++ {
 		mask = clearBit(mask, i)
 		if i >= maxByz {
-			assert.Error(suite.T(), validMask(mask, numRings, maxByz), "Should fail with too many deactivations.")
+			require.Error(suite.T(), validMask(mask, numRings, maxByz),
+				"Should fail with too many deactivations.")
 		} else {
-			assert.NoError(suite.T(), validMask(mask, numRings, maxByz), "Should not fail with valid amounts of deactivations.")
+			require.NoError(suite.T(), validMask(mask, numRings, maxByz),
+				"Should not fail with valid amounts of deactivations.")
 		}
 	}
 }
@@ -879,4 +877,18 @@ func validCert(id string, pub crypto.PublicKey) *x509.Certificate {
 		},
 		PublicKey: pub,
 	}
+}
+
+type cmStub struct {
+}
+
+func (cm *cmStub) CloseConn(addr string) {
+
+}
+
+type signerStub struct {
+}
+
+func (s *signerStub) Sign(data []byte) ([]byte, []byte, error) {
+	return nil, nil, nil
 }
