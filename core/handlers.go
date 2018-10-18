@@ -25,7 +25,7 @@ var (
 	errAccAlreadyExists      = errors.New("Accusation already existed, discarding.")
 	errDisabledRing          = errors.New("Ring associated with accusation was disabled.")
 	errInvalidAccuser        = errors.New("Accuser is not predecessor of accused on given ring, invalid accusation.")
-	errInvalidSignature      = errors.New("Accusation signature was invalid.")
+	errInvalidSignature      = errors.New("Signature was invalid.")
 	errInvalidSelfAccusation = errors.New("Received accusation about myself, but it was invalid.")
 	errInvalidEpoch          = errors.New("Accusation epoch did not match note epoch.")
 

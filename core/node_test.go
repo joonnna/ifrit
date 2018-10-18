@@ -2,8 +2,10 @@ package core
 
 import (
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -38,7 +40,12 @@ func TestNodeTestSuite(t *testing.T) {
 
 func (suite *NodeTestSuite) SetupTest() {
 	for i := 0; i < 30; i++ {
-		n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{}, &cryptoStub{})
+
+		priv, err := genKeys()
+		require.NoError(suite.T(), err, "Failed to generate keys")
+
+		ownCert := genCert(priv, 10)
+		n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{cert: ownCert}, &cryptoStub{priv: priv})
 		require.NoError(suite.T(), err, "Failed to create node.")
 
 		suite.nodes = append(suite.nodes, n)
@@ -147,16 +154,36 @@ func (ps *pingStub) Ping(addr string, m *pb.Ping) (*pb.Pong, error) {
 	return &pb.Pong{}, nil
 }
 
+//TODO we need to decide upon stubs or not stubs etc, not just copy stuff, this is really ugly
 type cryptoStub struct {
 	priv *ecdsa.PrivateKey
 }
 
 func (cs *cryptoStub) Verify(data, r, s []byte, pub *ecdsa.PublicKey) bool {
-	return false
+	if pub == nil {
+		log.Error("Peer had no publicKey")
+		return false
+	}
+
+	var rInt, sInt big.Int
+
+	b := hashContent(data)
+
+	rInt.SetBytes(r)
+	sInt.SetBytes(s)
+
+	return ecdsa.Verify(pub, b, &rInt, &sInt)
 }
 
 func (cs *cryptoStub) Sign(data []byte) ([]byte, []byte, error) {
-	return nil, nil, nil
+	hash := hashContent(data)
+
+	r, s, err := ecdsa.Sign(rand.Reader, cs.priv, hash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return r.Bytes(), s.Bytes(), nil
 }
 
 type cmStub struct {
@@ -176,7 +203,7 @@ func (cm *cmStub) ContactList() []*x509.Certificate {
 }
 
 func (cm *cmStub) NumRings() uint32 {
-	return 0
+	return 32
 }
 
 func (cm *cmStub) Trusted() bool {

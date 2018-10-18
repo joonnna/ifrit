@@ -73,7 +73,7 @@ func validClientConfig() (*tls.Config, error) {
 	}
 
 	pk := pkix.Name{
-		Locality: []string{"127:0.0.1:8000", "pingAddr"},
+		Locality: []string{"127.0.0.1:8000", "pingAddr"},
 	}
 
 	certs, err := selfSignedCert(priv, pk)

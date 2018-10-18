@@ -35,7 +35,7 @@ func (suite *PeerTestSuite) SetupTest() {
 
 	suite.priv = privKey
 
-	id := "testId"
+	id := "selfId"
 
 	p := &Peer{
 		Id:          id,
@@ -73,6 +73,7 @@ func TestPeerTestSuite(t *testing.T) {
 
 	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
 
+	//r.SetHandler(log.DiscardHandler())
 	suite.Run(t, new(PeerTestSuite))
 }
 
@@ -233,16 +234,19 @@ func (suite *PeerTestSuite) TestPublicKey() {
 	}
 
 	for i, t := range tests {
-		require.Equalf(suite.T(), t.out, t.p.Certificate(), "Invalid output for test %d", i)
+		require.Equalf(suite.T(), t.out, t.p.PublicKey(), "Invalid output for test %d", i)
 	}
 }
 func (suite *PeerTestSuite) TestCreateAccusation() {
 	var i uint32
 
+	accId := "testId"
+
 	accused := &Peer{
-		Id: "selfId",
+		Id: accId,
 		note: &Note{
 			epoch: 10,
+			id:    accId,
 		},
 		accusations: make(map[uint32]*Accusation),
 	}
@@ -311,7 +315,7 @@ func (suite *PeerTestSuite) TestCreateAccusation() {
 				"Wrong ringNum, test %d", i)
 
 			require.NotNilf(suite.T(), a.signature, "Signature should not be nil, test %d", i)
-		} else {
+		} else if t.err != ErrAccAlreadyExists {
 			_, ok := t.accused.accusations[t.ringNum]
 			require.Falsef(suite.T(), ok,
 				"Accusation should not be added when error is returned, test %d", i)
@@ -435,8 +439,8 @@ func (suite *PeerTestSuite) TestAddAccusation() {
 				"Wrong signature s component, test %d", i)
 
 		} else {
-			_, ok := t.p.accusations[t.ringNum]
-			require.Falsef(suite.T(), ok,
+			acc := t.p.accusations[t.ringNum]
+			require.Nil(suite.T(), acc,
 				"Accusation should not be added when error is returned, test %d", i)
 		}
 	}
@@ -484,15 +488,23 @@ func (suite *PeerTestSuite) TestRemoveAccusation() {
 	}
 
 	for i, t := range tests {
-		_, ok := p.accusations[t.in.ringNum]
+		acc := p.accusations[t.in.ringNum]
 
-		require.Equalf(suite.T(), t.pre, ok, "Invalid pre status for test %d", i)
+		if !t.pre {
+			require.Nilf(suite.T(), acc, "Invalid pre status for test %d", i)
+		} else {
+			require.NotNilf(suite.T(), acc, "Invalid pre status for test %d", i)
+		}
 
 		p.RemoveAccusation(t.in)
 
-		_, ok = p.accusations[t.in.ringNum]
+		acc = p.accusations[t.in.ringNum]
 
-		require.Equalf(suite.T(), t.exists, ok, "Invalid existence status for test %d", i)
+		if !t.exists {
+			require.Nilf(suite.T(), acc, "Invalid existence status for test %d", i)
+		} else {
+			require.NotNilf(suite.T(), acc, "Invalid existence status for test %d", i)
+		}
 	}
 }
 
@@ -530,15 +542,23 @@ func (suite *PeerTestSuite) TestRemoveRingAccusation() {
 	}
 
 	for i, t := range tests {
-		_, ok := p.accusations[t.in]
+		acc := p.accusations[t.in]
 
-		require.Equalf(suite.T(), t.pre, ok, "Invalid pre status for test %d", i)
+		if !t.pre {
+			require.Nilf(suite.T(), acc, "Invalid pre status for test %d", i)
+		} else {
+			require.NotNilf(suite.T(), acc, "Invalid pre status for test %d", i)
+		}
 
 		p.RemoveRingAccusation(t.in)
 
-		_, ok = p.accusations[t.in]
+		acc = p.accusations[t.in]
 
-		require.Equalf(suite.T(), t.exists, ok, "Invalid existence status for test %d", i)
+		if !t.exists {
+			require.Nilf(suite.T(), acc, "Invalid existence status for test %d", i)
+		} else {
+			require.NotNilf(suite.T(), acc, "Invalid existence status for test %d", i)
+		}
 	}
 }
 

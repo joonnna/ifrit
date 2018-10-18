@@ -28,6 +28,7 @@ func TestViewTestSuite(t *testing.T) {
 	r := log.Root()
 
 	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	//r.SetHandler(log.DiscardHandler())
 
 	suite.Run(t, new(ViewTestSuite))
 }

@@ -4,7 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"os"
 	"testing"
 
 	log "github.com/inconshreveable/log15"
@@ -20,8 +19,9 @@ type AccTestSuite struct {
 func TestAccTestSuite(t *testing.T) {
 	r := log.Root()
 
-	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	//r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
 
+	r.SetHandler(log.DiscardHandler())
 	suite.Run(t, new(AccTestSuite))
 }
 

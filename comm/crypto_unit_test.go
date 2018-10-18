@@ -1,10 +1,10 @@
 package comm
 
+/*
 type CryptoUnitTestSuite struct {
 	suite.Suite
 	c *CryptoUnit
 }
-
 
 func TestCryptoUnitTestSuite(t *testing.T) {
 
@@ -25,9 +25,9 @@ func (suite *CryptoUnitTestSuite) TestNewCu() {
 	ca, err := cauth.NewCa()
 	require.NoError(suite.T(), err, "Failed to create ca")
 
-	tests := []struct{
+	tests := []struct {
 	}{
 		{},
-
 	}
 }
+*/

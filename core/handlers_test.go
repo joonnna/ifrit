@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,8 @@ type HandlerTestSuite struct {
 func TestHandlerTestSuite(t *testing.T) {
 	r := log.Root()
 
-	r.SetHandler(log.DiscardHandler())
+	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	//r.SetHandler(log.DiscardHandler())
 
 	suite.Run(t, new(HandlerTestSuite))
 }
@@ -50,7 +52,7 @@ func (suite *HandlerTestSuite) SetupTest() {
 
 	ownCert := genCert(priv, 10)
 
-	n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{cert: ownCert}, &cryptoStub{})
+	n, err := NewNode(&commStub{}, &pingStub{}, &cmStub{cert: ownCert}, &cryptoStub{priv: priv})
 	require.NoError(suite.T(), err, "Failed to create node.")
 
 	suite.n = n
@@ -923,7 +925,7 @@ func addPeer(node *Node) (*discovery.Peer, *ecdsa.PrivateKey, error) {
 
 func genCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
 	pk := pkix.Name{
-		Locality: []string{"127:0.0.1:8000", "pingAddr", "httpAddr"},
+		Locality: []string{"127.0.0.1:8000", "pingAddr", "httpAddr"},
 	}
 
 	c, err := selfSignedCert(priv, pk)
@@ -951,7 +953,7 @@ func genInvalidSignatureCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certifi
 
 func genInvalidIdCert(priv *ecdsa.PrivateKey, rings uint32) *x509.Certificate {
 	pk := pkix.Name{
-		Locality: []string{"127:0.0.1:8000", "pingAddr", "httpAddr"},
+		Locality: []string{"127.0.0.1:8000", "pingAddr", "httpAddr"},
 	}
 
 	c, err := selfSignedCert(priv, pk)
@@ -990,7 +992,7 @@ func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*x509.Certificate, er
 
 	ip := net.ParseIP(serviceAddr[0])
 	if ip == nil {
-		return nil, errors.New("No service addr in identity")
+		return nil, errors.New("Could not parse ip address")
 	}
 
 	serial, err := genSerialNumber()

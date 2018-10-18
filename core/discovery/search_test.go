@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"os"
 	"testing"
 
 	log "github.com/inconshreveable/log15"
@@ -19,8 +18,9 @@ type SearchTestSuite struct {
 func TestSearchTestSuite(t *testing.T) {
 	r := log.Root()
 
-	r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
+	//r.SetHandler(log.CallerFileHandler(log.StreamHandler(os.Stdout, log.TerminalFormat())))
 
+	r.SetHandler(log.DiscardHandler())
 	suite.Run(t, new(SearchTestSuite))
 }
 
