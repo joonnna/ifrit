@@ -5,6 +5,7 @@ package gossip;
 service gossip {
     rpc Spread (State) returns (StateResponse) {}
     rpc Messenger (Msg) returns (MsgResponse) {}
+    rpc Stream (stream Msg) returns (MsgResponse) {}
 }
 
 message State {
@@ -23,7 +24,7 @@ message HostState {
 //Application message
 message Msg {
     bytes content = 1;
-}
+} 
 
 
 //Application response

@@ -7,6 +7,7 @@ import (
 	"math/bits"
 	"sync"
 	"time"
+	"strings"
 
 	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
@@ -476,10 +477,11 @@ func (v *View) State() *gossip.State {
 	}
 
 	for _, p := range v.viewMap {
+		id := strings.ToValidUTF8(p.Id, "")
 		if note := p.Note(); note != nil {
-			ret.ExistingHosts[p.Id] = note.epoch
+			ret.ExistingHosts[id] = note.epoch
 		} else {
-			ret.ExistingHosts[p.Id] = 0
+			ret.ExistingHosts[id] = 0
 		}
 	}
 

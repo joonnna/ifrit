@@ -295,7 +295,7 @@ func genSerialNumber() (*big.Int, error) {
 }
 
 func genKeys() (*ecdsa.PrivateKey, error) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	privKey, err := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}

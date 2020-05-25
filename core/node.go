@@ -51,11 +51,14 @@ type Node struct {
 	gossipHandler      processMsg
 	gossipHandlerMutex sync.RWMutex
 
-	responseHandler      func([]byte)
+	responseHandler      func([]byte) 
 	responseHandlerMutex sync.RWMutex
 
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
+
+	streamHandler 		func(<-chan []byte) ([]byte, error)
+	streamHandlerMutex 	sync.RWMutex
 
 	dispatcher *workerpool.Dispatcher
 
@@ -71,6 +74,14 @@ type Node struct {
 	viz    *viz
 }
 
+type Stream struct {
+	pb.Gossip_StreamClient
+}
+
+type RStream struct {
+	pb.Gossip_StreamServer
+}
+
 type commService interface {
 	Register(pb.GossipServer)
 	CloseConn(string)
@@ -80,6 +91,7 @@ type commService interface {
 
 	Gossip(string, *pb.State) (*pb.StateResponse, error)
 	Send(string, *pb.Msg) (*pb.MsgResponse, error)
+	StreamMessenger(string, chan []byte) (*pb.MsgResponse, error)
 }
 
 type certManager interface {
@@ -249,6 +261,25 @@ func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
 			n.sendMsg(a, ch, msg)
 		})
 	}
+}
+
+func (n *Node) OpenStream(dest string, input, reply chan []byte) {
+	n.dispatcher.Submit(func() {
+		n.openStream(dest, input, reply)
+	})
+}
+
+func (n *Node) SendStream(ch chan<- []byte, data []byte) {
+	ch <- data
+}
+
+func (n *Node) openStream(dest string, input, reply chan []byte) {
+	r, err := n.comm.StreamMessenger(dest, input)
+	if err != nil {
+		log.Error(err.Error())
+		reply <- nil 
+	}
+	reply <- r.GetContent()
 }
 
 func (n *Node) sendMsg(dest string, ch chan []byte, msg *pb.Msg) {
