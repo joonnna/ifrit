@@ -9,7 +9,7 @@ import (
 	"time"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
+	gpb "github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/protobuf"
 	pb "github.com/joonnna/ifrit/protobuf"
@@ -458,20 +458,20 @@ func (v *View) incrementMonitorRing() {
 	}
 }
 
-func (v *View) selfNote() *gossip.Note {
+func (v *View) selfNote() *proto.Note {
 	v.self.noteMutex.RLock()
 	defer v.self.noteMutex.RUnlock()
 
 	return v.self.note.ToPbMsg()
 }
 
-func (v *View) State() *gossip.State {
+func (v *View) State() *proto.State {
 	ownNote := v.selfNote()
 
 	v.viewMutex.RLock()
 	defer v.viewMutex.RUnlock()
 
-	ret := &gossip.State{
+	ret := &proto.State{
 		ExistingHosts: make(map[string]uint64),
 		OwnNote:       ownNote,
 	}
@@ -539,7 +539,7 @@ func (v *View) signLocalNote(n *Note) error {
 		Id:    []byte(n.id),
 	}
 
-	bytes, err := proto.Marshal(pbNote)
+	bytes, err := gpb.Marshal(pbNote)
 	if err != nil {
 		return err
 	}

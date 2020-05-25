@@ -12,7 +12,7 @@ var (
 	errPeerNotFound = errors.New("No peer info found")
 )
 
-func (n *Node) collectGossipContent() *gossip.State {
+func (n *Node) collectGossipContent() *proto.State {
 	msg := n.view.State()
 
 	msg.ExternalGossip = n.getExternalGossip()

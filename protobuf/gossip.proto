@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package gossip;
+package proto;
 
 service gossip {
     rpc Spread (State) returns (StateResponse) {}
