@@ -74,14 +74,6 @@ type Node struct {
 	viz    *viz
 }
 
-type Stream struct {
-	pb.Gossip_StreamClient
-}
-
-type RStream struct {
-	pb.Gossip_StreamServer
-}
-
 type commService interface {
 	Register(pb.GossipServer)
 	CloseConn(string)
