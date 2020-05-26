@@ -148,6 +148,35 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 	return ch, err
 }
 
+// Returns a channel the caller can use to stream data to a recipient given by 'dest. 
+// Send data to the first channel and close it using CloseStream. Use the second channel to 
+// read the reply from the server. Subsequent calls on the channel after CloseStream will fail
+func (c *Client) OpenStream(dest string, size int) (chan []byte, chan []byte) {
+	inputStream := make(chan []byte, size)
+	reply := make(chan []byte, 1)
+	
+	go c.node.OpenStream(dest, inputStream, reply)
+
+	return inputStream, reply
+}
+
+// Sends data to the stream using the write-only channel
+func (c *Client) SendStream(data []byte, ch chan<- []byte) {
+	c.node.SendStream(ch, data)
+}
+
+// Closes the given stream. Subsequent operations on that stream will fail.
+func (c *Client) CloseStream(ch chan []byte) {
+	close(ch)
+}
+
+// Registers the given function as the stream handler.
+// Invoked when the channel is written to by the sender. The callback should read from the channel
+// until an exit signal has been issued. Check for the STREAM_DONE field in the channel before returning 
+func (c *Client) RegisterStreamHandler(streamHandler func(s <-chan []byte) ([]byte, error)) {
+	c.node.SetStreamHandler(streamHandler)
+}
+
 // Registers the given function as the message handler.
 // Invoked each time the ifrit client receives an application message (another client sent it through SendTo), this callback will be invoked.
 // The returned byte slice will be sent back as the response.

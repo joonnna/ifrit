@@ -82,6 +82,30 @@ func (c *gRPCClient) Send(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 	return r, nil
 }
 
+func (c *gRPCClient) StreamMessenger(addr string, ch chan []byte) (*pb.MsgResponse, error) {
+	conn, err := c.connection(addr)
+	if err != nil {
+		return nil, err
+	}
+	
+	s, err := conn.Stream(context.Background()) 
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range ch {
+		msg := &pb.Msg{
+			Content: i,
+		}
+
+		if err := s.Send(msg); err != nil {
+			return nil, err
+		}
+	}
+
+	return s.CloseAndRecv()
+}
+
 func (c *gRPCClient) CloseConn(addr string) {
 	c.connectionMutex.Lock()
 	defer c.connectionMutex.Unlock()

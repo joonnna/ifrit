@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"errors"
+	"sync"
+	"io"
 
 	"github.com/golang/protobuf/proto"
 	log "github.com/inconshreveable/log15"
@@ -141,6 +143,54 @@ func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, er
 	}
 
 	return &pb.MsgResponse{Content: replyContent}, nil
+}
+
+func (n *Node) Stream(srv pb.Gossip_StreamServer) (error) {
+	var response []byte
+	var wg sync.WaitGroup
+	var handlerError error
+	
+	if handler := n.getStreamHandler(); handler != nil {
+		input := make(chan []byte)
+		
+		// Runs until all messages has been read from the channel and the channel closes
+		go func() {
+			wg.Add(1)
+			defer wg.Done()
+			response, handlerError = handler(input)
+		} ()
+
+		// Fetch messages from the stream and feed it to the channel
+		for {
+			data, err := srv.Recv()
+			if err == io.EOF {
+				close(input)
+				wg.Wait()
+
+				if handlerError != nil {
+					return handlerError
+				}
+
+				return srv.SendAndClose(&pb.MsgResponse{
+					Content: response,
+				})
+			}
+
+			if handlerError != nil {
+				close(input)
+				return handlerError
+			}
+
+			if err != nil {
+				close(input)
+				return err
+			}
+
+			input <- data.GetContent()
+		}
+	}
+
+	return nil
 }
 
 func (n *Node) mergeViews(given map[string]uint64, reply *pb.StateResponse) {
@@ -334,6 +384,7 @@ func (n *Node) evalNote(newNote *pb.Note) error {
 	note := p.Note()
 
 	if note != nil && !note.IsMoreRecent(epoch) {
+		//fmt.Printf("Epoch: %v\n", epoch)
 		return errOldNote
 	}
 

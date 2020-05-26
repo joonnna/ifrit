@@ -12,7 +12,7 @@ var (
 	errPeerNotFound = errors.New("No peer info found")
 )
 
-func (n *Node) collectGossipContent() *gossip.State {
+func (n *Node) collectGossipContent() *proto.State {
 	msg := n.view.State()
 
 	msg.ExternalGossip = n.getExternalGossip()
@@ -106,4 +106,19 @@ func (n *Node) getResponseHandler() func([]byte) {
 	defer n.responseHandlerMutex.RUnlock()
 
 	return n.responseHandler
+}
+
+// Expose so that client can set new handler directly
+func (n *Node) SetStreamHandler(newHandler func(<-chan []byte) ([]byte, error)) {
+	n.streamHandlerMutex.Lock()
+	defer n.streamHandlerMutex.Unlock()
+
+	n.streamHandler = newHandler
+}
+
+func (n *Node) getStreamHandler() func(<-chan []byte) ([]byte, error) {
+	n.streamHandlerMutex.RLock()
+	defer n.streamHandlerMutex.RUnlock()
+
+	return n.streamHandler
 }

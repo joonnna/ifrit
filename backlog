@@ -19,9 +19,8 @@
     - Context loggers (log15 context loggers)
     - Change ID's in protobuf to strings?
     - Avoid transferring all accusations
-    - Rpc client/server overhaul (grpc streams? stream interceptor for neighbour/validation?)
+    - stream interceptor for neighbour/validation?)
     - Rework old tests according to the new test setup
-    - Change protobuf package name to "proto" to make clear which objects are protobuf messages
     - Rework protobuf messages to contain serialized messages and raw signatures, so we dont need to marshal them again at the receiver.
     - Figure out and set sane rpc client/server grpc default values and add support for adding non-default configuration
     - Intefaces for msg/gossip handlers in client? more go-idomatic?
@@ -51,6 +50,8 @@
     - Ping limit per monitor interval (how many each interval)
     - Move mask logic from view to notes
     - Remove mask from accusations
+    - Change protobuf package name to "proto" to make clear which objects are protobuf messages
+    - Rpc client/server grpc stream? 
 
 
 Do seperate pull requests for all (for tracking)
