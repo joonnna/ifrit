@@ -22,6 +22,7 @@ var (
 )
 
 type processMsg func([]byte) ([]byte, error)
+type streamMsg func(chan []byte, chan []byte)
 
 type Node struct {
 	view *discovery.View
@@ -57,7 +58,7 @@ type Node struct {
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
 
-	streamHandler 		func(<-chan []byte) ([]byte, error)
+	streamHandler 		streamMsg
 	streamHandlerMutex 	sync.RWMutex
 
 	dispatcher *workerpool.Dispatcher
@@ -83,7 +84,7 @@ type commService interface {
 
 	Gossip(string, *pb.State) (*pb.StateResponse, error)
 	Send(string, *pb.Msg) (*pb.MsgResponse, error)
-	StreamMessenger(string, chan []byte) (*pb.MsgResponse, error)
+	StreamMessenger(string, chan []byte, chan []byte) error
 }
 
 type certManager interface {
@@ -266,12 +267,9 @@ func (n *Node) SendStream(ch chan<- []byte, data []byte) {
 }
 
 func (n *Node) openStream(dest string, input, reply chan []byte) {
-	r, err := n.comm.StreamMessenger(dest, input)
-	if err != nil {
-		log.Error(err.Error())
-		reply <- nil 
+	if err := n.comm.StreamMessenger(dest, input, reply); err != nil {
+		log.Error(err.Error())	
 	}
-	reply <- r.GetContent()
 }
 
 func (n *Node) sendMsg(dest string, ch chan []byte, msg *pb.Msg) {

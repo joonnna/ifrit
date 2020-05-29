@@ -109,14 +109,14 @@ func (n *Node) getResponseHandler() func([]byte) {
 }
 
 // Expose so that client can set new handler directly
-func (n *Node) SetStreamHandler(newHandler func(<-chan []byte) ([]byte, error)) {
+func (n *Node) SetStreamHandler(newHandler streamMsg) {
 	n.streamHandlerMutex.Lock()
 	defer n.streamHandlerMutex.Unlock()
 
 	n.streamHandler = newHandler
 }
 
-func (n *Node) getStreamHandler() func(<-chan []byte) ([]byte, error) {
+func (n *Node) getStreamHandler() streamMsg {
 	n.streamHandlerMutex.RLock()
 	defer n.streamHandlerMutex.RUnlock()
 

@@ -5,7 +5,7 @@ package proto;
 service gossip {
     rpc Spread (State) returns (StateResponse) {}
     rpc Messenger (Msg) returns (MsgResponse) {}
-    rpc Stream (stream Msg) returns (MsgResponse) {}
+    rpc Stream (stream Msg) returns (stream MsgResponse) {}
 }
 
 message State {

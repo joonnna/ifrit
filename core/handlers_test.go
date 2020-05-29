@@ -108,7 +108,7 @@ func (suite *HandlerTestSuite) TestSpread() {
 
 	tests := []struct {
 		ctx  context.Context
-		args *gossip.State
+		args *proto.State
 
 		peer *discovery.Peer
 
@@ -154,7 +154,7 @@ func (suite *HandlerTestSuite) TestSpread() {
 			err:       false,
 			isAccused: true,
 			accs:      []string{accusedNonNeighbour.Id},
-			args: &gossip.State{
+			args: &proto.State{
 				OwnNote: accusedNonNeighbour.Note().ToPbMsg(),
 			},
 			exists: true,
@@ -166,7 +166,7 @@ func (suite *HandlerTestSuite) TestSpread() {
 			ctx:       peerContext(rebuttalPeer),
 			err:       false,
 			isAccused: false,
-			args: &gossip.State{
+			args: &proto.State{
 				OwnNote: discovery.NewNote(rebuttalPeer.Id, 2, math.MaxUint32,
 					suite.privMap[rebuttalPeer.Id]),
 			},
@@ -200,7 +200,7 @@ func (suite *HandlerTestSuite) TestSpread() {
 			exists: true,
 			live:   true,
 			peer:   nonExistingPeer,
-			args: &gossip.State{
+			args: &proto.State{
 				OwnNote: nonExistingPeer.Note().ToPbMsg(),
 			},
 			findNeighbours: true,
@@ -334,7 +334,7 @@ func (suite *HandlerTestSuite) TestMergeViews() {
 	}
 
 	for i, t := range tests {
-		reply := &gossip.StateResponse{}
+		reply := &proto.StateResponse{}
 		node.mergeViews(t.in, reply)
 
 		var certs []string
@@ -399,7 +399,7 @@ func (suite *HandlerTestSuite) TestEvalAccusation() {
 	selfId := node.self.Id
 
 	tests := []struct {
-		acc     *gossip.Accusation
+		acc     *proto.Accusation
 		accuser *discovery.Peer
 		accused *discovery.Peer
 		out     error
@@ -547,7 +547,7 @@ func (suite *HandlerTestSuite) TestEvalNote() {
 	require.NoError(suite.T(), err, "Failed to start timer.")
 
 	tests := []struct {
-		note *gossip.Note
+		note *proto.Note
 		out  error
 
 		noteHolder  *discovery.Peer

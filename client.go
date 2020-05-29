@@ -148,32 +148,27 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 	return ch, err
 }
 
-// Returns a channel the caller can use to stream data to a recipient given by 'dest. 
-// Send data to the first channel and close it using CloseStream. Use the second channel to 
-// read the reply from the server. Subsequent calls on the channel after CloseStream will fail
-func (c *Client) OpenStream(dest string, size int) (chan []byte, chan []byte) {
-	inputStream := make(chan []byte, size)
-	reply := make(chan []byte, 1)
+// Returns a pair of channels used for bi-directional streams, given the destination. The first channel
+// is the input stream to the server and the second stream is the reply stream from the server. The 'inputSize' argument sets
+// the size of the input channel. The reply buffer has a buffer size of "replySize". To close the stream, close the input channel. 
+// The reply stream is open as long as the server sends messages. If the replies are discarded, the caller must
+// ensure that the reply stream does not block by draining the buffer so that the stream session can complete.
+// Note: it is adviced to implement an aknowledgement mechanism to avoid an untimely closing of a channel and loss of messages.
+func (c *Client) OpenStream(dest string, inputSize, replySize int) (chan []byte, chan []byte) {
+	inputStream := make(chan []byte, inputSize)
+	replyStream := make(chan []byte, replySize)
 	
-	go c.node.OpenStream(dest, inputStream, reply)
+	go c.node.OpenStream(dest, inputStream, replyStream)
 
-	return inputStream, reply
-}
-
-// Sends data to the stream using the write-only channel
-func (c *Client) SendStream(data []byte, ch chan<- []byte) {
-	c.node.SendStream(ch, data)
-}
-
-// Closes the given stream. Subsequent operations on that stream will fail.
-func (c *Client) CloseStream(ch chan []byte) {
-	close(ch)
+	return inputStream, replyStream
 }
 
 // Registers the given function as the stream handler.
-// Invoked when the channel is written to by the sender. The callback should read from the channel
-// until an exit signal has been issued. Check for the STREAM_DONE field in the channel before returning 
-func (c *Client) RegisterStreamHandler(streamHandler func(s <-chan []byte) ([]byte, error)) {
+// Invoked when the channel is written to by the sender. The callback accepts two channels - 
+// an unbuffered input channel and an unbuffered channel used for replying to the client. 
+// The caller must close the reply channel to signal that the stream is closing.
+// See the note in OpenStream comment
+func (c *Client) RegisterStreamHandler(streamHandler func(chan []byte, chan []byte)) {
 	c.node.SetStreamHandler(streamHandler)
 }
 
