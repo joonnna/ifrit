@@ -6,7 +6,7 @@ Applications have a full membership view and can send messages directly to their
 [![GoDoc](https://godoc.org/github.com/joonnna/ifrit?status.svg)](https://godoc.org/github.com/joonnna/ifrit)
 
 ### Starting a Ifrit network
-To start a Ifrit network, you need to deploy the Ifrit certificate authority, responsible for signing certificates and acting as an entry point into the network.
+To start an Ifrit network, you need to deploy the Ifrit certificate authority, responsible for signing certificates and acting as an entry point into the network.
 
 The certificate authority serves a single HTTP endpoint for certificate signing requests, piggybacking certificates of existing participants on responses.
 To start a network, simply deploy it.
@@ -15,7 +15,7 @@ Firstly, import the certificate authority package:
 ```go
 "github.com/joonnna/ifrit/cauth"
 ```
-Then create and start a ca instance:
+Then create and start a CA instance:
 ```go
 ca, err := cauth.NewCa()
 if err != nil {
@@ -26,21 +26,21 @@ go ca.Start()
 
 ```
 
-Furthermore, you can customize parameters by changing the generated config file, located at /var/tmp/ca_config.
-It contains three parameters: boot_nodes, num_rings, and port.
-- boot_nodes: how many participant certificates the certificate authority stores locally (default: 10).
-- num_rings: how many Ifrit rings will be used by participants, embedded in all certificates (default: 10).
-- port: which port to bind to (default: 8300).
+Furthermore, you can customize parameters by changing the generated config file, located at ``/var/tmp/ca_config``.
+It contains three parameters: ``boot_nodes``, ``num_rings``, and ``port``.
+- ``boot_nodes``: how many participant certificates the certificate authority stores locally (default: 10).
+- ``num_rings``: how many Ifrit rings will be used by participants, embedded in all certificates (default: 10).
+- ``port``: which port to bind to (default: 8300).
 
 
 
 
 ### Starting a client
 Firstly you'll have to populate the client config with the address (ip:port) of the certificate authority.
-Create the file "ifrit_config.yml", and place it under the /var/tmp folder.
+Create the file "ifrit_config.yml", and place it under the ``/var/tmp folder``.
 Fill in the following variables:
-- use_ca: true
-- ca_addr: "insert ca address here"
+- ``use_ca: true``
+- ``ca_addr: "insert ca address here"``
 
 
 Now you'll want to import the library:
@@ -64,7 +64,7 @@ allNetworkMembers := c.Members()
 
 
 ### Sending a message
-After joining a Ifrit network you can send messages to anyone in it:
+After joining an Ifrit network you can send messages to anyone in it:
 
 ```go
 members := client.Members()
@@ -116,15 +116,34 @@ func yourResponseHandler(data []byte) {
 ```
 Note that gossip messages has seperate message and response handlers than that of normal messages.
 
+### Adding streaming
+Ifrit supports bi-directional streaming. The sender invokes ``client.OpenStream()`` which returns two buffered channels. The first channel is used to send messages to the server and the second channel is used to receive messages from the server. Specify the callback handler on the receiving side - ``client.RegisterStreamHandler(yourStreamingHandler)``. The handler uses two unbuffered channels for the server side to use.
+```go
+func yourStreamingHandler(data []byte) {
+    members := client.Members()
+    randomMember := members[rand.Int()%len(members)]
+    input, reply := client.OpenStream(randomMember, 10, 10)
+    // Use the channels
+    close(input)
+}
+
+func  streamHandler(input, reply chan []byte) {
+    // Use the channels
+    close(reply)
+}
+```
+To avoid untimely closing of channels, the application should implement a means of acknowledgement before closing any streams. 
+
+**NOTE**: The ``reply`` stream at the sending side must not block so that the resources can be released. See the fully-working example of streaming [here](https://github.com/joonnna/ifrit/blob/master/_examples/stream/streamingExample.go).
 
 ### Config details
-Ifrit clients relies on a config file which should either be placed in your current working directory or /var/tmp/ifrit_config.
+Ifrit clients relies on a config file which should either be placed in your current working directory or  ``/var/tmp/ifrit_config``.
 Ifrit will generate all default values, but relies on two user inputs as explained earlier.
 We will now present all configuration variables:
-- use_ca (bool): if a ca should be contacted on startup.
-- ca_addr (string): ip:port of the ca, has to be populated if use_ca is set to true.
-- gossip_interval (uint32): How often (in seconds) the ifrit client should gossip with a neighboring peer (default: 10). Ifrit gossips with one neighbor per interval.
-- monitor_interval (uint32): How often (in seconds) the ifrit client should monitor other peers (default: 10).
-- ping_limit (uint32): How many failed pings before peers are considered dead (default: 3).
-- max_concurrent_messages (uint32): The maximum concurrent outgoing messages through the messaging service at any time (default: 50).
-- removal_timeout (uint32): How long (in seconds) the ifrit client waits after discovering an unresponsive peer before removing it from its live view (default: 60).
+- ``use_ca`` (bool): if a ca should be contacted on startup.
+- ``ca_addr`` (string): ip:port of the ca, has to be populated if ``use_ca`` is set to true.
+- ``gossip_interval`` (uint32): How often (in seconds) the ifrit client should gossip with a neighboring peer (default: 10). Ifrit gossips with one neighbor per interval.
+- ``monitor_interval`` (uint32): How often (in seconds) the ifrit client should monitor other peers (default: 10).
+- ``ping_limit`` (uint32): How many failed pings before peers are considered dead (default: 3).
+- ``max_concurrent_messages`` (uint32): The maximum concurrent outgoing messages through the messaging service at any time (default: 50).
+- ``removal_timeout`` (uint32): How long (in seconds) the ifrit client waits after discovering an unresponsive peer before removing it from its live view (default: 60).
