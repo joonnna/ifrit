@@ -145,52 +145,65 @@ func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, er
 	return &pb.MsgResponse{Content: replyContent}, nil
 }
 
-func (n *Node) Stream(srv pb.Gossip_StreamServer) (error) {
-	var response []byte
-	var wg sync.WaitGroup
-	var handlerError error
-	
+func (n *Node) Stream(srv pb.Gossip_StreamServer) error {
 	if handler := n.getStreamHandler(); handler != nil {
-		input := make(chan []byte)
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		ctx := srv.Context()
 		
-		// Runs until all messages has been read from the channel and the channel closes
-		go func() {
-			wg.Add(1)
-			defer wg.Done()
-			response, handlerError = handler(input)
-		} ()
+		// Channels used for bi-directional communication
+		input := make(chan []byte)
+		reply := make(chan []byte)
+	
+		// Used to signal that the consumer stops reading a non-empty input channel 
+		done := make(chan struct{})
 
-		// Fetch messages from the stream and feed it to the channel
+		wg.Add(2)
+		go n.runStreamHandler(handler, input, reply, done, &wg)
+		go n.replyStream(input, reply, srv, &wg)
+
+		// Receive messages and wait for the channels to close
 		for {
-			data, err := srv.Recv()
+			req, err := srv.Recv()
 			if err == io.EOF {
 				close(input)
-				wg.Wait()
-
-				if handlerError != nil {
-					return handlerError
-				}
-
-				return srv.SendAndClose(&pb.MsgResponse{
-					Content: response,
-				})
-			}
-
-			if handlerError != nil {
-				close(input)
-				return handlerError
+				break
 			}
 
 			if err != nil {
-				close(input)
-				return err
+				log.Error(err.Error())
 			}
 
-			input <- data.GetContent()
+			select {
+			case input <- req.GetContent():
+			case <- done:
+				break
+			case <-ctx.Done():
+				log.Debug(ctx.Err().Error())
+				return ctx.Err()
+			}
 		}
 	}
 
 	return nil
+}
+
+func (n *Node) replyStream(input, reply chan []byte, srv pb.Gossip_StreamServer, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for resp := range reply {
+		responseMsg := &pb.MsgResponse{
+			Content: resp,
+		}
+		if err := srv.Send(responseMsg); err != nil {
+			log.Error(err.Error())
+		}
+	}
+}
+
+func (n *Node) runStreamHandler(handler streamMsg, input, reply chan []byte, done chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+	defer close(done)
+	handler(input, reply)
 }
 
 func (n *Node) mergeViews(given map[string]uint64, reply *pb.StateResponse) {

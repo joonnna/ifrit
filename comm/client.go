@@ -5,8 +5,10 @@ import (
 	"errors"
 	"sync"
 	"time"
+	"io"
 
 	pb "github.com/joonnna/ifrit/protobuf"
+	log "github.com/inconshreveable/log15"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -82,28 +84,63 @@ func (c *gRPCClient) Send(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 	return r, nil
 }
 
-func (c *gRPCClient) StreamMessenger(addr string, ch chan []byte) (*pb.MsgResponse, error) {
+func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) error {
+	var wg sync.WaitGroup
+	defer wg.Wait()
 	conn, err := c.connection(addr)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	
 	s, err := conn.Stream(context.Background()) 
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	for i := range ch {
-		msg := &pb.Msg{
-			Content: i,
-		}
+	ctx := s.Context()
 
-		if err := s.Send(msg); err != nil {
-			return nil, err
+	// Sending messages from input stream to the server. 
+	// Runs until the producer closes the channel
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for content := range input {
+			msg := &pb.Msg{
+				Content: content,
+			}
+			if err := s.Send(msg); err != nil {
+				log.Error(err.Error())
+			}
 		}
+		if err := s.CloseSend(); err != nil {
+			log.Error(err.Error())
+		}
+	}()
+
+	// Receiving messages from the server. Runs until the channel no longer blocks
+	// TODO: implement a nicer abstraction to safeguard the use of the channels
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			msg, err := s.Recv()
+			if err == io.EOF {
+				return 
+			} 
+			if err != nil {
+				log.Error(err.Error())
+			}
+			reply <- msg.GetContent()
+		}
+	}()
+	
+	<-ctx.Done()
+	close(reply)
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	return s.CloseAndRecv()
+	return nil
 }
 
 func (c *gRPCClient) CloseConn(addr string) {
