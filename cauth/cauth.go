@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -19,9 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/joonnna/ifrit/netutil"
-	"github.com/spf13/viper"
 
 	log "github.com/inconshreveable/log15"
 )
@@ -66,22 +64,14 @@ type group struct {
 
 // Create and returns  a new certificate authority instance.
 // Generates a private/public keypair for internal use.
-func NewCa() (*Ca, error) {
-	err := readConfig()
-	if err != nil {
-		return nil, err
-	}
+func NewCa(host string, port int, keyFilepath string, certificateFilepath string, numRings uint32, bootNodes uint32) (*Ca, error) {
 
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	if exists := viper.IsSet("port"); !exists {
-		return nil, errNoPort
-	}
-
-	l, err := netutil.ListenOnPort(viper.GetInt("port"))
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return nil, err
 	}
@@ -90,10 +80,10 @@ func NewCa() (*Ca, error) {
 		privKey:      privKey,
 		pubKey:       privKey.Public(),
 		listener:     l,
-		keyFilePath:  viper.GetString("key_filepath"),
-		certFilePath: viper.GetString("certificate_filepath"),
-		numRings:     uint32(viper.GetInt32("num_rings")),
-		bootNodes:    uint32(viper.GetInt32("boot_nodes")),
+		keyFilePath:  keyFilepath,
+		certFilePath: certificateFilepath,
+		numRings:     numRings,
+		bootNodes:    bootNodes,
 	}
 
 	return c, nil
@@ -199,13 +189,13 @@ func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 		SerialNumber:          serialNumber,
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
-		IsCA:            true,
-		NotBefore:       time.Now().AddDate(-10, 0, 0),
-		NotAfter:        time.Now().AddDate(10, 0, 0),
-		PublicKey:       c.pubKey,
-		ExtraExtensions: []pkix.Extension{ext},
-		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:                  true,
+		NotBefore:             time.Now().AddDate(-10, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		PublicKey:             c.pubKey,
+		ExtraExtensions:       []pkix.Extension{ext},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
@@ -427,25 +417,4 @@ func genSerialNumber() (*big.Int, error) {
 	}
 
 	return s, nil
-}
-
-func readConfig() error {
-	viper.SetConfigName("ca_config")
-	viper.AddConfigPath("/var/tmp")
-	viper.AddConfigPath(".")
-
-	viper.SetConfigType("yaml")
-
-	err := viper.ReadInConfig()
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-
-	viper.SetDefault("num_rings", 3)
-	viper.SetDefault("boot_nodes", 1)
-
-	viper.WriteConfig()
-
-	return nil
 }
