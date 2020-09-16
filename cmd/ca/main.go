@@ -31,6 +31,9 @@ var Config = struct {
 
 // saveState saves ca private key and public certificates to disk.
 func saveState(ca *cauth.Ca) {
+
+	log.Info("Saving CA state")
+
 	err := ca.SavePrivateKey()
 	if err != nil {
 		panic(err)
@@ -50,12 +53,13 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	// Load configuration from files and ENV
-	configor.New(&configor.Config{Debug: false, ENVPrefix: "IFRIT"}).Load(&Config, configFile, "/etc/ifrit/config.yaml")
-
 	// Override configuration with parameters
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.StringVar(&configFile, "config", "./ca_config.yaml", "Configuration file.")
+
+	// Load configuration from files and ENV
+	configor.New(&configor.Config{Debug: false, ENVPrefix: "IFRIT"}).Load(&Config, configFile, "/etc/ifrit/config.yaml")
+
 	args.StringVar(&Config.LogFile, "logfile", "", "Log to file.")
 	args.StringVar(&Config.Host, "host", Config.Host, "Hostname")
 	args.IntVar(&Config.Port, "port", Config.Port, "Port")
@@ -73,31 +77,39 @@ func main() {
 
 	r.SetHandler(h)
 
-	// Create run directory
-	err := os.MkdirAll(Config.Path, DefaultPermission)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
 	// Attempt to load existing group
 
-	fmt.Printf("Starting Ifrit CAd on port %d\n", Config.Port)
-
 	var ca *cauth.Ca
+	var err error
+
 	if !createNew {
 		ca, err = cauth.LoadCa(Config.Path)
 		if err != nil {
-			panic(err)
+			println("Error loading CA. Run with --new option if CA does not exit.")
+			os.Exit(1)
 		}
 	} else {
+
+		println("Creating CA")
+
+		// Create run directory
+		err := os.MkdirAll(Config.Path, DefaultPermission)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
 		ca, err = cauth.NewCa(Config.Path)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
+
+		// Add initial group.
 		err = ca.NewGroup(Config.NumRings, Config.NumBootNodes)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
 	}
 
@@ -113,6 +125,8 @@ func main() {
 	defer saveState(ca)
 
 	// Start the daemon
+
+	fmt.Printf("Starting Ifrit CAd on port %d\n", Config.Port)
 	go ca.Start(Config.Host, Config.Port)
 
 	// Handle SIGTERM

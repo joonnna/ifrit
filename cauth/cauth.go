@@ -120,11 +120,10 @@ func LoadCa(path string) (*Ca, error) {
 				g.numRings = binary.LittleEndian.Uint32(ext.Value)
 				break
 			}
-
-			// Add group object to CA
-			c.groups = append(c.groups, g)
 		}
 
+		// Add group object to CA
+		c.groups = append(c.groups, g)
 		log.Info("add group", "serial", g.groupCert.SerialNumber.String(), "numrings", g.numRings)
 	}
 
@@ -163,8 +162,6 @@ func (c *Ca) SavePrivateKey() error {
 		return err
 	}
 
-	log.Info("Save CA private key.", "file", c.keyFilePath)
-
 	b := x509.MarshalPKCS1PrivateKey(c.privKey)
 
 	block := &pem.Block{
@@ -181,8 +178,6 @@ func (c *Ca) SaveCertificate() error {
 	for _, j := range c.groups {
 
 		p := filepath.Join(c.path, fmt.Sprintf("g-%s.pem", j.groupCert.SerialNumber))
-
-		log.Info("Save Group.", "file", p)
 
 		f, err := os.Create(p)
 		if err != nil {
