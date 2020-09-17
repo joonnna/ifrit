@@ -7,21 +7,22 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/joonnna/ifrit/netutil"
-	"github.com/spf13/viper"
 
 	log "github.com/inconshreveable/log15"
 )
@@ -31,17 +32,16 @@ var (
 	errNoPort         = errors.New("No port number specified in config.")
 	errNoCertFilepath = errors.New("Tried to save public group certificates with no filepath set in config")
 	errNoKeyFilepath  = errors.New("Tried to save private key with no filepath set in config")
+
+	RingNumberOid asn1.ObjectIdentifier = []int{2, 5, 13, 37}
 )
 
 type Ca struct {
 	privKey *rsa.PrivateKey
 	pubKey  crypto.PublicKey
 
-	keyFilePath  string
-	certFilePath string
-
-	numRings  uint32
-	bootNodes uint32
+	path        string
+	keyFilePath string
 
 	groups []*group
 
@@ -64,36 +64,85 @@ type group struct {
 	numRings uint32
 }
 
-// Create and returns  a new certificate authority instance.
-// Generates a private/public keypair for internal use.
-func NewCa() (*Ca, error) {
-	err := readConfig()
+// LoadCa initializes a CA from a file path
+func LoadCa(path string) (*Ca, error) {
+
+	keyPath := filepath.Join(path, "key.pem")
+
+	fp, err := ioutil.ReadFile(keyPath)
 	if err != nil {
 		return nil, err
 	}
+
+	// Load private key
+	keyBlock, _ := pem.Decode(fp)
+	key, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Ca{
+		privKey:     key,
+		pubKey:      key.Public(),
+		path:        path,
+		keyFilePath: "key.pem",
+	}
+
+	// Load group certificates
+	groupCertFiles, err := filepath.Glob(filepath.Join(path, "g-*.pem"))
+	if err != nil {
+		return nil, err
+	}
+
+	for _, fileName := range groupCertFiles {
+
+		g := &group{
+			knownCerts:  make([]*x509.Certificate, 0),
+			bootNodes:   0,
+			numRings:    4, // default value
+			existingIds: make(map[string]bool),
+		}
+
+		// Read group certificate
+		fp, err := ioutil.ReadFile(fileName)
+		if err != nil {
+			return nil, err
+		}
+		certBlock, _ := pem.Decode(fp)
+		cert, err := x509.ParseCertificate(certBlock.Bytes)
+
+		g.groupCert = cert
+
+		// Search for number of rings extension
+		for _, ext := range cert.Extensions {
+			if ext.Id.Equal(RingNumberOid) {
+				g.numRings = binary.LittleEndian.Uint32(ext.Value)
+				break
+			}
+		}
+
+		// Add group object to CA
+		c.groups = append(c.groups, g)
+		log.Info("add group", "serial", g.groupCert.SerialNumber.String(), "numrings", g.numRings)
+	}
+
+	return c, nil
+}
+
+// Create and returns  a new certificate authority instance.
+// Generates a private/public keypair for internal use.
+func NewCa(path string) (*Ca, error) {
 
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
-	if exists := viper.IsSet("port"); !exists {
-		return nil, errNoPort
-	}
-
-	l, err := netutil.ListenOnPort(viper.GetInt("port"))
-	if err != nil {
-		return nil, err
-	}
-
 	c := &Ca{
-		privKey:      privKey,
-		pubKey:       privKey.Public(),
-		listener:     l,
-		keyFilePath:  viper.GetString("key_filepath"),
-		certFilePath: viper.GetString("certificate_filepath"),
-		numRings:     uint32(viper.GetInt32("num_rings")),
-		bootNodes:    uint32(viper.GetInt32("boot_nodes")),
+		privKey: privKey,
+		pubKey:  privKey.Public(),
+		path:    path,
 	}
 
 	return c, nil
@@ -105,13 +154,13 @@ func (c *Ca) SavePrivateKey() error {
 		return errNoKeyFilepath
 	}
 
-	f, err := os.Create(c.keyFilePath)
+	p := filepath.Join(c.path, c.keyFilePath)
+
+	f, err := os.Create(p)
 	if err != nil {
 		log.Error(err.Error())
 		return err
 	}
-
-	log.Info("Save CA private key.", "file", c.keyFilePath)
 
 	b := x509.MarshalPKCS1PrivateKey(c.privKey)
 
@@ -123,28 +172,26 @@ func (c *Ca) SavePrivateKey() error {
 	return pem.Encode(f, block)
 }
 
-// SaveCertificate Public key / certifiace to the given io object.
+// SaveCertificate Public key / certificate to the given io object.
 func (c *Ca) SaveCertificate() error {
-	if c.certFilePath == "" {
-		return errNoCertFilepath
-	}
-
-	f, err := os.Create(c.certFilePath)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-
-	log.Info("Save CA certificate.", "file", c.certFilePath)
 
 	for _, j := range c.groups {
+
+		p := filepath.Join(c.path, fmt.Sprintf("g-%s.pem", j.groupCert.SerialNumber))
+
+		f, err := os.Create(p)
+		if err != nil {
+			log.Error(err.Error())
+			return err
+		}
+
 		b := j.groupCert.Raw
 
 		block := &pem.Block{
 			Type:  "CERTIFICATE",
 			Bytes: b,
 		}
-		err := pem.Encode(f, block)
+		err = pem.Encode(f, block)
 		if err != nil {
 			return err
 		}
@@ -161,11 +208,13 @@ func (c *Ca) Shutdown() {
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
-func (c *Ca) Start() error {
-	err := c.NewGroup(c.numRings, c.bootNodes)
+func (c *Ca) Start(host string, port int) error {
+
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return err
 	}
+	c.listener = l
 
 	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
 
@@ -190,8 +239,8 @@ func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 	binary.LittleEndian.PutUint32(ringBytes[0:], ringNum)
 
 	ext := pkix.Extension{
-		Id:       []int{2, 5, 13, 37},
-		Critical: false,
+		Id:       RingNumberOid,
+		Critical: true,
 		Value:    ringBytes,
 	}
 
@@ -199,13 +248,13 @@ func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 		SerialNumber:          serialNumber,
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
-		IsCA:            true,
-		NotBefore:       time.Now().AddDate(-10, 0, 0),
-		NotAfter:        time.Now().AddDate(10, 0, 0),
-		PublicKey:       c.pubKey,
-		ExtraExtensions: []pkix.Extension{ext},
-		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:                  true,
+		NotBefore:             time.Now().AddDate(-10, 0, 0),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		PublicKey:             c.pubKey,
+		ExtraExtensions:       []pkix.Extension{ext},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 	}
 
 	gCert, err := x509.CreateCertificate(rand.Reader, caCert, caCert, c.pubKey, c.privKey)
@@ -427,25 +476,4 @@ func genSerialNumber() (*big.Int, error) {
 	}
 
 	return s, nil
-}
-
-func readConfig() error {
-	viper.SetConfigName("ca_config")
-	viper.AddConfigPath("/var/tmp")
-	viper.AddConfigPath(".")
-
-	viper.SetConfigType("yaml")
-
-	err := viper.ReadInConfig()
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-
-	viper.SetDefault("num_rings", 3)
-	viper.SetDefault("boot_nodes", 1)
-
-	viper.WriteConfig()
-
-	return nil
 }
