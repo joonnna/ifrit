@@ -38,7 +38,7 @@ func TestTLSconnection(t *testing.T) {
 		SerialNumber:          serialNumber,
 		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 		Subject: pkix.Name{
 			Country:            []string{"SHIEEET"},
 			Organization:       []string{"Yjwt"},

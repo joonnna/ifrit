@@ -66,7 +66,6 @@ type group struct {
 
 // LoadCa initializes a CA from a file path
 func LoadCa(path string) (*Ca, error) {
-
 	keyPath := filepath.Join(path, "key.pem")
 
 	fp, err := ioutil.ReadFile(keyPath)
@@ -133,16 +132,16 @@ func LoadCa(path string) (*Ca, error) {
 // Create and returns  a new certificate authority instance.
 // Generates a private/public keypair for internal use.
 func NewCa(path string) (*Ca, error) {
-
 	privKey, err := genKeys()
 	if err != nil {
 		return nil, err
 	}
 
 	c := &Ca{
-		privKey: privKey,
-		pubKey:  privKey.Public(),
-		path:    path,
+		privKey:     privKey,
+		pubKey:      privKey.Public(),
+		path:        path,
+		keyFilePath: "key.pem",
 	}
 
 	return c, nil
@@ -174,7 +173,6 @@ func (c *Ca) SavePrivateKey() error {
 
 // SaveCertificate Public key / certificate to the given io object.
 func (c *Ca) SaveCertificate() error {
-
 	for _, j := range c.groups {
 
 		p := filepath.Join(c.path, fmt.Sprintf("g-%s.pem", j.groupCert.SerialNumber))
@@ -209,7 +207,6 @@ func (c *Ca) Shutdown() {
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
 func (c *Ca) Start(host string, port int) error {
-
 	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return err
