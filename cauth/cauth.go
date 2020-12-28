@@ -237,7 +237,7 @@ func (c *Ca) NewGroup(ringNum, bootNodes uint32) error {
 
 	ext := pkix.Extension{
 		Id:       RingNumberOid,
-		Critical: true,
+		Critical: false,
 		Value:    ringBytes,
 	}
 
