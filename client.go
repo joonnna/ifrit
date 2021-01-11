@@ -149,14 +149,13 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 }
 
 // Returns a pair of channels used for bi-directional streams, given the destination. The first channel
-// is the input stream to the server and the second stream is the reply stream from the server. The 'inputSize' argument sets
-// the size of the input channel. The reply buffer has a buffer size of "replySize". To close the stream, close the input channel. 
-// The reply stream is open as long as the server sends messages. If the replies are discarded, the caller must
-// ensure that the reply stream does not block by draining the buffer so that the stream session can complete.
+// is the input stream to the server and the second stream is the reply stream from the server. 
+// To close the stream, close the input channel. The reply stream is open as long as the server sends messages
+// back to the client. The caller must ensure that the reply stream does not block by draining the buffer so that the stream session can complete.
 // Note: it is adviced to implement an aknowledgement mechanism to avoid an untimely closing of a channel and loss of messages.
-func (c *Client) OpenStream(dest string, inputSize, replySize int) (chan []byte, chan []byte) {
-	inputStream := make(chan []byte, inputSize)
-	replyStream := make(chan []byte, replySize)
+func (c *Client) OpenStream(dest string) (chan []byte, chan []byte) {
+	inputStream := make(chan []byte)
+	replyStream := make(chan []byte)
 	
 	go c.node.OpenStream(dest, inputStream, replyStream)
 
@@ -164,10 +163,10 @@ func (c *Client) OpenStream(dest string, inputSize, replySize int) (chan []byte,
 }
 
 // Registers the given function as the stream handler.
-// Invoked when the channel is written to by the sender. The callback accepts two channels - 
+// Invoked when the client opens a stream. The callback accepts two channels - 
 // an unbuffered input channel and an unbuffered channel used for replying to the client. 
 // The caller must close the reply channel to signal that the stream is closing.
-// See the note in OpenStream comment
+// See the note in OpenStream().
 func (c *Client) RegisterStreamHandler(streamHandler func(chan []byte, chan []byte)) {
 	c.node.SetStreamHandler(streamHandler)
 }
