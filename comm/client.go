@@ -85,60 +85,65 @@ func (c *gRPCClient) Send(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 }
 
 func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) error {
-	var wg sync.WaitGroup
-	defer wg.Wait()
 	conn, err := c.connection(addr)
 	if err != nil {
 		return err
 	}
 	
-	s, err := conn.Stream(context.Background()) 
+	srv, err := conn.Stream(context.Background()) 
 	if err != nil {
 		return err
 	}
 
-	ctx := s.Context()
+	ctx := srv.Context()
+	done := make(chan bool)
+	defer close(reply)
 
 	// Sending messages from input stream to the server. 
 	// Runs until the producer closes the channel
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		for content := range input {
 			msg := &pb.Msg{
 				Content: content,
 			}
-			if err := s.Send(msg); err != nil {
+
+			if err := srv.Send(msg); err != nil {
 				log.Error(err.Error())
 			}
 		}
-		if err := s.CloseSend(); err != nil {
+
+		if err := srv.CloseSend(); err != nil {
 			log.Error(err.Error())
 		}
 	}()
 
-	// Receiving messages from the server. Runs until the channel no longer blocks
-	// TODO: implement a nicer abstraction to safeguard the use of the channels
-	wg.Add(1)
+	// Receiving replies from the server
 	go func() {
-		defer wg.Done()
 		for {
-			msg, err := s.Recv()
+			req, err := srv.Recv()
 			if err == io.EOF {
-				return 
-			} 
+				close(done)
+				return
+			}
+
 			if err != nil {
 				log.Error(err.Error())
+				continue
 			}
-			reply <- msg.GetContent()
+
+			reply <-req.GetContent()
 		}
 	}()
-	
-	<-ctx.Done()
-	close(reply)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+
+	go func() {
+		<-ctx.Done()
+		if err := ctx.Err(); err != nil {
+			log.Error(err.Error())
+		}
+		//close(done) // might need to call close here?
+	}()
+
+	<-done
 
 	return nil
 }

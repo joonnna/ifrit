@@ -2,31 +2,34 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
+	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit"
 )
 
 /** Example of bi-directional streaming using Ifrit library*/
 
 type App struct {
-	master  *ifrit.Client
-	network []*ifrit.Client
+	master *ifrit.Client
+	client *ifrit.Client
 }
 
-func main() {	
-	numClient := 5
-	app, err := NewApp(numClient)
+func main() {
+	r := log.Root()
+	h := log.CallerFileHandler(log.Must.FileHandler("logfile", log.LogfmtFormat()))
+	r.SetHandler(h)
+
+	app, err := NewApp()
 	if err != nil {
 		panic(err)
 	}
 
-	app.Stream()
+	go app.Stream()
 
 	channel := make(chan os.Signal, 2)
 	signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
@@ -35,21 +38,14 @@ func main() {
 	app.master.Stop()
 }
 
-func NewApp(size int) (*App, error) {
-	network := make([]*ifrit.Client, 0)
-
-	// Add all clients to network
-	for i := 0; i < size; i++ {
-		fmt.Println("Adding client...")
-		c, err := ifrit.NewClient()
-		if err != nil {
-			return nil, err
-		}
-
-		network = append(network, c)
-		go c.Start()
-		c.RegisterStreamHandler(streamHandler)
+func NewApp() (*App, error) {
+	client, err := ifrit.NewClient()
+	if err != nil {
+		return nil, err
 	}
+
+	go client.Start()
+	client.RegisterStreamHandler(streamHandler)
 
 	master, err := ifrit.NewClient()
 	if err != nil {
@@ -58,25 +54,21 @@ func NewApp(size int) (*App, error) {
 
 	go master.Start()
 	return &App{
-		master:  master,
-		network: network,
+		master: master,
+		client: client,
 	}, nil
 }
 
 func (app *App) Stream() {
-	members := app.master.Members()
-	randomMember := members[rand.Int()%len(members)]
 	var wg sync.WaitGroup
-
-	inputStream, reply := app.master.OpenStream(randomMember, 10, 10)
+	inputStream, reply := app.master.OpenStream(app.client.Addr())
 
 	// Test the input stream
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		time.Sleep(1 * time.Second)
 		for i := 0; i < 10; i++ {
-			msg := fmt.Sprintf("Client message %d", i)
+			msg := fmt.Sprintf("Message from client: %d", i)
 			inputStream <- []byte(msg)
 		}
 
@@ -112,8 +104,8 @@ func streamHandler(input, reply chan []byte) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 9; i++ {
-			msg := fmt.Sprintf("Server reply %d", i)
+		for i := 0; i < 10; i++ {
+			msg := fmt.Sprintf("Server reply to client: hello from server %d", i)
 			reply <- []byte(msg)
 		}
 		close(reply)
@@ -121,4 +113,3 @@ func streamHandler(input, reply chan []byte) {
 
 	wg.Wait()
 }
-

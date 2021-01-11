@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"errors"
-	"sync"
 	"io"
 
 	"github.com/golang/protobuf/proto"
@@ -146,63 +145,53 @@ func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, er
 }
 
 func (n *Node) Stream(srv pb.Gossip_StreamServer) error {
-	if handler := n.getStreamHandler(); handler != nil {
-		var wg sync.WaitGroup
-		defer wg.Wait()
+	// Channels used for bi-directional communication
+	input := make(chan []byte)
+	reply := make(chan []byte)
+	defer close(input)
+
+	if handler := n.getStreamHandler(); handler != nil {		
+		go n.runStreamHandler(handler, input, reply)
+		go n.replyStream(reply, srv)
 		ctx := srv.Context()
-		
-		// Channels used for bi-directional communication
-		input := make(chan []byte)
-		reply := make(chan []byte)
-	
-		// Used to signal that the consumer stops reading a non-empty input channel 
-		done := make(chan struct{})
 
-		wg.Add(2)
-		go n.runStreamHandler(handler, input, reply, done, &wg)
-		go n.replyStream(input, reply, srv, &wg)
-
-		// Receive messages and wait for the channels to close
 		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
 			req, err := srv.Recv()
 			if err == io.EOF {
-				close(input)
-				break
+				return nil
 			}
 
 			if err != nil {
 				log.Error(err.Error())
+				continue
 			}
 
-			select {
-			case input <- req.GetContent():
-			case <- done:
-				break
-			case <-ctx.Done():
-				log.Debug(ctx.Err().Error())
-				return ctx.Err()
-			}
+			input <-req.GetContent()
 		}
 	}
 
 	return nil
 }
 
-func (n *Node) replyStream(input, reply chan []byte, srv pb.Gossip_StreamServer, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (n *Node) replyStream(reply chan []byte, srv pb.Gossip_StreamServer) {
 	for resp := range reply {
 		responseMsg := &pb.MsgResponse{
 			Content: resp,
 		}
+
 		if err := srv.Send(responseMsg); err != nil {
 			log.Error(err.Error())
 		}
 	}
 }
 
-func (n *Node) runStreamHandler(handler streamMsg, input, reply chan []byte, done chan struct{}, wg *sync.WaitGroup) {
-	defer wg.Done()
-	defer close(done)
+func (n *Node) runStreamHandler(handler streamMsg, input, reply chan []byte) {
 	handler(input, reply)
 }
 
@@ -397,7 +386,6 @@ func (n *Node) evalNote(newNote *pb.Note) error {
 	note := p.Note()
 
 	if note != nil && !note.IsMoreRecent(epoch) {
-		//fmt.Printf("Epoch: %v\n", epoch)
 		return errOldNote
 	}
 
