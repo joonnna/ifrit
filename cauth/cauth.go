@@ -30,8 +30,10 @@ import (
 var (
 	errNoAddr         = errors.New("No network address provided in cert request.")
 	errNoPort         = errors.New("No port number specified in config.")
-	errNoCertFilepath = errors.New("Tried to save public group certificates with no filepath set in config")
-	errNoKeyFilepath  = errors.New("Tried to save private key with no filepath set in config")
+	errNoCertFilepath = errors.New("Tried to save public group certificates with no filepath set in config.")
+	errNoKeyFilepath  = errors.New("Tried to save private key with no filepath set in config.")
+	errInvalidBootNodes = errors.New("Number of boot nodes needs to be greater than zero.")
+	errInvalidNumRings = errors.New("Number of rings needs to be greater than zero.")
 
 	RingNumberOid asn1.ObjectIdentifier = []int{2, 5, 13, 37}
 )
@@ -65,7 +67,14 @@ type group struct {
 }
 
 // LoadCa initializes a CA from a file path
-func LoadCa(path string) (*Ca, error) {
+func LoadCa(path string, numBootNodes, numRings uint32) (*Ca, error) {
+	if numBootNodes < 1 {
+		return nil, errInvalidBootNodes
+	}
+
+	if numRings < 1 {
+		return nil, errInvalidNumRings
+	}
 	keyPath := filepath.Join(path, "key.pem")
 
 	fp, err := ioutil.ReadFile(keyPath)
@@ -95,11 +104,10 @@ func LoadCa(path string) (*Ca, error) {
 	}
 
 	for _, fileName := range groupCertFiles {
-
 		g := &group{
-			knownCerts:  make([]*x509.Certificate, 0),
-			bootNodes:   0,
-			numRings:    4, // default value
+			knownCerts:  make([]*x509.Certificate, numBootNodes),
+			bootNodes:   numBootNodes,
+			numRings:    numRings,
 			existingIds: make(map[string]bool),
 		}
 
