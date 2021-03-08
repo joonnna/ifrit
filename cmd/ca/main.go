@@ -23,7 +23,7 @@ var Config = struct {
 	Port         int    `default:"8321"`
 	Path         string `default:"./ifrit-cad"`
 	NumRings     uint32 `default:"3"`
-	NumBootNodes uint32 `default:"0"`
+	NumBootNodes uint32 `default:"5"`
 	LogFile      string `default:""`
 }{}
 
@@ -80,7 +80,7 @@ func main() {
 	var err error
 
 	if !createNew {
-		ca, err = cauth.LoadCa(Config.Path)
+		ca, err = cauth.LoadCa(Config.Path, Config.NumRings, Config.NumBootNodes)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error loading CA. Run with --new option if CA does not exit.")
 			os.Exit(1)

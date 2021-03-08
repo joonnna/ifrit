@@ -24,16 +24,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/joonnna/ifrit/netutil"
+
 	log "github.com/inconshreveable/log15"
 )
 
 var (
-	errNoAddr         = errors.New("No network address provided in cert request.")
-	errNoPort         = errors.New("No port number specified in config.")
-	errNoCertFilepath = errors.New("Tried to save public group certificates with no filepath set in config.")
-	errNoKeyFilepath  = errors.New("Tried to save private key with no filepath set in config.")
+	errNoAddr           = errors.New("No network address provided in cert request.")
+	errNoPort           = errors.New("No port number specified in config.")
+	errNoCertFilepath   = errors.New("Tried to save public group certificates with no filepath set in config.")
+	errNoKeyFilepath    = errors.New("Tried to save private key with no filepath set in config.")
 	errInvalidBootNodes = errors.New("Number of boot nodes needs to be greater than zero.")
-	errInvalidNumRings = errors.New("Number of rings needs to be greater than zero.")
+	errInvalidNumRings  = errors.New("Number of rings needs to be greater than zero.")
 
 	RingNumberOid asn1.ObjectIdentifier = []int{2, 5, 13, 37}
 )
@@ -209,13 +211,16 @@ func (c *Ca) SaveCertificate() error {
 // Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
 	log.Info("Shuting down certificate authority")
+	if c.listener == nil {
+		log.Info("")
+	}
 	c.listener.Close()
 }
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
-func (c *Ca) Start(host string, port int) error {
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, port))
+func (c *Ca) Start(port int) error {
+	l, err := netutil.ListenOnPort(port)
 	if err != nil {
 		return err
 	}
