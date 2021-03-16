@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"context"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
@@ -24,8 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joonnna/ifrit/netutil"
-
+	"github.com/gorilla/mux"
 	log "github.com/inconshreveable/log15"
 )
 
@@ -36,6 +36,7 @@ var (
 	errNoKeyFilepath    = errors.New("Tried to save private key with no filepath set in config.")
 	errInvalidBootNodes = errors.New("Number of boot nodes needs to be greater than zero.")
 	errInvalidNumRings  = errors.New("Number of rings needs to be greater than zero.")
+	errPortNotSet 		= errors.New("Port number is not set")
 
 	RingNumberOid asn1.ObjectIdentifier = []int{2, 5, 13, 37}
 )
@@ -49,7 +50,7 @@ type Ca struct {
 
 	groups []*group
 
-	listener   net.Listener
+	addr string
 	httpServer *http.Server
 }
 
@@ -210,31 +211,34 @@ func (c *Ca) SaveCertificate() error {
 
 // Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
-	log.Info("Shuting down certificate authority")
-	if c.listener == nil {
-		log.Info("")
-	}
-	c.listener.Close()
+	log.Info("Shuting down Lohpi certificate authority")
+	
+	idleConnsClosed := make(chan struct{})
+	go func() {
+		// We received an interrupt signal, shut down.
+		if err := c.httpServer.Shutdown(context.Background()); err != nil {
+			// Error from closing listeners, or context timeout:
+			log.Info("Ifrit CA's HTTP server shutdown error: %v", err)
+		}
+		close(idleConnsClosed)
+	}()
+
+	<-idleConnsClosed
 }
 
 // Starts serving certificate signing requests, requires the amount of gossip rings
 // to be used in the network between ifrit clients.
-func (c *Ca) Start(port int) error {
-	l, err := netutil.ListenOnPort(port)
-	if err != nil {
-		return err
-	}
-	c.listener = l
-
-	log.Info("Started certificate authority", "addr", c.listener.Addr().String())
-
-	return c.httpHandler()
+func (c *Ca) Start(host, port string) error {
+	addr := fmt.Sprintf("%s:%s", host, port)
+	log.Info("Started certificate authority", "addr", addr)
+	c.addr = addr
+	return c.httpHandler(addr)
 }
 
 // Returns the address(ip:port) of the certificate authority, this can
 // be directly used as input to the ifrit client entry address.
 func (c *Ca) Addr() string {
-	return c.listener.Addr().String()
+	return c.addr
 }
 
 // NewGroup creates a new Ifrit group.
@@ -303,21 +307,23 @@ func genKeys() (*rsa.PrivateKey, error) {
 	return priv, nil
 }
 
-func (c *Ca) httpHandler() error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/certificateRequest", c.certificateSigning)
+func (c *Ca) httpHandler(addr string) error {
+	r := mux.NewRouter()
+	r.HandleFunc("/certificateRequest", c.certificateSigning).Methods("POST")
+
+	port := strings.Split(addr, ":")[1]
+	if port == "" {
+		return errPortNotSet
+	}
 
 	c.httpServer = &http.Server{
-		Handler: mux,
+		Addr: 	 		":" + port,
+		Handler: 		r,
+		ReadTimeout: 	time.Second * 10,
+		WriteTimeout: 	time.Second * 10,
 	}
 
-	err := c.httpServer.Serve(c.listener)
-	if err != nil {
-		log.Error(err.Error())
-		return err
-	}
-
-	return nil
+	return c.httpServer.ListenAndServe()
 }
 
 func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {

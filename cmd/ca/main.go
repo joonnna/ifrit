@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"strconv"
 
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/cauth"
@@ -19,7 +20,7 @@ var DefaultPermission = os.FileMode(0750)
 var Config = struct {
 	Name         string `default:"Ifrit Certificate Authority"`
 	Version      string `default:"1.0.0"`
-	Host         string `default:"127.0.0.1"`
+	Host         string `default:"127.0.1.1"`
 	Port         int    `default:"8321"`
 	Path         string `default:"./ifrit-cad"`
 	NumRings     uint32 `default:"3"`
@@ -47,7 +48,7 @@ func main() {
 
 	var h log.Handler
 	var configFile string
-	var createNew bool
+	var createNew bool	
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -115,7 +116,7 @@ func main() {
 
 	// Start the daemon
 	fmt.Printf("Starting Ifrit CA daemon on port %d\n", Config.Port)
-	go ca.Start(Config.Host, Config.Port)
+	go ca.Start(Config.Host, strconv.Itoa(Config.Port))
 
 	// Handle SIGTERM
 	channel := make(chan os.Signal, 2)
