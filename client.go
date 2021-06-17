@@ -16,6 +16,11 @@ type Client struct {
 	node *core.Node
 }
 
+type NodeConfig struct {
+	UdpPort, TcpPort int
+	// cu *comm.CryptoUnit
+}
+
 /*
 type MessageHandler interface {
 	Incoming([]byte) ([]byte, error)
@@ -32,19 +37,24 @@ var (
 	errNoCaAddress = errors.New("Config does not contain address of CA")
 )
 
-// Creates and returns a new ifrit client instance.
-func NewClient() (*Client, error) {
+/* Creates and returns a new ifrit client instance.
+ *
+ * Change: Added argument struct containing specifiable context for ifrit-client.
+ */
+func NewClient(nConf *NodeConfig) (*Client, error) {
 	err := readConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	udpConn, udpAddr, err := netutil.ListenUdp()
+	// This is where nodes' udp-port is set. - marius
+	udpConn, udpAddr, err := netutil.ListenUdp(nConf.UdpPort)
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := netutil.GetListener()
+	// This is where nodes' tcp-port is set. - marius
+	l, err := netutil.GetListener(nConf.TcpPort)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +70,7 @@ func NewClient() (*Client, error) {
 		return nil, err
 	}
 
+	// Pre-existing certificates goes in here? - marius
 	c, err := comm.NewComm(cu.Certificate(), cu.CaCertificate(), cu.Priv(), l)
 	if err != nil {
 		return nil, err
@@ -149,22 +160,22 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 }
 
 // Returns a pair of channels used for bi-directional streams, given the destination. The first channel
-// is the input stream to the server and the second stream is the reply stream from the server. 
+// is the input stream to the server and the second stream is the reply stream from the server.
 // To close the stream, close the input channel. The reply stream is open as long as the server sends messages
 // back to the client. The caller must ensure that the reply stream does not block by draining the buffer so that the stream session can complete.
 // Note: it is adviced to implement an aknowledgement mechanism to avoid an untimely closing of a channel and loss of messages.
 func (c *Client) OpenStream(dest string) (chan []byte, chan []byte) {
 	inputStream := make(chan []byte)
 	replyStream := make(chan []byte)
-	
+
 	go c.node.OpenStream(dest, inputStream, replyStream)
 
 	return inputStream, replyStream
 }
 
 // Registers the given function as the stream handler.
-// Invoked when the client opens a stream. The callback accepts two channels - 
-// an unbuffered input channel and an unbuffered channel used for replying to the client. 
+// Invoked when the client opens a stream. The callback accepts two channels -
+// an unbuffered input channel and an unbuffered channel used for replying to the client.
 // The caller must close the reply channel to signal that the stream is closing.
 // See the note in OpenStream().
 func (c *Client) RegisterStreamHandler(streamHandler func(chan []byte, chan []byte)) {
