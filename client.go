@@ -16,7 +16,7 @@ type Client struct {
 	node *core.Node
 }
 
-type NodeConfig struct {
+type ClientConfig struct {
 	UdpPort, TcpPort int
 	// cu *comm.CryptoUnit
 }
@@ -41,20 +41,20 @@ var (
  *
  * Change: Added argument struct containing specifiable context for ifrit-client.
  */
-func NewClient(nConf *NodeConfig) (*Client, error) {
+func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	err := readConfig()
 	if err != nil {
 		return nil, err
 	}
 
 	// This is where nodes' udp-port is set. - marius
-	udpConn, udpAddr, err := netutil.ListenUdp(nConf.UdpPort)
+	udpConn, udpAddr, err := netutil.ListenUdp(cliCfg.UdpPort)
 	if err != nil {
 		return nil, err
 	}
 
 	// This is where nodes' tcp-port is set. - marius
-	l, err := netutil.GetListener(nConf.TcpPort)
+	l, err := netutil.GetListener(cliCfg.TcpPort)
 	if err != nil {
 		return nil, err
 	}

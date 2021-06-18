@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/jinzhu/configor"
 	"os"
 	"os/signal"
 	"runtime"
-	"syscall"
 	"strconv"
+	"syscall"
+
+	"github.com/jinzhu/configor"
 
 	log "github.com/inconshreveable/log15"
 	"github.com/joonnna/ifrit/cauth"
@@ -45,10 +46,9 @@ func saveState(ca *cauth.Ca) {
 }
 
 func main() {
-
 	var h log.Handler
 	var configFile string
-	var createNew bool	
+	var createNew bool
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
@@ -87,7 +87,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		println("Creating CA")
+		fmt.Println("Config:", Config)
 
 		// Create run directory
 		err := os.MkdirAll(Config.Path, DefaultPermission)
