@@ -40,7 +40,7 @@ var (
 
 /* Creates and returns a new ifrit client instance.
  *
- * Change: Added argument struct containing specifiable context for ifrit-client.
+ * Change: Added argument struct containing specifiable context for ifrit-client. - marius
  */
 func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	if cliCfg == nil {
@@ -223,6 +223,31 @@ func (c *Client) SetGossipContent(data []byte) error {
 	}
 
 	c.node.SetExternalGossipContent(data)
+
+	return nil
+}
+
+func (c *Client) SavePrivateKey() error {
+	// if c.keyFilePath == "" {
+	// 	return errNoKeyFilepath
+	// }
+
+	// p := filepath.Join(c.path, c.keyFilePath)
+
+	// f, err := os.Create(p)
+	// if err != nil {
+	// 	log.Error(err.Error())
+	// 	return err
+	// }
+
+	// b := x509.MarshalPKCS1PrivateKey(c.privKey)
+
+	// block := &pem.Block{
+	// 	Type:  "RSA PRIVATE KEY",
+	// 	Bytes: b,
+	// }
+
+	// return pem.Encode(f, block)
 
 	return nil
 }
