@@ -35,6 +35,7 @@ type GossipHandler interface {
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
 	errNoCaAddress = errors.New("Config does not contain address of CA")
+	errNoClientArg = errors.New("Client argument zero")
 )
 
 /* Creates and returns a new ifrit client instance.
@@ -42,6 +43,10 @@ var (
  * Change: Added argument struct containing specifiable context for ifrit-client.
  */
 func NewClient(cliCfg *ClientConfig) (*Client, error) {
+	if cliCfg == nil {
+		return nil, errNoClientArg
+	}
+
 	err := readConfig()
 	if err != nil {
 		return nil, err
