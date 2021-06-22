@@ -70,7 +70,13 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 		Locality: []string{l.Addr().String(), udpAddr},
 	}
 
-	cu, err := comm.NewCu(pk, viper.GetString("ca_addr"))
+	/* Change: Pass empty string to NewCu() if no pre-existing certificate-path given. */
+	caAddr := cliCfg.CertPath
+	if caAddr == "" {
+		caAddr = viper.GetString("ca_addr")
+	}
+
+	cu, err := comm.NewCu(pk, caAddr, cliCfg.CertPath)
 	if err != nil {
 		return nil, err
 	}
@@ -227,12 +233,12 @@ func (c *Client) SetGossipContent(data []byte) error {
 	return nil
 }
 
-func (c *Client) SavePrivateKey(p string) error {
-	return c.node.SavePrivateKey(p)
+func (c *Client) SavePrivateKey(path string) error {
+	return c.node.SavePrivateKey(path)
 }
 
-func (c *Client) SaveCertificate(p string) error {
-	return c.node.SaveCertificates(p)
+func (c *Client) SaveCertificate(path string) error {
+	return c.node.SaveCertificates(path)
 }
 
 func readConfig() error {

@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -384,14 +384,14 @@ func (n *Node) Start() {
 /* Save private key for node crypto-unit to new file in argument directory-path.
  * - marius
  */
-func (n *Node) SavePrivateKey(p string) error {
-	if p == "" {
+func (n *Node) SavePrivateKey(path string) error {
+	if path == "" {
 		return errInvlKeyPath
 	}
 
-	p = path.Join(p, "key.pem")
+	path = filepath.Join(path, "key.pem")
 
-	f, err := os.Create(p)
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
@@ -417,14 +417,14 @@ func (n *Node) SavePrivateKey(p string) error {
 /* Save certificates for network-neighbours in new files inside argument path.
  * - marius
  */
-func (n *Node) SaveCertificates(p string) error {
-	if p == "" {
+func (n *Node) SaveCertificates(path string) error {
+	if path == "" {
 		return errInvlKeyPath
 	}
 
 	for _, cert := range n.cm.ContactList() {
 
-		certPath := path.Join(p, fmt.Sprintf("g-%s.pem", cert.SerialNumber))
+		certPath := filepath.Join(path, fmt.Sprintf("g-%s.pem", cert.SerialNumber))
 
 		f, err := os.Create(certPath)
 		if err != nil {

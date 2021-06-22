@@ -11,11 +11,14 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,6 +29,8 @@ var (
 	errNoRingNum = errors.New("No ringnumber present in received certificate")
 	errNoIp      = errors.New("No ip present in received identity")
 	errNoAddrs   = errors.New("Not enough addresses present in identity")
+	errInvlPath  = errors.New("Argument path to load empty")
+	errPemDecode = errors.New("Unable to decode content in given file")
 )
 
 type CryptoUnit struct {
@@ -54,7 +59,7 @@ type certSet struct {
 	trusted    bool
 }
 
-func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
+func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, error) {
 	var certs *certSet
 	var extValue []byte
 
@@ -83,6 +88,13 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 		if err != nil {
 			return nil, err
 		}
+
+	} else if certPath != "" {
+		certs, err = loadCerts(certPath, &priv)
+		if err != nil {
+			return nil, err
+		}
+
 	} else {
 		// TODO only have numrings in notes and not certificate?
 		certs, err = selfSignedCert(priv, identity)
@@ -218,6 +230,40 @@ func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name) (*c
 	set.trusted = certs.Trusted
 
 	return set, nil
+}
+
+func loadCerts(certPath string, priv **ecdsa.PrivateKey) (*certSet, error) {
+	var c *certSet
+
+	if certPath == "" {
+		return nil, errInvlPath
+	}
+
+	path := filepath.Join(certPath, "key.pem")
+
+	keyPem, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	keyBlock, _ := pem.Decode(keyPem)
+	if keyBlock == nil {
+		return nil, errPemDecode
+	}
+
+	privKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	*priv = privKey
+
+	c.ownCert
+	c.caCert
+	c.knownCerts
+	c.trusted
+
+	return c, nil
 }
 
 func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*certSet, error) {
