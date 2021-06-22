@@ -3,7 +3,11 @@ package core
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -19,6 +23,7 @@ var (
 	errNoData       = errors.New("Gossip data has zero length")
 	errNoCaAddr     = errors.New("No ca addr set in config with use_ca enabled")
 	errNoEntryAddrs = errors.New("No entry_addrs set in config with use_ca disabled")
+	errInvlKeyPath  = errors.New("Storage path-argument is invalid")
 )
 
 type processMsg func([]byte) ([]byte, error)
@@ -52,14 +57,14 @@ type Node struct {
 	gossipHandler      processMsg
 	gossipHandlerMutex sync.RWMutex
 
-	responseHandler      func([]byte) 
+	responseHandler      func([]byte)
 	responseHandlerMutex sync.RWMutex
 
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
 
-	streamHandler 		streamMsg
-	streamHandlerMutex 	sync.RWMutex
+	streamHandler      streamMsg
+	streamHandlerMutex sync.RWMutex
 
 	dispatcher *workerpool.Dispatcher
 
@@ -90,6 +95,7 @@ type commService interface {
 type certManager interface {
 	Certificate() *x509.Certificate
 	CaCertificate() *x509.Certificate
+	Priv() *ecdsa.PrivateKey // Added for Saving private-key.
 	ContactList() []*x509.Certificate
 	NumRings() uint32
 	Trusted() bool
@@ -268,7 +274,7 @@ func (n *Node) SendStream(ch chan<- []byte, data []byte) {
 
 func (n *Node) openStream(dest string, input, reply chan []byte) {
 	if err := n.comm.StreamMessenger(dest, input, reply); err != nil {
-		log.Error(err.Error())	
+		log.Error(err.Error())
 	}
 }
 
@@ -373,4 +379,74 @@ func (n *Node) Start() {
 	<-n.exitChan
 	log.Info("Exiting node")
 	n.Stop()
+}
+
+/* Save private key for node crypto-unit to new file in argument directory-path.
+ * - marius
+ */
+func (n *Node) SavePrivateKey(p string) error {
+	if p == "" {
+		return errInvlKeyPath
+	}
+
+	p = path.Join(p, "key.pem")
+
+	f, err := os.Create(p)
+	if err != nil {
+		return err
+	}
+
+	keyBytes, err := x509.MarshalECPrivateKey(n.cm.Priv())
+	if err != nil {
+		return err
+	}
+
+	block := &pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: keyBytes,
+	}
+
+	err = pem.Encode(f, block)
+	if err != nil {
+		return err
+	}
+
+	return f.Close()
+}
+
+/* Save certificates for network-neighbours in new files inside argument path.
+ * - marius
+ */
+func (n *Node) SaveCertificates(p string) error {
+	if p == "" {
+		return errInvlKeyPath
+	}
+
+	for _, cert := range n.cm.ContactList() {
+
+		certPath := path.Join(p, fmt.Sprintf("g-%s.pem", cert.SerialNumber))
+
+		f, err := os.Create(certPath)
+		if err != nil {
+			log.Error(err.Error())
+			continue
+		}
+
+		certBytes := cert.Raw
+
+		block := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: certBytes,
+		}
+
+		if err = pem.Encode(f, block); err != nil {
+			log.Error(err.Error())
+		}
+
+		if err = f.Close(); err != nil {
+			log.Error(err.Error())
+		}
+	}
+
+	return nil
 }

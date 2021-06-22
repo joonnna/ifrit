@@ -18,7 +18,7 @@ type Client struct {
 
 type ClientConfig struct {
 	UdpPort, TcpPort int
-	// cu *comm.CryptoUnit
+	CertPath         string
 }
 
 /*
@@ -227,29 +227,12 @@ func (c *Client) SetGossipContent(data []byte) error {
 	return nil
 }
 
-func (c *Client) SavePrivateKey() error {
-	// if c.keyFilePath == "" {
-	// 	return errNoKeyFilepath
-	// }
+func (c *Client) SavePrivateKey(p string) error {
+	return c.node.SavePrivateKey(p)
+}
 
-	// p := filepath.Join(c.path, c.keyFilePath)
-
-	// f, err := os.Create(p)
-	// if err != nil {
-	// 	log.Error(err.Error())
-	// 	return err
-	// }
-
-	// b := x509.MarshalPKCS1PrivateKey(c.privKey)
-
-	// block := &pem.Block{
-	// 	Type:  "RSA PRIVATE KEY",
-	// 	Bytes: b,
-	// }
-
-	// return pem.Encode(f, block)
-
-	return nil
+func (c *Client) SaveCertificate(p string) error {
+	return c.node.SaveCertificates(p)
 }
 
 func readConfig() error {
