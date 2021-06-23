@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,11 +27,12 @@ import (
 )
 
 var (
-	errNoRingNum = errors.New("No ringnumber present in received certificate")
-	errNoIp      = errors.New("No ip present in received identity")
-	errNoAddrs   = errors.New("Not enough addresses present in identity")
-	errInvlPath  = errors.New("Argument path to load empty")
-	errPemDecode = errors.New("Unable to decode content in given file")
+	errNoRingNum   = errors.New("No ringnumber present in received certificate")
+	errNoIp        = errors.New("No ip present in received identity")
+	errNoAddrs     = errors.New("Not enough addresses present in identity")
+	errInvlPath    = errors.New("Argument path to load empty")
+	errPemDecode   = errors.New("Unable to decode content in given file")
+	errInvlKeyPath = errors.New("Storage path-argument is invalid")
 )
 
 type CryptoUnit struct {
@@ -90,7 +92,7 @@ func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, err
 		}
 
 	} else if certPath != "" {
-		certs, err = loadCerts(certPath, &priv)
+		certs, err = loadCertSet(certPath, &priv)
 		if err != nil {
 			return nil, err
 		}
@@ -184,6 +186,213 @@ func (cu *CryptoUnit) Sign(data []byte) ([]byte, []byte, error) {
 	return r.Bytes(), s.Bytes(), nil
 }
 
+/* Save private key for node crypto-unit to new file in argument directory-path.
+ * - marius
+ */
+func (cu *CryptoUnit) SavePrivateKey(path string) error {
+	if path == "" {
+		return errInvlKeyPath
+	}
+
+	path = filepath.Join(path, "key.pem")
+
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	keyBytes, err := x509.MarshalECPrivateKey(cu.priv)
+	if err != nil {
+		return err
+	}
+
+	block := &pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: keyBytes,
+	}
+
+	err = pem.Encode(f, block)
+	if err != nil {
+		return err
+	}
+
+	return f.Close()
+}
+
+/* Save network-neighbours, ca, and own certificate in new files inside argument path.
+ * - marius
+ */
+func (cu *CryptoUnit) SaveCertificate(path string) error {
+	var err error
+
+	if path == "" {
+		return errInvlKeyPath
+	}
+
+	/*
+	 * Neigbours.
+	 */
+	for _, knownCert := range cu.knownCerts {
+		err = saveCert(knownCert, filepath.Join(path, fmt.Sprintf("g-%s.pem", knownCert.SerialNumber)))
+		if err != nil {
+			log.Error(err.Error())
+		}
+	}
+
+	/*
+	 * CA.
+	 */
+	err = saveCert(cu.ca, filepath.Join(path, fmt.Sprintf("ca-%s.pem", cu.ca.SerialNumber)))
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	/*
+	 * Self.
+	 */
+	err = saveCert(cu.self, filepath.Join(path, fmt.Sprintf("self-%s.pem", cu.self.SerialNumber)))
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+	return nil
+}
+
+func saveCert(cert *x509.Certificate, filename string) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+
+	block := &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert.Raw,
+	}
+
+	if err = pem.Encode(f, block); err != nil {
+		_ = f.Close()
+		return err
+	}
+
+	if err = f.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func loadCertSet(certPath string, priv **ecdsa.PrivateKey) (*certSet, error) {
+	if certPath == "" {
+		return nil, errInvlPath
+	}
+
+	/*
+	 * Private key.
+	 */
+	privKey, err := loadPrivKey(certPath)
+	if err != nil {
+		return nil, err
+	}
+
+	*priv = privKey
+
+	/*
+	 * Personal certificate.
+	 */
+	matches, err := filepath.Glob(filepath.Join(certPath, "self-*.pem"))
+	if err != nil {
+		return nil, err
+	} else if len(matches) > 1 {
+		return nil, errors.New(fmt.Sprintf("Argument path: \"%s\" contains more than one private-key", certPath))
+	}
+
+	selfCert, err := loadCert(matches[0])
+	if err != nil {
+		return nil, err
+	}
+
+	/*
+	 * Neighbour certificates.
+	 */
+	matches, err = filepath.Glob(filepath.Join(certPath, "g-*.pem"))
+	if err != nil {
+		return nil, err
+	}
+
+	knownCerts := make([]*x509.Certificate, 0, len(matches))
+
+	for _, path := range matches {
+		gCert, err := loadCert(path)
+		if err != nil {
+			return nil, err
+		}
+
+		knownCerts = append(knownCerts, gCert)
+	}
+
+	/*
+	 * CA certificate.
+	 */
+	matches, err = filepath.Glob(filepath.Join(certPath, "ca-*.pem"))
+	if err != nil {
+		return nil, err
+	} else if len(matches) > 1 {
+		return nil, errors.New(fmt.Sprintf("Argument path: \"%s\" contains more than CA", certPath))
+	}
+
+	caCert, err := loadCert(matches[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return &certSet{
+		ownCert:    selfCert,
+		knownCerts: knownCerts,
+		caCert:     caCert,
+		trusted:    true,
+	}, nil
+}
+
+func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
+	path := filepath.Join(certPath, "key.pem")
+
+	keyPem, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	keyBlock, _ := pem.Decode(keyPem)
+	if keyBlock == nil {
+		return nil, errPemDecode
+	}
+
+	privKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return privKey, nil
+}
+
+func loadCert(path string) (*x509.Certificate, error) {
+	certPem, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	certBlock, _ := pem.Decode(certPem)
+	if certBlock == nil {
+		return nil, errPemDecode
+	}
+
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return cert, nil
+}
+
 func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name) (*certSet, error) {
 	var certs certResponse
 	set := &certSet{}
@@ -230,40 +439,6 @@ func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name) (*c
 	set.trusted = certs.Trusted
 
 	return set, nil
-}
-
-func loadCerts(certPath string, priv **ecdsa.PrivateKey) (*certSet, error) {
-	var c *certSet
-
-	if certPath == "" {
-		return nil, errInvlPath
-	}
-
-	path := filepath.Join(certPath, "key.pem")
-
-	keyPem, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	keyBlock, _ := pem.Decode(keyPem)
-	if keyBlock == nil {
-		return nil, errPemDecode
-	}
-
-	privKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	*priv = privKey
-
-	c.ownCert
-	c.caCert
-	c.knownCerts
-	c.trusted
-
-	return c, nil
 }
 
 func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*certSet, error) {
