@@ -238,7 +238,7 @@ func (c *Client) SavePrivateKey(path string) error {
 }
 
 func (c *Client) SaveCertificate(path string) error {
-	return c.node.SaveCertificates(path)
+	return c.node.SaveCertificate(path)
 }
 
 func readConfig() error {
