@@ -61,7 +61,7 @@ type certSet struct {
 	trusted    bool
 }
 
-func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, error) {
+func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 	var certs *certSet
 	var extValue []byte
 
@@ -91,12 +91,6 @@ func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, err
 			return nil, err
 		}
 
-	} else if certPath != "" {
-		certs, err = loadCertSet(certPath, &priv)
-		if err != nil {
-			return nil, err
-		}
-
 	} else {
 		// TODO only have numrings in notes and not certificate?
 		certs, err = selfSignedCert(priv, identity)
@@ -117,7 +111,7 @@ func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, err
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	return &CryptoUnit{
+	kake := &CryptoUnit{
 		ca:         certs.caCert,
 		self:       certs.ownCert,
 		numRings:   numRings,
@@ -126,7 +120,52 @@ func NewCu(identity pkix.Name, caAddr string, certPath string) (*CryptoUnit, err
 		priv:       priv,
 		knownCerts: certs.knownCerts,
 		trusted:    certs.trusted,
-	}, nil
+	}
+
+	fmt.Printf("kake = %+v/n", kake)
+
+	return kake, nil
+}
+
+func LoadCu(certPath string) (*CryptoUnit, error) {
+	var priv *ecdsa.PrivateKey
+	var extValue []byte
+
+	if certPath == "" {
+		return nil, errInvlPath
+	}
+
+	certs, err := loadCertSet(certPath, &priv)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, e := range certs.ownCert.Extensions {
+		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
+			extValue = e.Value
+		}
+	}
+
+	if extValue == nil {
+		return nil, errNoRingNum
+	}
+
+	numRings := binary.LittleEndian.Uint32(extValue[0:])
+
+	kake := &CryptoUnit{
+		ca:       certs.caCert,
+		self:     certs.ownCert,
+		numRings: numRings,
+		// caAddr:     caAddr,
+		// pk:         identity,
+		// priv:       priv,
+		knownCerts: certs.knownCerts,
+		trusted:    certs.trusted,
+	}
+
+	fmt.Printf("kake = %+v/n", kake)
+
+	return kake, nil
 }
 
 func (cu *CryptoUnit) Trusted() bool {
