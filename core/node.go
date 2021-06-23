@@ -3,11 +3,7 @@ package core
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -23,7 +19,6 @@ var (
 	errNoData       = errors.New("Gossip data has zero length")
 	errNoCaAddr     = errors.New("No ca addr set in config with use_ca enabled")
 	errNoEntryAddrs = errors.New("No entry_addrs set in config with use_ca disabled")
-	errInvlKeyPath  = errors.New("Storage path-argument is invalid")
 )
 
 type processMsg func([]byte) ([]byte, error)
@@ -99,6 +94,8 @@ type certManager interface {
 	ContactList() []*x509.Certificate
 	NumRings() uint32
 	Trusted() bool
+	SavePrivateKey(string) error
+	SaveCertificate(string) error
 }
 
 type cryptoService interface {
@@ -381,72 +378,10 @@ func (n *Node) Start() {
 	n.Stop()
 }
 
-/* Save private key for node crypto-unit to new file in argument directory-path.
- * - marius
- */
 func (n *Node) SavePrivateKey(path string) error {
-	if path == "" {
-		return errInvlKeyPath
-	}
-
-	path = filepath.Join(path, "key.pem")
-
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-
-	keyBytes, err := x509.MarshalECPrivateKey(n.cm.Priv())
-	if err != nil {
-		return err
-	}
-
-	block := &pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
-	}
-
-	err = pem.Encode(f, block)
-	if err != nil {
-		return err
-	}
-
-	return f.Close()
+	return n.cm.SavePrivateKey(path)
 }
 
-/* Save certificates for network-neighbours in new files inside argument path.
- * - marius
- */
-func (n *Node) SaveCertificates(path string) error {
-	if path == "" {
-		return errInvlKeyPath
-	}
-
-	for _, cert := range n.cm.ContactList() {
-
-		certPath := filepath.Join(path, fmt.Sprintf("g-%s.pem", cert.SerialNumber))
-
-		f, err := os.Create(certPath)
-		if err != nil {
-			log.Error(err.Error())
-			continue
-		}
-
-		certBytes := cert.Raw
-
-		block := &pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: certBytes,
-		}
-
-		if err = pem.Encode(f, block); err != nil {
-			log.Error(err.Error())
-		}
-
-		if err = f.Close(); err != nil {
-			log.Error(err.Error())
-		}
-	}
-
-	return nil
+func (n *Node) SaveCertificate(path string) error {
+	return n.cm.SaveCertificate(path)
 }
