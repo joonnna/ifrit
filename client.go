@@ -43,6 +43,8 @@ var (
  * Change: Added argument struct containing specifiable context for ifrit-client. - marius
  */
 func NewClient(cliCfg *ClientConfig) (*Client, error) {
+	var cu *comm.CryptoUnit
+
 	if cliCfg == nil {
 		return nil, errNoClientArg
 	}
@@ -70,15 +72,18 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 		Locality: []string{l.Addr().String(), udpAddr},
 	}
 
-	/* Change: Pass empty string to NewCu() if no pre-existing certificate-path given. */
-	caAddr := cliCfg.CertPath
-	if caAddr == "" {
-		caAddr = viper.GetString("ca_addr")
-	}
+	caAddr := viper.GetString("ca_addr")
 
-	cu, err := comm.NewCu(pk, caAddr, cliCfg.CertPath)
-	if err != nil {
-		return nil, err
+	if cliCfg.CertPath == "" {
+		cu, err = comm.NewCu(pk, caAddr)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cu, err = comm.LoadCu(cliCfg.CertPath, pk, caAddr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Pre-existing certificates goes in here? - marius
@@ -233,12 +238,12 @@ func (c *Client) SetGossipContent(data []byte) error {
 	return nil
 }
 
-func (c *Client) SavePrivateKey(path string) error {
-	return c.node.SavePrivateKey(path)
+func (c *Client) SavePrivateKey() error {
+	return c.node.SavePrivateKey()
 }
 
-func (c *Client) SaveCertificate(path string) error {
-	return c.node.SaveCertificate(path)
+func (c *Client) SaveCertificate() error {
+	return c.node.SaveCertificate()
 }
 
 func readConfig() error {

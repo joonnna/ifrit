@@ -14,6 +14,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"math/big"
 	"net"
@@ -122,20 +123,24 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 		trusted:    certs.trusted,
 	}
 
-	fmt.Printf("kake = %+v/n", kake)
+	fmt.Printf("kake = %+v\n", kake)
 
 	return kake, nil
 }
 
-func LoadCu(certPath string) (*CryptoUnit, error) {
-	var priv *ecdsa.PrivateKey
+func LoadCu(certPath string, identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 	var extValue []byte
 
 	if certPath == "" {
 		return nil, errInvlPath
 	}
 
-	certs, err := loadCertSet(certPath, &priv)
+	certs, err := loadCertSet(certPath)
+	if err != nil {
+		return nil, err
+	}
+
+	priv, err := loadPrivKey(certPath)
 	if err != nil {
 		return nil, err
 	}
@@ -153,17 +158,17 @@ func LoadCu(certPath string) (*CryptoUnit, error) {
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
 	kake := &CryptoUnit{
-		ca:       certs.caCert,
-		self:     certs.ownCert,
-		numRings: numRings,
-		// caAddr:     caAddr,
-		// pk:         identity,
-		// priv:       priv,
+		ca:         certs.caCert,
+		self:       certs.ownCert,
+		numRings:   numRings,
+		caAddr:     caAddr,
+		pk:         identity,
+		priv:       priv,
 		knownCerts: certs.knownCerts,
 		trusted:    certs.trusted,
 	}
 
-	fmt.Printf("kake = %+v/n", kake)
+	fmt.Printf("kake = %+v\n", kake)
 
 	return kake, nil
 }
@@ -228,9 +233,12 @@ func (cu *CryptoUnit) Sign(data []byte) ([]byte, []byte, error) {
 /* Save private key for node crypto-unit to new file in argument directory-path.
  * - marius
  */
-func (cu *CryptoUnit) SavePrivateKey(path string) error {
-	if path == "" {
-		return errInvlKeyPath
+func (cu *CryptoUnit) SavePrivateKey() error {
+	path := fmt.Sprintf("certificate-%s", cu.self.SerialNumber)
+
+	err := os.MkdirAll(path, fs.ModePerm)
+	if err != nil {
+		return err
 	}
 
 	path = filepath.Join(path, "key.pem")
@@ -261,12 +269,10 @@ func (cu *CryptoUnit) SavePrivateKey(path string) error {
 /* Save network-neighbours, ca, and own certificate in new files inside argument path.
  * - marius
  */
-func (cu *CryptoUnit) SaveCertificate(path string) error {
+func (cu *CryptoUnit) SaveCertificate() error {
 	var err error
 
-	if path == "" {
-		return errInvlKeyPath
-	}
+	path := fmt.Sprintf("certificate-%s", cu.self.SerialNumber)
 
 	/*
 	 * Neigbours.
@@ -320,20 +326,10 @@ func saveCert(cert *x509.Certificate, filename string) error {
 	return nil
 }
 
-func loadCertSet(certPath string, priv **ecdsa.PrivateKey) (*certSet, error) {
+func loadCertSet(certPath string) (*certSet, error) {
 	if certPath == "" {
 		return nil, errInvlPath
 	}
-
-	/*
-	 * Private key.
-	 */
-	privKey, err := loadPrivKey(certPath)
-	if err != nil {
-		return nil, err
-	}
-
-	*priv = privKey
 
 	/*
 	 * Personal certificate.
@@ -392,7 +388,30 @@ func loadCertSet(certPath string, priv **ecdsa.PrivateKey) (*certSet, error) {
 	}, nil
 }
 
+func loadCert(path string) (*x509.Certificate, error) {
+	certPem, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	certBlock, _ := pem.Decode(certPem)
+	if certBlock == nil {
+		return nil, errPemDecode
+	}
+
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return cert, nil
+}
+
 func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
+	if certPath == "" {
+		return nil, errInvlPath
+	}
+
 	path := filepath.Join(certPath, "key.pem")
 
 	keyPem, err := ioutil.ReadFile(path)
@@ -411,25 +430,6 @@ func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
 	}
 
 	return privKey, nil
-}
-
-func loadCert(path string) (*x509.Certificate, error) {
-	certPem, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	certBlock, _ := pem.Decode(certPem)
-	if certBlock == nil {
-		return nil, errPemDecode
-	}
-
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return cert, nil
 }
 
 func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name) (*certSet, error) {
