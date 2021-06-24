@@ -123,8 +123,6 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 		trusted:    certs.trusted,
 	}
 
-	fmt.Printf("kake = %+v\n", kake)
-
 	return kake, nil
 }
 
@@ -167,8 +165,6 @@ func LoadCu(certPath string, identity pkix.Name, caAddr string) (*CryptoUnit, er
 		knownCerts: certs.knownCerts,
 		trusted:    certs.trusted,
 	}
-
-	fmt.Printf("kake = %+v\n", kake)
 
 	return kake, nil
 }
@@ -263,6 +259,8 @@ func (cu *CryptoUnit) SavePrivateKey() error {
 		return err
 	}
 
+	log.Debug("private-key stored", "path", path)
+
 	return f.Close()
 }
 
@@ -270,35 +268,50 @@ func (cu *CryptoUnit) SavePrivateKey() error {
  * - marius
  */
 func (cu *CryptoUnit) SaveCertificate() error {
-	var err error
-
 	path := fmt.Sprintf("certificate-%s", cu.self.SerialNumber)
+
+	err := os.MkdirAll(path, fs.ModePerm)
+	if err != nil {
+		return err
+	}
 
 	/*
 	 * Neigbours.
 	 */
-	for _, knownCert := range cu.knownCerts {
-		err = saveCert(knownCert, filepath.Join(path, fmt.Sprintf("g-%s.pem", knownCert.SerialNumber)))
+	for i, knownCert := range cu.knownCerts {
+		fname := filepath.Join(path, fmt.Sprintf("g-%s.pem", knownCert.SerialNumber))
+
+		err = saveCert(knownCert, fname)
 		if err != nil {
 			log.Error(err.Error())
 		}
+
+		log.Debug(fmt.Sprintf("known-certificate #%v stored", i), "path", fname)
 	}
 
 	/*
 	 * CA.
 	 */
-	err = saveCert(cu.ca, filepath.Join(path, fmt.Sprintf("ca-%s.pem", cu.ca.SerialNumber)))
+	fname := filepath.Join(path, fmt.Sprintf("ca-%s.pem", cu.ca.SerialNumber))
+
+	err = saveCert(cu.ca, fname)
 	if err != nil {
 		log.Error(err.Error())
 	}
 
+	log.Debug("CA-certificate stored", "path", fname)
+
 	/*
 	 * Self.
 	 */
-	err = saveCert(cu.self, filepath.Join(path, fmt.Sprintf("self-%s.pem", cu.self.SerialNumber)))
+	fname = filepath.Join(path, fmt.Sprintf("self-%s.pem", cu.self.SerialNumber))
+
+	err = saveCert(cu.self, fname)
 	if err != nil {
 		log.Error(err.Error())
 	}
+
+	log.Debug("own-certificate stored", "path", fname)
 
 	return nil
 }
