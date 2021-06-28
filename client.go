@@ -18,6 +18,7 @@ type Client struct {
 
 type ClientConfig struct {
 	UdpPort, TcpPort int
+	Hostname         string
 	CertPath         string
 }
 
