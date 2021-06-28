@@ -1,5 +1,0 @@
-boot_nodes: 32
-certificate_filepath: /var/tmp/ca_certificate
-key_filepath: /var/tmp/ca_key
-num_rings: 20
-port: 8300
