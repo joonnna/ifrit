@@ -17,21 +17,9 @@ type Client struct {
 }
 
 type ClientConfig struct {
-	UdpPort, TcpPort int
-	Hostname         string
-	CertPath         string
+	UdpPort, TcpPort   int
+	Hostname, CertPath string
 }
-
-/*
-type MessageHandler interface {
-	Incoming([]byte) ([]byte, error)
-}
-
-type GossipHandler interface {
-	Incoming([]byte) ([]byte, error)
-	Response([]byte)
-}
-*/
 
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
