@@ -55,14 +55,12 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	// This is where nodes' udp-port is set. - marius
-	udpConn, udpAddr, err := netutil.ListenUdp(cliCfg.UdpPort)
+	udpConn, udpAddr, err := netutil.ListenUdp(cliCfg.Hostname, cliCfg.UdpPort)
 	if err != nil {
 		return nil, err
 	}
 
-	// This is where nodes' tcp-port is set. - marius
-	l, err := netutil.GetListener(cliCfg.TcpPort)
+	l, err := netutil.GetListener(cliCfg.Hostname, cliCfg.TcpPort)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +85,6 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 		}
 	}
 
-	// Pre-existing certificates goes in here? - marius
 	c, err := comm.NewComm(cu.Certificate(), cu.CaCertificate(), cu.Priv(), l)
 	if err != nil {
 		return nil, err

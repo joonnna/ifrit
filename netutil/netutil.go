@@ -73,9 +73,11 @@ func ListenOnPort(port int) (net.Listener, error) {
 
 /* Change: Added port as specifiable argument. If passed argument is zero functionality will be as before.
  * Reason: net.Listen automatically chooses which port to listen to if Port field is zero.
+ *
+ * Change: Added hostname as argument that supports being an empty string.
  * - marius
  */
-func GetListener(portnum int) (net.Listener, error) {
+func GetListener(hostname string, portnum int) (net.Listener, error) {
 	var l net.Listener
 	var err error
 
@@ -86,6 +88,10 @@ func GetListener(portnum int) (net.Listener, error) {
 	addr, err := net.LookupHost(h)
 	if err != nil {
 		return nil, err
+	}
+
+	if hostname != "" {
+		addr[0] = hostname
 	}
 
 	for {
@@ -147,14 +153,20 @@ func LocalIP() (string, error) {
 
 /* Change: Added port as specifiable argument. If passed argument is zero functionality will be as before.
  * Reason: net.ListenUDP automatically chooses which port to listen to if Port field is zero.
+ *
+ * Change: Added hostname as argument that supports being an empty string.
  * - marius
  */
-func ListenUdp(portnum int) (*net.UDPConn, string, error) {
+func ListenUdp(hostname string, portnum int) (*net.UDPConn, string, error) {
 	h, _ := os.Hostname()
 
 	addr, err := net.LookupHost(h)
 	if err != nil {
 		return nil, "", err
+	}
+
+	if hostname != "" {
+		addr[0] = hostname
 	}
 
 	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr[0], portnum))
