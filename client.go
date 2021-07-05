@@ -224,12 +224,12 @@ func (c *Client) SetGossipContent(data []byte) error {
 	return nil
 }
 
-func (c *Client) SavePrivateKey() error {
-	return c.node.SavePrivateKey()
+func (c *Client) SavePrivateKey(path string) error {
+	return c.node.SavePrivateKey(path)
 }
 
-func (c *Client) SaveCertificate() error {
-	return c.node.SaveCertificate()
+func (c *Client) SaveCertificate(path string) error {
+	return c.node.SaveCertificate(path)
 }
 
 func readConfig() error {

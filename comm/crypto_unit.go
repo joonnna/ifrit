@@ -34,7 +34,6 @@ var (
 	errInvlPath    = errors.New("Argument path to load empty")
 	errPemDecode   = errors.New("Unable to decode content in given file")
 	errInvlKeyPath = errors.New("Storage path-argument is invalid")
-	errNoCertMatch = errors.New("Storage path gave no hits on certificates")
 )
 
 type CryptoUnit struct {
@@ -230,8 +229,8 @@ func (cu *CryptoUnit) Sign(data []byte) ([]byte, []byte, error) {
 /* Save private key for node crypto-unit to new file in argument directory-path.
  * - marius
  */
-func (cu *CryptoUnit) SavePrivateKey() error {
-	path := fmt.Sprintf("certificate-%s", cu.self.SerialNumber)
+func (cu *CryptoUnit) SavePrivateKey(path string) error {
+	path = filepath.Join(path, fmt.Sprintf("certificate-%s", cu.self.SerialNumber))
 
 	err := os.MkdirAll(path, fs.ModePerm)
 	if err != nil {
@@ -268,8 +267,9 @@ func (cu *CryptoUnit) SavePrivateKey() error {
 /* Save network-neighbours, ca, and own certificate in new files inside argument path.
  * - marius
  */
-func (cu *CryptoUnit) SaveCertificate() error {
-	path := fmt.Sprintf("certificate-%s", cu.self.SerialNumber)
+func (cu *CryptoUnit) SaveCertificate(path string) error {
+
+	path = filepath.Join(path, fmt.Sprintf("certificate-%s", cu.self.SerialNumber))
 
 	err := os.MkdirAll(path, fs.ModePerm)
 	if err != nil {
@@ -287,7 +287,7 @@ func (cu *CryptoUnit) SaveCertificate() error {
 			log.Error(err.Error())
 		}
 
-		log.Debug(fmt.Sprintf("known-certificate #%v stored", i), "path", fname)
+		log.Debug(fmt.Sprintf("known-certificate #%v stored", i+1), "path", fname)
 	}
 
 	/*
@@ -352,7 +352,7 @@ func loadCertSet(certPath string) (*certSet, error) {
 	if err != nil {
 		return nil, err
 	} else if matches == nil {
-		return nil, errNoCertMatch
+		return nil, errors.New(fmt.Sprintf("Storage path '%s' gave no hits on certificates", certPath))
 	} else if len(matches) > 1 {
 		return nil, errors.New(fmt.Sprintf("Argument path: \"%s\" contains more than one private-key", certPath))
 	}
@@ -369,7 +369,7 @@ func loadCertSet(certPath string) (*certSet, error) {
 	if err != nil {
 		return nil, err
 	} else if matches == nil {
-		return nil, errNoCertMatch
+		return nil, errors.New(fmt.Sprintf("Storage path '%s' gave no hits on certificates", certPath))
 	}
 
 	knownCerts := make([]*x509.Certificate, 0, len(matches))

@@ -94,8 +94,8 @@ type certManager interface {
 	ContactList() []*x509.Certificate
 	NumRings() uint32
 	Trusted() bool
-	SavePrivateKey() error
-	SaveCertificate() error
+	SavePrivateKey(string) error
+	SaveCertificate(string) error
 }
 
 type cryptoService interface {
@@ -378,10 +378,10 @@ func (n *Node) Start() {
 	n.Stop()
 }
 
-func (n *Node) SavePrivateKey() error {
-	return n.cm.SavePrivateKey()
+func (n *Node) SavePrivateKey(path string) error {
+	return n.cm.SavePrivateKey(path)
 }
 
-func (n *Node) SaveCertificate() error {
-	return n.cm.SaveCertificate()
+func (n *Node) SaveCertificate(path string) error {
+	return n.cm.SaveCertificate(path)
 }
