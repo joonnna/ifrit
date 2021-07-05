@@ -34,6 +34,7 @@ var (
 	errInvlPath    = errors.New("Argument path to load empty")
 	errPemDecode   = errors.New("Unable to decode content in given file")
 	errInvlKeyPath = errors.New("Storage path-argument is invalid")
+	errNoCertMatch = errors.New("Storage path gave no hits on certificates")
 )
 
 type CryptoUnit struct {
@@ -350,6 +351,8 @@ func loadCertSet(certPath string) (*certSet, error) {
 	matches, err := filepath.Glob(filepath.Join(certPath, "self-*.pem"))
 	if err != nil {
 		return nil, err
+	} else if matches == nil {
+		return nil, errNoCertMatch
 	} else if len(matches) > 1 {
 		return nil, errors.New(fmt.Sprintf("Argument path: \"%s\" contains more than one private-key", certPath))
 	}
@@ -365,6 +368,8 @@ func loadCertSet(certPath string) (*certSet, error) {
 	matches, err = filepath.Glob(filepath.Join(certPath, "g-*.pem"))
 	if err != nil {
 		return nil, err
+	} else if matches == nil {
+		return nil, errNoCertMatch
 	}
 
 	knownCerts := make([]*x509.Certificate, 0, len(matches))
