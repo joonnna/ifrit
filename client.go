@@ -3,6 +3,7 @@ package ifrit
 import (
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 
 	log "github.com/inconshreveable/log15"
 
@@ -56,13 +57,14 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	log.Debug("addrs", "rpc", l.Addr().String(), "udp", udpAddr)
 
 	pk := pkix.Name{
-		Locality: []string{l.Addr().String(), udpAddr},
+		/* Tell crypto-unit where this client can be reached. */
+		Locality: []string{fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort), udpAddr},
 	}
 
 	caAddr := viper.GetString("ca_addr")
 
 	if cliCfg.CertPath == "" {
-		cu, err = comm.NewCu(pk, caAddr)
+		cu, err = comm.NewCu(pk, caAddr, cliCfg.Hostname)
 		if err != nil {
 			return nil, err
 		}

@@ -62,7 +62,7 @@ type certSet struct {
 	trusted    bool
 }
 
-func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
+func NewCu(identity pkix.Name, caAddr string, dnsLabel string) (*CryptoUnit, error) {
 	var certs *certSet
 	var extValue []byte
 
@@ -75,7 +75,12 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 		return nil, errNoIp
 	}
 
-	ip := net.ParseIP(serviceAddr[0])
+	serviceIP, err := net.LookupIP(serviceAddr[0])
+	if err != nil {
+		return nil, err
+	}
+
+	ip := net.ParseIP(serviceIP[0].String())
 	if ip == nil {
 		return nil, errNoIp
 	}
@@ -87,7 +92,7 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 
 	if caAddr != "" {
 		addr := fmt.Sprintf("http://%s/certificateRequest", caAddr)
-		certs, err = sendCertRequest(priv, addr, identity)
+		certs, err = sendCertRequest(priv, addr, identity, dnsLabel)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +117,7 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	kake := &CryptoUnit{
+	return &CryptoUnit{
 		ca:         certs.caCert,
 		self:       certs.ownCert,
 		numRings:   numRings,
@@ -121,9 +126,7 @@ func NewCu(identity pkix.Name, caAddr string) (*CryptoUnit, error) {
 		priv:       priv,
 		knownCerts: certs.knownCerts,
 		trusted:    certs.trusted,
-	}
-
-	return kake, nil
+	}, nil
 }
 
 func LoadCu(certPath string, identity pkix.Name, caAddr string) (*CryptoUnit, error) {
@@ -450,13 +453,14 @@ func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
 	return privKey, nil
 }
 
-func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name) (*certSet, error) {
+func sendCertRequest(privKey *ecdsa.PrivateKey, caAddr string, pk pkix.Name, dnsLabel string) (*certSet, error) {
 	var certs certResponse
 	set := &certSet{}
 
 	template := x509.CertificateRequest{
 		SignatureAlgorithm: x509.ECDSAWithSHA256,
 		Subject:            pk,
+		DNSNames:           []string{dnsLabel},
 	}
 
 	certReqBytes, err := x509.CreateCertificateRequest(rand.Reader, &template, privKey)

@@ -2,11 +2,11 @@ package cauth
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"context"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
@@ -36,7 +36,7 @@ var (
 	errNoKeyFilepath    = errors.New("Tried to save private key with no filepath set in config.")
 	errInvalidBootNodes = errors.New("Number of boot nodes needs to be greater than zero.")
 	errInvalidNumRings  = errors.New("Number of rings needs to be greater than zero.")
-	errPortNotSet 		= errors.New("Port number is not set")
+	errPortNotSet       = errors.New("Port number is not set")
 
 	RingNumberOid asn1.ObjectIdentifier = []int{2, 5, 13, 37}
 )
@@ -50,7 +50,7 @@ type Ca struct {
 
 	groups []*group
 
-	addr string
+	addr       string
 	httpServer *http.Server
 }
 
@@ -212,7 +212,7 @@ func (c *Ca) SaveCertificate() error {
 // Shutsdown the certificate authority instance, will no longer serve signing requests.
 func (c *Ca) Shutdown() {
 	log.Info("Shuting down Lohpi certificate authority")
-	
+
 	idleConnsClosed := make(chan struct{})
 	go func() {
 		// We received an interrupt signal, shut down.
@@ -317,10 +317,10 @@ func (c *Ca) httpHandler(addr string) error {
 	}
 
 	c.httpServer = &http.Server{
-		Addr: 	 		":" + port,
-		Handler: 		r,
-		ReadTimeout: 	time.Second * 10,
-		WriteTimeout: 	time.Second * 10,
+		Addr:         ":" + port,
+		Handler:      r,
+		ReadTimeout:  time.Second * 10,
+		WriteTimeout: time.Second * 10,
 	}
 
 	return c.httpServer.ListenAndServe()
@@ -382,6 +382,7 @@ func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {
 		ExtraExtensions: []pkix.Extension{ext},
 		PublicKey:       reqCert.PublicKey,
 		IPAddresses:     []net.IP{ipAddr.IP},
+		DNSNames:        reqCert.DNSNames,
 		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}

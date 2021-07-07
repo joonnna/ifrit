@@ -83,19 +83,21 @@ func GetListener(hostname string, portnum int) (net.Listener, error) {
 
 	attempts := 0
 
-	h, _ := os.Hostname()
+	/*
+		h, _ := os.Hostname()
 
-	addr, err := net.LookupHost(h)
-	if err != nil {
-		return nil, err
-	}
+		addr, err := net.LookupHost(h)
+		if err != nil {
+			return nil, err
+		}
 
-	if hostname != "" {
-		addr[0] = hostname
-	}
+		if hostname != "" {
+			addr[0] = hostname
+		}
+	*/
 
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addr[0], portnum))
+		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", portnum))
 		if err == nil {
 			return l, nil
 		} else {
@@ -169,7 +171,7 @@ func ListenUdp(hostname string, portnum int) (*net.UDPConn, string, error) {
 		addr[0] = hostname
 	}
 
-	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", addr[0], portnum))
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", portnum))
 	if err != nil {
 		return nil, "", err
 	}
@@ -179,8 +181,7 @@ func ListenUdp(hostname string, portnum int) (*net.UDPConn, string, error) {
 		return nil, "", err
 	}
 
-	port := strings.Split(conn.LocalAddr().String(), ":")[1]
-	fullAddr := fmt.Sprintf("%s:%s", addr[0], port)
+	fullAddr := fmt.Sprintf("%s:%d", hostname, portnum)
 
 	return conn, fullAddr, nil
 }
