@@ -233,6 +233,7 @@ func (cu *CryptoUnit) Sign(data []byte) ([]byte, []byte, error) {
  * - marius
  */
 func (cu *CryptoUnit) SavePrivateKey(path string) error {
+
 	path = filepath.Join(path, fmt.Sprintf("certificate-%s", cu.self.SerialNumber))
 
 	err := os.MkdirAll(path, fs.ModePerm)
@@ -365,6 +366,8 @@ func loadCertSet(certPath string) (*certSet, error) {
 		return nil, err
 	}
 
+	log.Debug("own-certificate loaded", "path", matches[0])
+
 	/*
 	 * Neighbour certificates.
 	 */
@@ -377,13 +380,15 @@ func loadCertSet(certPath string) (*certSet, error) {
 
 	knownCerts := make([]*x509.Certificate, 0, len(matches))
 
-	for _, path := range matches {
+	for i, path := range matches {
 		gCert, err := loadCert(path)
 		if err != nil {
 			return nil, err
 		}
 
 		knownCerts = append(knownCerts, gCert)
+
+		log.Debug(fmt.Sprintf("known certificate #%d loaded", i+1), "path", path)
 	}
 
 	/*
@@ -400,6 +405,8 @@ func loadCertSet(certPath string) (*certSet, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	log.Debug("ca-certificate loaded", "path", matches[0])
 
 	return &certSet{
 		ownCert:    selfCert,
@@ -449,6 +456,8 @@ func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	log.Debug("private-key loaded", "path", path)
 
 	return privKey, nil
 }
