@@ -95,6 +95,38 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	}, nil
 }
 
+/* Perform certificate request to CA and save them in argument path. */
+func NewClientCertificate(cliCfg *ClientConfig, path string) error {
+
+	pk := pkix.Name{
+		Locality: []string{
+			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort),
+			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.UdpPort),
+		},
+	}
+
+	if err := readConfig(); err != nil {
+		return err
+	}
+
+	caAddr := viper.GetString("ca_addr")
+
+	/* Getting cauth to sign a certificate with another FQDN
+	 * that does not yet exist on azure is NO HABLA BUENO.
+	 */
+	cu, err := comm.NewCu(pk, caAddr, cliCfg.Hostname)
+	if err != nil {
+		return err
+	}
+
+	if err := cu.SavePrivateKey(path); err != nil {
+		return err
+	}
+	err = cu.SaveCertificate(path)
+
+	return err
+}
+
 // Client starts operating.
 func (c *Client) Start() {
 	c.node.Start()
