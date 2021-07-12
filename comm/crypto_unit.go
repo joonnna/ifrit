@@ -75,15 +75,15 @@ func NewCu(identity pkix.Name, caAddr string, dnsLabel string) (*CryptoUnit, err
 		return nil, errNoIp
 	}
 
-	serviceIP, err := net.LookupIP(serviceAddr[0])
-	if err != nil {
-		return nil, err
-	}
+	// serviceIP, err := net.LookupIP(serviceAddr[0])
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	ip := net.ParseIP(serviceIP[0].String())
-	if ip == nil {
-		return nil, errNoIp
-	}
+	// ip := net.ParseIP(serviceIP[0].String())
+	// if ip == nil {
+	// 	return nil, errNoIp
+	// }
 
 	priv, err := genKeys()
 	if err != nil {
@@ -263,7 +263,7 @@ func (cu *CryptoUnit) SavePrivateKey(path string) error {
 		return err
 	}
 
-	log.Debug("private-key stored", "path", path)
+	log.Info("private-key stored", "path", path)
 
 	return f.Close()
 }
@@ -291,7 +291,7 @@ func (cu *CryptoUnit) SaveCertificate(path string) error {
 			log.Error(err.Error())
 		}
 
-		log.Debug(fmt.Sprintf("known-certificate #%v stored", i+1), "path", fname)
+		log.Info(fmt.Sprintf("known-certificate #%v stored", i+1), "path", fname)
 	}
 
 	/*
@@ -304,7 +304,7 @@ func (cu *CryptoUnit) SaveCertificate(path string) error {
 		log.Error(err.Error())
 	}
 
-	log.Debug("CA-certificate stored", "path", fname)
+	log.Info("CA-certificate stored", "path", fname)
 
 	/*
 	 * Self.
@@ -316,7 +316,7 @@ func (cu *CryptoUnit) SaveCertificate(path string) error {
 		log.Error(err.Error())
 	}
 
-	log.Debug("own-certificate stored", "path", fname)
+	log.Info("own-certificate stored", "path", fname)
 
 	return nil
 }
@@ -366,7 +366,7 @@ func loadCertSet(certPath string) (*certSet, error) {
 		return nil, err
 	}
 
-	log.Debug("own-certificate loaded", "path", matches[0])
+	log.Info("own-certificate loaded", "path", matches[0])
 
 	/*
 	 * Neighbour certificates.
@@ -388,7 +388,7 @@ func loadCertSet(certPath string) (*certSet, error) {
 
 		knownCerts = append(knownCerts, gCert)
 
-		log.Debug(fmt.Sprintf("known certificate #%d loaded", i+1), "path", path)
+		log.Info(fmt.Sprintf("known certificate #%d loaded", i+1), "path", path)
 	}
 
 	/*
@@ -406,7 +406,7 @@ func loadCertSet(certPath string) (*certSet, error) {
 		return nil, err
 	}
 
-	log.Debug("ca-certificate loaded", "path", matches[0])
+	log.Info("ca-certificate loaded", "path", matches[0])
 
 	return &certSet{
 		ownCert:    selfCert,
@@ -457,7 +457,7 @@ func loadPrivKey(certPath string) (*ecdsa.PrivateKey, error) {
 		return nil, err
 	}
 
-	log.Debug("private-key loaded", "path", path)
+	log.Info("private-key loaded", "path", path)
 
 	return privKey, nil
 }
@@ -572,7 +572,6 @@ func genId() []byte {
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
 	return nonce
-
 }
 
 func genSerialNumber() (*big.Int, error) {

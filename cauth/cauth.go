@@ -17,7 +17,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -366,11 +365,11 @@ func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddr, err := net.ResolveIPAddr("ip4", strings.Split(reqCert.Subject.Locality[0], ":")[0])
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
+	// ipAddr, err := net.ResolveIPAddr("ip4", strings.Split(reqCert.Subject.Locality[0], ":")[0])
+	// if err != nil {
+	// 	log.Error(err.Error())
+	// 	return
+	// }
 	id := g.genId()
 
 	newCert := &x509.Certificate{
@@ -381,10 +380,10 @@ func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {
 		NotAfter:        time.Now().AddDate(10, 0, 0),
 		ExtraExtensions: []pkix.Extension{ext},
 		PublicKey:       reqCert.PublicKey,
-		IPAddresses:     []net.IP{ipAddr.IP},
-		DNSNames:        reqCert.DNSNames,
-		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:        x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		// IPAddresses:     []net.IP{ipAddr.IP},
+		DNSNames:    reqCert.DNSNames,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 
 	signedCert, err := x509.CreateCertificate(rand.Reader, newCert, g.groupCert, reqCert.PublicKey, c.privKey)
