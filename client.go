@@ -16,16 +16,10 @@ type Client struct {
 	node *core.Node
 }
 
-/*
-type MessageHandler interface {
-	Incoming([]byte) ([]byte, error)
+type Message struct {	
+	Data []byte
+	Error error
 }
-
-type GossipHandler interface {
-	Incoming([]byte) ([]byte, error)
-	Response([]byte)
-}
-*/
 
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
@@ -122,11 +116,11 @@ func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
 
 // Sends the given data to the given destination.
 // The caller must ensure that the given data is not modified after calling this function.
-// The returned channel will be populated with the response.
-// If the destination could not be reached or timeout occurs, nil will be sent through the channel.
+// The returned channel will be populated with the response. The data and error values are contained in the *core.Message
+// type. If the destination could not be reached or timeout occurs, nil will be sent through the channel.
 // The response data can be safely modified after receiving it.
-func (c *Client) SendTo(dest string, data []byte) chan []byte {
-	ch := make(chan []byte, 1)
+func (c *Client) SendTo(dest string, data []byte) chan *core.Message  {
+	ch := make(chan *core.Message, 1)
 
 	go c.node.SendMessage(dest, ch, data)
 
@@ -135,13 +129,13 @@ func (c *Client) SendTo(dest string, data []byte) chan []byte {
 
 // Same as SendTo, but destination is now the Ifrit id of the receiver.
 // Returns an error if no observed peer has the specified  destination id.
-func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
+func (c *Client) SendToId(destId []byte, data []byte) (chan *core.Message, error) {
 	addr, err := c.node.IdToAddr(destId)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan []byte, 1)
+	ch := make(chan *core.Message, 1)
 
 	go c.node.SendMessage(addr, ch, data)
 

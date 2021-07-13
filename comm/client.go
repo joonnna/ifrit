@@ -2,6 +2,7 @@ package comm
 
 import (
 	"crypto/tls"
+_	"fmt"
 	"errors"
 	"sync"
 	"time"
@@ -76,12 +77,7 @@ func (c *gRPCClient) Send(addr string, args *pb.Msg) (*pb.MsgResponse, error) {
 		return nil, err
 	}
 
-	r, err := conn.Messenger(context.Background(), args)
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
+	return conn.Messenger(context.Background(), args)
 }
 
 func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) error {

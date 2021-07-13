@@ -21,6 +21,12 @@ var (
 	errNoEntryAddrs = errors.New("No entry_addrs set in config with use_ca disabled")
 )
 
+type Message struct {
+	Data []byte
+	Error error
+}
+
+
 type processMsg func([]byte) ([]byte, error)
 type streamMsg func(chan []byte, chan []byte)
 
@@ -206,7 +212,7 @@ func NewNode(comm commService, ps pingService, cm certManager, cs cryptoService)
 	return n, nil
 }
 
-func (n *Node) SendMessage(dest string, ch chan []byte, data []byte) {
+func (n *Node) SendMessage(dest string, ch chan *Message, data []byte) {
 	msg := &pb.Msg{
 		Content: data,
 	}
@@ -243,7 +249,7 @@ func (n *Node) IdToAddr(id []byte) (string, error) {
 	return p.Addr, nil
 }
 
-func (n *Node) SendMessages(dest []string, ch chan []byte, data []byte) {
+func (n *Node) SendMessages(dest []string, ch chan *Message, data []byte) {
 	msg := &pb.Msg{
 		Content: data,
 	}
@@ -272,13 +278,14 @@ func (n *Node) openStream(dest string, input, reply chan []byte) {
 	}
 }
 
-func (n *Node) sendMsg(dest string, ch chan []byte, msg *pb.Msg) {
+func (n *Node) sendMsg(dest string, ch chan *Message, msg *pb.Msg) {
 	reply, err := n.comm.Send(dest, msg)
 	if err != nil {
 		log.Error(err.Error())
 		ch <- nil
+		return
 	}
-	ch <- reply.GetContent()
+	ch <- &Message{Data: reply.GetContent(), Error: errors.New(reply.GetError())}
 }
 
 func (n *Node) isStopping() bool {
