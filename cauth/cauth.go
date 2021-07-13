@@ -365,11 +365,13 @@ func (c *Ca) certificateSigning(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ipAddr, err := net.ResolveIPAddr("ip4", strings.Split(reqCert.Subject.Locality[0], ":")[0])
-	// if err != nil {
-	// 	log.Error(err.Error())
-	// 	return
-	// }
+	/*
+		ipAddr, err := net.ResolveIPAddr("ip4", strings.Split(reqCert.Subject.Locality[0], ":")[0])
+		if err != nil {
+			log.Error(err.Error())
+			return
+		}
+	*/
 	id := g.genId()
 
 	newCert := &x509.Certificate{
