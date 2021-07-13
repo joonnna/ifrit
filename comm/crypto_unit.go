@@ -29,11 +29,12 @@ import (
 
 var (
 	errNoRingNum   = errors.New("No ringnumber present in received certificate")
-	errNoIp        = errors.New("No ip present in received identity")
+	errNoHostIp    = errors.New("No ip or hostname present in received identity")
 	errNoAddrs     = errors.New("Not enough addresses present in identity")
 	errInvlPath    = errors.New("Argument path to load empty")
 	errPemDecode   = errors.New("Unable to decode content in given file")
 	errInvlKeyPath = errors.New("Storage path-argument is invalid")
+	errNoCa        = errors.New("No address for Certificate Authority")
 )
 
 type CryptoUnit struct {
@@ -72,18 +73,18 @@ func NewCu(identity pkix.Name, caAddr string, dnsLabel string) (*CryptoUnit, err
 
 	serviceAddr := strings.Split(identity.Locality[0], ":")
 	if len(serviceAddr) <= 0 {
-		return nil, errNoIp
+		return nil, errNoHostIp
 	}
 
-	// serviceIP, err := net.LookupIP(serviceAddr[0])
-	// if err != nil {
-	// 	return nil, err
-	// }
+	serviceIP, err := net.LookupIP(serviceAddr[0])
+	if err != nil {
+		return nil, err
+	}
 
-	// ip := net.ParseIP(serviceIP[0].String())
-	// if ip == nil {
-	// 	return nil, errNoIp
-	// }
+	ip := net.ParseIP(serviceIP[0].String())
+	if ip == nil {
+		return nil, errNoHostIp
+	}
 
 	priv, err := genKeys()
 	if err != nil {
@@ -158,7 +159,7 @@ func LoadCu(certPath string, identity pkix.Name, caAddr string) (*CryptoUnit, er
 
 	numRings := binary.LittleEndian.Uint32(extValue[0:])
 
-	kake := &CryptoUnit{
+	return &CryptoUnit{
 		ca:         certs.caCert,
 		self:       certs.ownCert,
 		numRings:   numRings,
@@ -167,9 +168,61 @@ func LoadCu(certPath string, identity pkix.Name, caAddr string) (*CryptoUnit, er
 		priv:       priv,
 		knownCerts: certs.knownCerts,
 		trusted:    certs.trusted,
+	}, nil
+}
+
+/* Like NewCu() but without validation of identity ip/hostname-existence. */
+func NewStaticCu(identity pkix.Name, caAddr string, dnsLabel string) (*CryptoUnit, error) {
+	var certs *certSet
+	var extValue []byte
+
+	if addrs := len(identity.Locality); addrs < 2 {
+		return nil, errNoAddrs
 	}
 
-	return kake, nil
+	serviceAddr := strings.Split(identity.Locality[0], ":")
+	if len(serviceAddr) <= 0 {
+		return nil, errNoHostIp
+	}
+
+	priv, err := genKeys()
+	if err != nil {
+		return nil, err
+	}
+
+	if caAddr == "" {
+		return nil, errNoCa
+	}
+
+	addr := fmt.Sprintf("http://%s/certificateRequest", caAddr)
+
+	certs, err = sendCertRequest(priv, addr, identity, dnsLabel)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, e := range certs.ownCert.Extensions {
+		if e.Id.Equal(asn1.ObjectIdentifier{2, 5, 13, 37}) {
+			extValue = e.Value
+		}
+	}
+
+	if extValue == nil {
+		return nil, errNoRingNum
+	}
+
+	numRings := binary.LittleEndian.Uint32(extValue[0:])
+
+	return &CryptoUnit{
+		ca:         certs.caCert,
+		self:       certs.ownCert,
+		numRings:   numRings,
+		caAddr:     caAddr,
+		pk:         identity,
+		priv:       priv,
+		knownCerts: certs.knownCerts,
+		trusted:    certs.trusted,
+	}, nil
 }
 
 func (cu *CryptoUnit) Trusted() bool {
@@ -528,12 +581,12 @@ func selfSignedCert(priv *ecdsa.PrivateKey, pk pkix.Name) (*certSet, error) {
 
 	serviceAddr := strings.Split(pk.Locality[0], ":")
 	if len(serviceAddr) <= 0 {
-		return nil, errNoIp
+		return nil, errNoHostIp
 	}
 
 	ip := net.ParseIP(serviceAddr[0])
 	if ip == nil {
-		return nil, errNoIp
+		return nil, errNoHostIp
 	}
 
 	// TODO generate ids and serial numbers differently

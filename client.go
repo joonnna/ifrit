@@ -57,7 +57,6 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	log.Debug("addrs", "rpc", l.Addr().String(), "udp", udpAddr)
 
 	pk := pkix.Name{
-		/* Tell crypto-unit where this client can be reached. */
 		Locality: []string{fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort), udpAddr},
 	}
 
@@ -111,10 +110,7 @@ func NewClientCertificate(cliCfg *ClientConfig, path string) error {
 
 	caAddr := viper.GetString("ca_addr")
 
-	/* Getting cauth to sign a certificate with another FQDN
-	 * that does not yet exist on azure is NO HABLA BUENO.
-	 */
-	cu, err := comm.NewCu(pk, caAddr, cliCfg.Hostname)
+	cu, err := comm.NewStaticCu(pk, caAddr, cliCfg.Hostname)
 	if err != nil {
 		return err
 	}
