@@ -52,14 +52,14 @@ type Node struct {
 	gossipHandler      processMsg
 	gossipHandlerMutex sync.RWMutex
 
-	responseHandler      func([]byte) 
+	responseHandler      func([]byte)
 	responseHandlerMutex sync.RWMutex
 
 	externalGossip      []byte
 	externalGossipMutex sync.RWMutex
 
-	streamHandler 		streamMsg
-	streamHandlerMutex 	sync.RWMutex
+	streamHandler      streamMsg
+	streamHandlerMutex sync.RWMutex
 
 	dispatcher *workerpool.Dispatcher
 
@@ -90,9 +90,12 @@ type commService interface {
 type certManager interface {
 	Certificate() *x509.Certificate
 	CaCertificate() *x509.Certificate
+	Priv() *ecdsa.PrivateKey // Added for Saving private-key.
 	ContactList() []*x509.Certificate
 	NumRings() uint32
 	Trusted() bool
+	SavePrivateKey(string) error
+	SaveCertificate(string) error
 }
 
 type cryptoService interface {
@@ -268,7 +271,7 @@ func (n *Node) SendStream(ch chan<- []byte, data []byte) {
 
 func (n *Node) openStream(dest string, input, reply chan []byte) {
 	if err := n.comm.StreamMessenger(dest, input, reply); err != nil {
-		log.Error(err.Error())	
+		log.Error(err.Error())
 	}
 }
 
@@ -373,4 +376,12 @@ func (n *Node) Start() {
 	<-n.exitChan
 	log.Info("Exiting node")
 	n.Stop()
+}
+
+func (n *Node) SavePrivateKey(path string) error {
+	return n.cm.SavePrivateKey(path)
+}
+
+func (n *Node) SaveCertificate(path string) error {
+	return n.cm.SaveCertificate(path)
 }

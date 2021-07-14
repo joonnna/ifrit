@@ -31,7 +31,7 @@ func GetOpenPort() int {
 		}
 		attempts++
 		if attempts > 100 {
-			return 0
+			break
 		}
 	}
 
@@ -71,21 +71,33 @@ func ListenOnPort(port int) (net.Listener, error) {
 	return l, nil
 }
 
-func GetListener() (net.Listener, error) {
+/* Change: Added port as specifiable argument. If passed argument is zero functionality will be as before.
+ * Reason: net.Listen automatically chooses which port to listen to if Port field is zero.
+ *
+ * Change: Added hostname as argument that supports being an empty string.
+ * - marius
+ */
+func GetListener(hostname string, portnum int) (net.Listener, error) {
 	var l net.Listener
 	var err error
 
 	attempts := 0
 
-	h, _ := os.Hostname()
+	/*
+		h, _ := os.Hostname()
 
-	addr, err := net.LookupHost(h)
-	if err != nil {
-		return nil, err
-	}
+		addr, err := net.LookupHost(h)
+		if err != nil {
+			return nil, err
+		}
+
+		if hostname != "" {
+			addr[0] = hostname
+		}
+	*/
 
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:", addr[0]))
+		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", portnum))
 		if err == nil {
 			return l, nil
 		} else {
@@ -94,7 +106,8 @@ func GetListener() (net.Listener, error) {
 		attempts++
 
 		if attempts > 100 {
-			return l, errFoundNoPort
+			// Stop and return error instead of returing in iteration. - marius
+			break
 		}
 	}
 
@@ -140,7 +153,13 @@ func LocalIP() (string, error) {
 	return addrs[0].String(), nil
 }
 
-func ListenUdp() (*net.UDPConn, string, error) {
+/* Change: Added port as specifiable argument. If passed argument is zero functionality will be as before.
+ * Reason: net.ListenUDP automatically chooses which port to listen to if Port field is zero.
+ *
+ * Change: Added hostname as argument that supports being an empty string.
+ * - marius
+ */
+func ListenUdp(hostname string, portnum int) (*net.UDPConn, string, error) {
 	h, _ := os.Hostname()
 
 	addr, err := net.LookupHost(h)
@@ -148,7 +167,11 @@ func ListenUdp() (*net.UDPConn, string, error) {
 		return nil, "", err
 	}
 
-	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:0", addr[0]))
+	if hostname != "" {
+		addr[0] = hostname
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", portnum))
 	if err != nil {
 		return nil, "", err
 	}
@@ -158,8 +181,7 @@ func ListenUdp() (*net.UDPConn, string, error) {
 		return nil, "", err
 	}
 
-	port := strings.Split(conn.LocalAddr().String(), ":")[1]
-	fullAddr := fmt.Sprintf("%s:%s", addr[0], port)
+	fullAddr := fmt.Sprintf("%s:%d", hostname, portnum)
 
 	return conn, fullAddr, nil
 }

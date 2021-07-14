@@ -3,6 +3,7 @@ package ifrit
 import (
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 
 	log "github.com/inconshreveable/log15"
 
@@ -16,35 +17,39 @@ type Client struct {
 	node *core.Node
 }
 
-/*
-type MessageHandler interface {
-	Incoming([]byte) ([]byte, error)
+type ClientConfig struct {
+	UdpPort, TcpPort   int
+	Hostname, CertPath string
 }
-
-type GossipHandler interface {
-	Incoming([]byte) ([]byte, error)
-	Response([]byte)
-}
-*/
 
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
 	errNoCaAddress = errors.New("Config does not contain address of CA")
+	errNoClientArg = errors.New("Client argument zero")
 )
 
-// Creates and returns a new ifrit client instance.
-func NewClient() (*Client, error) {
+/* Creates and returns a new ifrit client instance.
+ *
+ * Change: Added argument struct containing specifiable context for ifrit-client. - marius
+ */
+func NewClient(cliCfg *ClientConfig) (*Client, error) {
+	var cu *comm.CryptoUnit
+
+	if cliCfg == nil {
+		return nil, errNoClientArg
+	}
+
 	err := readConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	udpConn, udpAddr, err := netutil.ListenUdp()
+	udpConn, udpAddr, err := netutil.ListenUdp(cliCfg.Hostname, cliCfg.UdpPort)
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := netutil.GetListener()
+	l, err := netutil.GetListener(cliCfg.Hostname, cliCfg.TcpPort)
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +57,21 @@ func NewClient() (*Client, error) {
 	log.Debug("addrs", "rpc", l.Addr().String(), "udp", udpAddr)
 
 	pk := pkix.Name{
-		Locality: []string{l.Addr().String(), udpAddr},
+		Locality: []string{fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort), udpAddr},
 	}
 
-	cu, err := comm.NewCu(pk, viper.GetString("ca_addr"))
-	if err != nil {
-		return nil, err
+	caAddr := viper.GetString("ca_addr")
+
+	if cliCfg.CertPath == "" {
+		cu, err = comm.NewCu(pk, caAddr, cliCfg.Hostname)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		cu, err = comm.LoadCu(cliCfg.CertPath, pk, caAddr)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	c, err := comm.NewComm(cu.Certificate(), cu.CaCertificate(), cu.Priv(), l)
@@ -78,6 +92,35 @@ func NewClient() (*Client, error) {
 	return &Client{
 		node: n,
 	}, nil
+}
+
+/* Perform certificate request to CA and save them in argument path. */
+func NewClientCertificate(cliCfg *ClientConfig, path string) error {
+
+	pk := pkix.Name{
+		Locality: []string{
+			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort),
+			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.UdpPort),
+		},
+	}
+
+	if err := readConfig(); err != nil {
+		return err
+	}
+
+	caAddr := viper.GetString("ca_addr")
+
+	cu, err := comm.NewStaticCu(pk, caAddr, cliCfg.Hostname)
+	if err != nil {
+		return err
+	}
+
+	if err := cu.SavePrivateKey(path); err != nil {
+		return err
+	}
+	err = cu.SaveCertificate(path)
+
+	return err
 }
 
 // Client starts operating.
@@ -149,22 +192,22 @@ func (c *Client) SendToId(destId []byte, data []byte) (chan []byte, error) {
 }
 
 // Returns a pair of channels used for bi-directional streams, given the destination. The first channel
-// is the input stream to the server and the second stream is the reply stream from the server. 
+// is the input stream to the server and the second stream is the reply stream from the server.
 // To close the stream, close the input channel. The reply stream is open as long as the server sends messages
 // back to the client. The caller must ensure that the reply stream does not block by draining the buffer so that the stream session can complete.
 // Note: it is adviced to implement an aknowledgement mechanism to avoid an untimely closing of a channel and loss of messages.
 func (c *Client) OpenStream(dest string) (chan []byte, chan []byte) {
 	inputStream := make(chan []byte)
 	replyStream := make(chan []byte)
-	
+
 	go c.node.OpenStream(dest, inputStream, replyStream)
 
 	return inputStream, replyStream
 }
 
 // Registers the given function as the stream handler.
-// Invoked when the client opens a stream. The callback accepts two channels - 
-// an unbuffered input channel and an unbuffered channel used for replying to the client. 
+// Invoked when the client opens a stream. The callback accepts two channels -
+// an unbuffered input channel and an unbuffered channel used for replying to the client.
 // The caller must close the reply channel to signal that the stream is closing.
 // See the note in OpenStream().
 func (c *Client) RegisterStreamHandler(streamHandler func(chan []byte, chan []byte)) {
@@ -209,6 +252,14 @@ func (c *Client) SetGossipContent(data []byte) error {
 	c.node.SetExternalGossipContent(data)
 
 	return nil
+}
+
+func (c *Client) SavePrivateKey(path string) error {
+	return c.node.SavePrivateKey(path)
+}
+
+func (c *Client) SaveCertificate(path string) error {
+	return c.node.SaveCertificate(path)
 }
 
 func readConfig() error {

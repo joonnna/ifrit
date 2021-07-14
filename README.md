@@ -49,7 +49,7 @@ Now you'll want to import the library:
 ```
 Now you can create and start a client
 ```go
-c, err := ifrit.NewClient()
+c, err := ifrit.NewClient(udpPort, tcpPort)
 if err != nil {
     panic(err)
 }
