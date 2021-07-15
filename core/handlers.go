@@ -136,12 +136,9 @@ func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, er
 
 	if handler := n.getMsgHandler(); handler != nil {
 		replyContent, err = handler(args.GetContent())
-		if err != nil {
-			return nil, err
-		}
+		return &pb.MsgResponse{Content: replyContent, Error: err.Error()}, nil
 	}
-
-	return &pb.MsgResponse{Content: replyContent}, nil
+	return &pb.MsgResponse{}, nil
 }
 
 func (n *Node) Stream(srv pb.Gossip_StreamServer) error {
