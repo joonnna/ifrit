@@ -2,14 +2,14 @@ package comm
 
 import (
 	"crypto/tls"
-_	"fmt"
 	"errors"
+	_ "fmt"
+	"io"
 	"sync"
 	"time"
-	"io"
 
-	pb "github.com/joonnna/ifrit/protobuf"
 	log "github.com/inconshreveable/log15"
+	pb "github.com/joonnna/ifrit/protobuf"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -85,8 +85,8 @@ func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) erro
 	if err != nil {
 		return err
 	}
-	
-	srv, err := conn.Stream(context.Background()) 
+
+	srv, err := conn.Stream(context.Background())
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) erro
 	done := make(chan bool)
 	defer close(reply)
 
-	// Sending messages from input stream to the server. 
+	// Sending messages from input stream to the server.
 	// Runs until the producer closes the channel
 	go func() {
 		for content := range input {
@@ -127,7 +127,7 @@ func (c *gRPCClient) StreamMessenger(addr string, input, reply chan []byte) erro
 				continue
 			}
 
-			reply <-req.GetContent()
+			reply <- req.GetContent()
 		}
 	}()
 
