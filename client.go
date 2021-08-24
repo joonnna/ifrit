@@ -155,7 +155,8 @@ func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
 // The caller must ensure that the given data is not modified after calling this function.
 // The returned channel will be populated with the response. The data and error values are contained in the *core.Message
 // type. If the destination could not be reached or timeout occurs, nil will be sent through the channel.
-// The response data can be safely modified after receiving it.
+// The response data can be safely modified after receiving it. The message instance is nil if the recipient is unavailable.
+// Ifrit will close the channel after receiving the response message.
 func (c *Client) SendTo(dest string, data []byte) chan *core.Message {
 	ch := make(chan *core.Message, 1)
 

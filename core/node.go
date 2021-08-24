@@ -282,13 +282,21 @@ func (n *Node) openStream(dest string, input, reply chan []byte) {
 }
 
 func (n *Node) sendMsg(dest string, ch chan *Message, msg *pb.Msg) {
+	//defer close(ch)
 	reply, err := n.comm.Send(dest, msg)
 	if err != nil {
 		log.Error(err.Error())
 		ch <- nil
-		return
+	//	return
 	}
-	ch <- &Message{Data: reply.GetContent(), Error: errors.New(reply.GetError())}
+
+	if reply.GetError() == "" {
+		err = nil
+	} else {
+		err = errors.New(reply.GetError())
+	}
+
+	ch <- &Message{Data: reply.GetContent(), Error: err}
 }
 
 func (n *Node) isStopping() bool {
