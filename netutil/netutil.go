@@ -43,19 +43,9 @@ func ListenOnPort(port int) (net.Listener, error) {
 	var err error
 
 	startPort := port
-	h, _ := os.Hostname()
 
-	addr, err := net.LookupHost(h)
-	if err != nil {
-		return nil, err
-	}
-	/*
-		for _, a := range addr {
-			log.Debug(a)
-		}
-	*/
 	for {
-		l, err = net.Listen("tcp4", fmt.Sprintf("%s:%d", addr[0], startPort))
+		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", startPort))
 		if err == nil {
 			break
 		}
@@ -77,33 +67,37 @@ func ListenOnPort(port int) (net.Listener, error) {
  * Change: Added hostname as argument that supports being an empty string.
  * - marius
  */
-func GetListener(hostname string, portnum int) (net.Listener, error) {
+func GetListener(hostname string, portnum int) (net.Listener, string, error) {
 	var l net.Listener
 	var err error
 
 	attempts := 0
 
-	/*
-		h, _ := os.Hostname()
+	h, err := os.Hostname()
+	if err != nil {
+		return nil, "", err
+	}
 
-		addr, err := net.LookupHost(h)
-		if err != nil {
-			return nil, err
-		}
+	addr, err := net.LookupHost(h)
+	if err != nil {
+		return nil, "", err
+	}
 
-		if hostname != "" {
-			addr[0] = hostname
-		}
-	*/
+	if hostname != "" {
+		addr[0] = hostname
+	}
+
+	fullAddr := fmt.Sprintf("%s:%d", addr[0], portnum)
 
 	for {
 		l, err = net.Listen("tcp4", fmt.Sprintf(":%d", portnum))
 		if err == nil {
-			return l, nil
+			return l, fullAddr, nil
 		} else {
 			log.Error(err.Error())
 		}
 		attempts++
+		portnum++
 
 		if attempts > 100 {
 			// Stop and return error instead of returing in iteration. - marius
@@ -111,7 +105,7 @@ func GetListener(hostname string, portnum int) (net.Listener, error) {
 		}
 	}
 
-	return l, errFoundNoPort
+	return l, fullAddr, errFoundNoPort
 }
 
 //Hacky AF
@@ -181,7 +175,7 @@ func ListenUdp(hostname string, portnum int) (*net.UDPConn, string, error) {
 		return nil, "", err
 	}
 
-	fullAddr := fmt.Sprintf("%s:%d", hostname, portnum)
+	fullAddr := fmt.Sprintf("%s:%d", addr[0], portnum)
 
 	return conn, fullAddr, nil
 }

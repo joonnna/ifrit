@@ -127,7 +127,8 @@ func (n *Node) Spread(ctx context.Context, args *pb.State) (*pb.StateResponse, e
 }
 
 func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, error) {
-	var replyContent []byte
+	var errMsg string
+	var replyContent []byte 
 
 	_, err := n.validateCtx(ctx)
 	if err != nil {
@@ -136,9 +137,11 @@ func (n *Node) Messenger(ctx context.Context, args *pb.Msg) (*pb.MsgResponse, er
 
 	if handler := n.getMsgHandler(); handler != nil {
 		replyContent, err = handler(args.GetContent())
-		return &pb.MsgResponse{Content: replyContent, Error: err.Error()}, nil
+		if err != nil {
+			errMsg = err.Error()
+		}
 	}
-	return &pb.MsgResponse{}, nil
+	return &pb.MsgResponse{Content: replyContent, Error: errMsg}, nil
 }
 
 func (n *Node) Stream(srv pb.Gossip_StreamServer) error {

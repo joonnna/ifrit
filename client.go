@@ -3,10 +3,7 @@ package ifrit
 import (
 	"crypto/x509/pkix"
 	"errors"
-	"fmt"
-
 	log "github.com/inconshreveable/log15"
-
 	"github.com/joonnna/ifrit/comm"
 	"github.com/joonnna/ifrit/core"
 	"github.com/joonnna/ifrit/netutil"
@@ -17,26 +14,40 @@ type Client struct {
 	node *core.Node
 }
 
-type ClientConfig struct {
-	UdpPort, TcpPort   int
-	Hostname, CertPath string
+type Config struct {
+	// If set to true, the client will create new cryptographic resources and store it in
+	// CryptoUnitPath. Otherwise, it will use the existing resources.
+	New bool
+
+	// TCP port of the Ifrit client.
+	TCPPort int
+
+	// UDP port of the Ifrit client.
+	UDPPort int
+
+	// Hostname used in the X.509 certificate.
+	Hostname string
+
+	// The directory of the cryptographic resources.
+	CryptoUnitPath string
 }
 
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
 	errNoCaAddress = errors.New("Config does not contain address of CA")
-	errNoClientArg = errors.New("Client argument zero")
+	errNoConfig    = errors.New("No config supplied")
+	errNoHostname  = errors.New("Config does not contain hostname")
 )
 
 /* Creates and returns a new ifrit client instance.
  *
  * Change: Added argument struct containing specifiable context for ifrit-client. - marius
  */
-func NewClient(cliCfg *ClientConfig) (*Client, error) {
+func NewClient(config *Config) (*Client, error) {
 	var cu *comm.CryptoUnit
 
-	if cliCfg == nil {
-		return nil, errNoClientArg
+	if config == nil {
+		return nil, errNoConfig
 	}
 
 	err := readConfig()
@@ -44,31 +55,37 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	udpConn, udpAddr, err := netutil.ListenUdp(cliCfg.Hostname, cliCfg.UdpPort)
+	udpConn, udpAddr, err := netutil.ListenUdp(config.Hostname, config.UDPPort)
 	if err != nil {
 		return nil, err
 	}
 
-	l, err := netutil.GetListener(cliCfg.Hostname, cliCfg.TcpPort)
+	l, tcpAddr, err := netutil.GetListener(config.Hostname, config.TCPPort)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 
-	log.Debug("addrs", "rpc", l.Addr().String(), "udp", udpAddr)
+	log.Debug("addrs", "rpc", tcpAddr, "udp", udpAddr)
 
 	pk := pkix.Name{
-		Locality: []string{fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort), udpAddr},
-	}
+		Locality: []string{tcpAddr, udpAddr},
+	}	
 
 	caAddr := viper.GetString("ca_addr")
 
-	if cliCfg.CertPath == "" {
-		cu, err = comm.NewCu(pk, caAddr, cliCfg.Hostname)
+	if config.New {
+		cu, err = comm.NewCu(&comm.CryptoUnitConfig{
+			Identity: pk,
+			CaAddr: caAddr,
+			DNSNames: []string{config.Hostname},
+			Path: config.CryptoUnitPath,
+		})
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		cu, err = comm.LoadCu(cliCfg.CertPath, pk, caAddr)
+		cu, err = comm.LoadCu(config.CryptoUnitPath, pk, caAddr)
 		if err != nil {
 			return nil, err
 		}
@@ -92,35 +109,6 @@ func NewClient(cliCfg *ClientConfig) (*Client, error) {
 	return &Client{
 		node: n,
 	}, nil
-}
-
-/* Perform certificate request to CA and save them in argument path. */
-func NewClientCertificate(cliCfg *ClientConfig, path string) error {
-
-	pk := pkix.Name{
-		Locality: []string{
-			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.TcpPort),
-			fmt.Sprintf("%s:%d", cliCfg.Hostname, cliCfg.UdpPort),
-		},
-	}
-
-	if err := readConfig(); err != nil {
-		return err
-	}
-
-	caAddr := viper.GetString("ca_addr")
-
-	cu, err := comm.NewStaticCu(pk, caAddr, cliCfg.Hostname)
-	if err != nil {
-		return err
-	}
-
-	if err := cu.SavePrivateKey(path); err != nil {
-		return err
-	}
-	err = cu.SaveCertificate(path)
-
-	return err
 }
 
 // Client starts operating.
@@ -167,8 +155,9 @@ func (c *Client) VerifySignature(r, s, content []byte, id string) bool {
 // The caller must ensure that the given data is not modified after calling this function.
 // The returned channel will be populated with the response. The data and error values are contained in the *core.Message
 // type. If the destination could not be reached or timeout occurs, nil will be sent through the channel.
-// The response data can be safely modified after receiving it.
-func (c *Client) SendTo(dest string, data []byte) chan *core.Message  {
+// The response data can be safely modified after receiving it. The message instance is nil if the recipient is unavailable.
+// Ifrit will close the channel after receiving the response message.
+func (c *Client) SendTo(dest string, data []byte) chan *core.Message {
 	ch := make(chan *core.Message, 1)
 
 	go c.node.SendMessage(dest, ch, data)
@@ -254,12 +243,12 @@ func (c *Client) SetGossipContent(data []byte) error {
 	return nil
 }
 
-func (c *Client) SavePrivateKey(path string) error {
-	return c.node.SavePrivateKey(path)
+func (c *Client) SavePrivateKey() error {
+	return c.node.SavePrivateKey()
 }
 
-func (c *Client) SaveCertificate(path string) error {
-	return c.node.SaveCertificate(path)
+func (c *Client) SaveCertificate() error {
+	return c.node.SaveCertificate()
 }
 
 func readConfig() error {
