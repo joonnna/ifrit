@@ -44,7 +44,12 @@ func newClient(config *tls.Config) (*gRPCClient, error) {
 	creds := credentials.NewTLS(config)
 
 	dialOptions = append(dialOptions, grpc.WithTransportCredentials(creds))
-	dialOptions = append(dialOptions, grpc.WithBackoffMaxDelay(time.Minute*1))
+	dialOptions = append(dialOptions, grpc.WithBackoffMaxDelay(time.Minute * 1))
+	dialOptions = append(dialOptions, grpc.WithKeepaliveParams(keepalive.ClientParameters{
+		Time: time.Minute * 1, 
+		Timeout: 30 * time.Second,
+		PermitWithoutStream: true,
+	}))
 
 	if compress := viper.GetBool("use_compression"); compress {
 		dialOptions = append(dialOptions,
