@@ -35,14 +35,11 @@ type Config struct {
 var (
 	errNoData      = errors.New("Supplied data is of length 0")
 	errNoCaAddress = errors.New("Config does not contain address of CA")
-	errNoConfig    = errors.New("No config supplied")
+	errNoConfig    = errors.New("Ifrit client's config is nil")
 	errNoHostname  = errors.New("Config does not contain hostname")
 )
 
-/* Creates and returns a new ifrit client instance.
- *
- * Change: Added argument struct containing specifiable context for ifrit-client. - marius
- */
+//Creates and returns a new ifrit client instance.
 func NewClient(config *Config) (*Client, error) {
 	var cu *comm.CryptoUnit
 
@@ -62,7 +59,6 @@ func NewClient(config *Config) (*Client, error) {
 
 	l, tcpAddr, err := netutil.GetListener(config.Hostname, config.TCPPort)
 	if err != nil {
-		panic(err)
 		return nil, err
 	}
 
