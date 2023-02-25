@@ -9,9 +9,8 @@ require (
 	github.com/jinzhu/configor v1.2.0
 	github.com/joonnna/workerpool v0.0.0-20180531065140-2c82629f6727
 	github.com/rs/cors v1.7.0
-	github.com/sirupsen/logrus v1.2.0 // indirect
 	github.com/spf13/viper v1.7.0
 	github.com/stretchr/testify v1.6.0
-	golang.org/x/net v0.0.0-20200528225125-3c3fba18258b
+	golang.org/x/net v0.7.0
 	google.golang.org/grpc v1.29.1
 )
